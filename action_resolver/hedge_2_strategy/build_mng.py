@@ -88,6 +88,7 @@ def check_build(
             report=report,
         )
 
+    # Не превысит ли hedge_pos_size половину main_pos_size?
     if not _is_hedge_size_allowed(
         main_pos_size=main_pos_size,
         hedge_pos_size=hedge_pos_size,
