@@ -91,19 +91,6 @@ def check_build(
             report=report,
         )
 
-    # Не превысит ли hedge_pos_size половину main_pos_size?
-    if not _is_hedge_size_allowed(
-        main_pos_size=main_pos_size,
-        hedge_pos_size=hedge_pos_size,
-        hedge_qty=hedge_qty,
-    ):
-        return BuildResult(
-            allowed=False,
-            side=hedge_side,
-            qty=hedge_qty,
-            report="Hedge size limit: Build denied ",
-        )
-
     # Проверяем дистанцию до существующих уровней
     distance_allowed, distance_report = _is_level_distance_allowed(
         work_price=work_price,
