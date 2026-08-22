@@ -48,7 +48,8 @@ def check_build(
     work_price: float,
     entries,
     hedge_step_ratio: float,
-    main_qty: float,
+    main_pos_size: float,
+    hedge_pos_size: float,
     hedge_qty_ratio: float,
     hedge_side: str,
     trading_info,
@@ -57,7 +58,7 @@ def check_build(
 
     # Рассчитываем объем одного уровня защиты
     hedge_qty = _calc_hedge_qty(
-        main_qty=main_qty,
+        main_qty=main_pos_size,
         hedge_qty_ratio=hedge_qty_ratio,
         trading_info=trading_info,
     )
