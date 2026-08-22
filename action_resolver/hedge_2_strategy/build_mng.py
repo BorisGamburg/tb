@@ -21,6 +21,17 @@ def _calc_hedge_qty(
     return trading_info.get_valid_order_qty(hedge_qty)
 
 
+def _is_hedge_size_allowed(
+    main_pos_size: float,
+    hedge_pos_size: float,
+    hedge_qty: float,
+) -> bool:
+    return (
+        hedge_pos_size + hedge_qty
+        <= main_pos_size * 0.5
+    )
+
+
 def _is_level_distance_allowed(
     work_price: float,
     entries,
