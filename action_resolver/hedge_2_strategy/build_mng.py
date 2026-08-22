@@ -101,6 +101,7 @@ def check_build(
             report="Hedge size limit: Build denied ",
         )
 
+    # Проверяем дистанцию до существующих уровней
     distance_allowed, distance_report = _is_level_distance_allowed(
         work_price=work_price,
         entries=entries,
