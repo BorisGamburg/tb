@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 
+MAX_HEDGE_RATIO = 0.5
+
+
 @dataclass
 class BuildResult:
     allowed: bool
@@ -28,7 +31,7 @@ def _is_hedge_size_allowed(
 ) -> bool:
     return (
         hedge_pos_size + hedge_qty
-        <= main_pos_size * 0.5
+        <= main_pos_size * MAX_HEDGE_RATIO
     )
 
 
