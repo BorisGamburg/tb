@@ -52,7 +52,6 @@ class HedgeModeMng:
         self.max_hedge_ratio = 0.5
         self.prev_work_price: float | None = None
         self.mode: HedgeMode | None = None
-        self.status: HedgeStatus | None = None
         self.trend_active: bool
 
         self.ha_trend = HATrendChecker(
@@ -132,7 +131,7 @@ class HedgeModeMng:
         )
         self.mode = mode
 
-        self.status = HedgeStatus(
+        status = HedgeStatus(
             price=ctx.work_price,
             protection_current=curr_ratio,
             protection_required=required_ratio,
@@ -155,7 +154,7 @@ class HedgeModeMng:
                 trading_info=self.trading_info,
             )            
             build_result.report = report + build_result.report
-            return build_result        
+            return build_result, status        
 
         # Если защита уже набрана — проверяем, можно ли выполнить оптимизацию
         if mode == HedgeMode.OPTIMIZATION:
@@ -168,7 +167,7 @@ class HedgeModeMng:
             )
 
             optimization_result.report = report + optimization_result.report
-            return optimization_result               
+            return optimization_result, status               
 
         raise Exception(
             f"Unsupported hedge mode: {mode}"
