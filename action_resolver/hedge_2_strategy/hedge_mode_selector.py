@@ -1,5 +1,5 @@
 from enum import Enum
-from prog.action_resolver.hedge_2_strategy.protect_calc import (
+from action_resolver.hedge_2_strategy.protect_calc import (
     calc_required_protect_ratio,
 )
 

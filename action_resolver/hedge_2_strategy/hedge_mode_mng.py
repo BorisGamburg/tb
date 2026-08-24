@@ -1,21 +1,21 @@
 from dataclasses import dataclass
 
-from prog.action_resolver.hedge_2_strategy.hedge_mode_selector import (
+from action_resolver.hedge_2_strategy.hedge_mode_selector import (
     HedgeModeSelector,
     HedgeMode,
 )
-from prog.action_resolver.hedge_2_strategy.ha_trend_checker import (
+from action_resolver.hedge_2_strategy.ha_trend_checker import (
     HATrendChecker,
 )
-from prog.action_resolver.hedge_2_strategy.build_mng import (
+from action_resolver.hedge_2_strategy.build_mng import (
     check_build,
     BuildResult,
 )
-from prog.action_resolver.hedge_2_strategy.optimization_mng import (
+from action_resolver.hedge_2_strategy.optimization_mng import (
     OptimizationMng,
 )
 
-from prog.action_resolver.hedge_2_strategy.position_info import (
+from action_resolver.hedge_2_strategy.position_info import (
     PositionInfo,
 )
 

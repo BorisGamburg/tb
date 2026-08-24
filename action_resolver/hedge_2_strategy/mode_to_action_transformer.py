@@ -1,14 +1,14 @@
-from prog.action_processor.action import (
+from action_processor.action import (
     Action,
     ActionCommand,
 )
-from prog.action_resolver.hedge_2_strategy.build_mng import (
+from action_resolver.hedge_2_strategy.build_mng import (
     BuildResult,
 )
-from prog.action_resolver.hedge_2_strategy.optimization_mng import (
+from action_resolver.hedge_2_strategy.optimization_mng import (
     OptimizationResult,
 )
-from prog.utils.utils import get_inverse_side
+from utils.utils import get_inverse_side
 
 
 def transform(

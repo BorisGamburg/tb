@@ -1,10 +1,10 @@
-from prog.action_resolver.base_strategy import BaseStrategy
-from prog.action_processor.state.state import State
-from prog.action_processor.bootstrap import AppContext
-from prog.action_resolver.hedge_2_strategy.hedge_mode_mng import HedgeModeMng
-from prog.action_resolver.hedge_2_strategy.mode_to_action_transformer import transform
-from prog.action_resolver.resolve_result import ResolveResult
-from prog.common.trading_info import TradingInfo
+from action_resolver.base_strategy import BaseStrategy
+from action_processor.state.state import State
+from action_processor.bootstrap import AppContext
+from action_resolver.hedge_2_strategy.hedge_mode_mng import HedgeModeMng
+from action_resolver.hedge_2_strategy.mode_to_action_transformer import transform
+from action_resolver.resolve_result import ResolveResult
+from common.trading_info import TradingInfo
 
 
 class Hedge2Strategy(BaseStrategy):
