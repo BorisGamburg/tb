@@ -63,6 +63,15 @@ def check_build(
         trading_info=trading_info,
     )
 
+    # Размер уровня защиты меньше минимально допустимого
+    if hedge_qty == 0.0:
+        return BuildResult(
+            allowed=False,
+            side=hedge_side,
+            qty=hedge_qty,
+            report="Hedge qty below minimum. Build: denied ",
+        )
+
     # Без активного тренда новые уровни защиты не строим
     if not trend_active:
         report += (
