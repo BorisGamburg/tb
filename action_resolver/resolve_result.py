@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from prog.action_processor.action import ActionCommand
+from action_processor.action import ActionCommand
 
 @dataclass(frozen=True)
 class ResolveResult:

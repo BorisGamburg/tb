@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from prog.action_processor.state.stack_schema import StackElem
+from action_processor.state.stack_schema import StackElem
 
 
 class Action(Enum):

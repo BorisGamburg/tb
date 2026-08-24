@@ -1,14 +1,14 @@
 import threading
 from typing import Any
-from prog.action_processor.state.state import State 
-from prog.action_processor.execution.execution import Execution
-from prog.action_processor.accounting import Accounting
+from action_processor.state.state import State 
+from action_processor.execution.execution import Execution
+from action_processor.accounting import Accounting
 import time
-from prog.action_processor.bootstrap import AppContext
+from action_processor.bootstrap import AppContext
 from rich.live import Live
 from rich.text import Text
-from prog.action_processor.notifier import Notifier
-from prog.action_resolver.strategy_factory import StrategyFactory
+from action_processor.notifier import Notifier
+from action_resolver.strategy_factory import StrategyFactory
 
 
 class ActionProcessor:

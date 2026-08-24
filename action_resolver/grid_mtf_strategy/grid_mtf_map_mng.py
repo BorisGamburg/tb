@@ -1,5 +1,5 @@
 import logging
-from prog.proxy_server.proxy_driver import ProxyDriver
+from proxy_server.proxy_driver import ProxyDriver
 
 
 class GridMTFMapMng:

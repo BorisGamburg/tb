@@ -1,9 +1,9 @@
-from prog.action_processor.action import (
+from action_processor.action import (
     Action,
     ActionCommand,
 )
-from prog.services.bb_service import BBService
-from prog.utils.utils import get_inverse_side
+from services.bb_service import BBService
+from utils.utils import get_inverse_side
 
 
 class PartialExitBBW:

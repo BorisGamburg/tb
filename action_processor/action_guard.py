@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from rich.text import Text
 
-from prog.action_processor.action import Action, ActionCommand
-from prog.utils.utils import get_inverse_side
+from action_processor.action import Action, ActionCommand
+from utils.utils import get_inverse_side
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,11 +1,11 @@
-from prog.action_processor.action import (
+from action_processor.action import (
     Action,
     ActionCommand,
 )
-from prog.services.distance_service import (
+from services.distance_service import (
     is_distance_ok,
 )
-from prog.common.trading_info import TradingInfo
+from common.trading_info import TradingInfo
 
 
 class RearmChecker:

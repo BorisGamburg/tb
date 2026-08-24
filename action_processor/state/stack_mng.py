@@ -1,6 +1,6 @@
 import logging
 from typing import List, Optional
-from prog.action_processor.state.stack_schema import StackData, StackElem
+from action_processor.state.stack_schema import StackData, StackElem
 
 class StackMng:
     """Управляет операциями стека ордеров, используя данные из StateStore."""

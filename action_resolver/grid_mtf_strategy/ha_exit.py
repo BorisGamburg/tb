@@ -1,8 +1,8 @@
 from rich.text import Text
-from prog.action_processor.action import (Action, ActionCommand)
-from prog.action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
-from prog.action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
-from prog.utils.utils import get_inverse_side
+from action_processor.action import (Action, ActionCommand)
+from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
+from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
+from utils.utils import get_inverse_side
 
 
 class HAExit:

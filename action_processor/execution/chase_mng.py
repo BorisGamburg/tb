@@ -1,7 +1,7 @@
 import time
-from prog.proxy_server.proxy_driver import ProxyDriver
-from prog.managers.chase_pool_mng import ChasePoolMng
-from prog.action_processor.execution.execution_waiter import ExecutionWaiter
+from proxy_server.proxy_driver import ProxyDriver
+from managers.chase_pool_mng import ChasePoolMng
+from action_processor.execution.execution_waiter import ExecutionWaiter
 
 
 class ChaseMng:

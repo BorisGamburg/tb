@@ -1,9 +1,9 @@
-from prog.action_processor.action import Action, ActionCommand
-from prog.action_processor.state.state import State
-from prog.action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
-from prog.action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
+from action_processor.action import Action, ActionCommand
+from action_processor.state.state import State
+from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
+from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from rich.text import Text
-from prog.common.trading_info import TradingInfo
+from common.trading_info import TradingInfo
 
 
 class EntryChecker:

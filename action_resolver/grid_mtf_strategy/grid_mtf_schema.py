@@ -1,9 +1,9 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Dict, Literal
 
-from prog.action_processor.state.stack_schema import StackData
-from prog.action_processor.state.pct import Pct
-from prog.action_processor.state.types import AllowedTimeframes
+from action_processor.state.stack_schema import StackData
+from action_processor.state.pct import Pct
+from action_processor.state.types import AllowedTimeframes
 
 
 class GridMTFTemplate(BaseModel):

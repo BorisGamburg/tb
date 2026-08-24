@@ -1,8 +1,8 @@
-from prog.action_processor.action import Action, ActionCommand
-from prog.utils.utils import get_inverse_side
-from prog.action_processor.state.state import State
-from prog.common.price_service import PriceService
-from prog.action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
+from action_processor.action import Action, ActionCommand
+from utils.utils import get_inverse_side
+from action_processor.state.state import State
+from common.price_service import PriceService
+from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
 
 
 class PartialExitCross:

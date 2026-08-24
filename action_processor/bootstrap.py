@@ -7,9 +7,9 @@ import logging
 from rich.console import Console
 from rich.logging import RichHandler
 
-from prog.utils.telegram import Telegram
-from prog.proxy_server.proxy_driver import ProxyDriver
-from prog.common.price_service import PriceService
+from utils.telegram import Telegram
+from proxy_server.proxy_driver import ProxyDriver
+from common.price_service import PriceService
 
 
 # CONTEXTS

@@ -1,6 +1,6 @@
-from prog.action_processor.execution_result import ExecutionResult
-from prog.action_processor.state.state import State
-from prog.action_processor.action import Action, ActionCommand
+from action_processor.execution.execution_result import ExecutionResult
+from action_processor.state.state import State
+from action_processor.action import Action, ActionCommand
 import time
 
 

@@ -1,19 +1,19 @@
-from prog.action_resolver.base_strategy import BaseStrategy
-from prog.action_processor.state.state import State
-from prog.action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
-from prog.action_resolver.grid_mtf_strategy.start_condition_checker import StartConditionChecker
-from prog.action_processor.bootstrap import AppContext
-from prog.action_resolver.grid_mtf_strategy.partial_exit_cross import PartialExitCross
-from prog.action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
-from prog.action_resolver.grid_mtf_strategy.ha_exit import HAExit
-from prog.action_resolver.grid_mtf_strategy.entry_checker import EntryChecker
-from prog.action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW
+from action_resolver.base_strategy import BaseStrategy
+from action_processor.state.state import State
+from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
+from action_resolver.grid_mtf_strategy.start_condition_checker import StartConditionChecker
+from action_processor.bootstrap import AppContext
+from action_resolver.grid_mtf_strategy.partial_exit_cross import PartialExitCross
+from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
+from action_resolver.grid_mtf_strategy.ha_exit import HAExit
+from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker
+from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW
 from dataclasses import dataclass, field
-from prog.action_resolver.grid_mtf_strategy.rearm_checker import RearmChecker
-from prog.action_resolver.resolve_result import ResolveResult
+from action_resolver.grid_mtf_strategy.rearm_checker import RearmChecker
+from action_resolver.resolve_result import ResolveResult
 from rich.text import Text
-from prog.common.trading_info import TradingInfo
-from prog.action_processor.action_guard import ActionGuard
+from common.trading_info import TradingInfo
+from action_processor.action_guard import ActionGuard
 
 
 @dataclass(slots=True)

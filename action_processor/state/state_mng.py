@@ -2,7 +2,7 @@ import logging
 import tomlkit
 from pathlib import Path
 from typing import Dict, Any, Optional
-from prog.state_store.state_data_schema import StateDataSchema # Корректное имя Pydantic-схемы
+from state_store.state_data_schema import StateDataSchema # Корректное имя Pydantic-схемы
 
 class StateStoreMng:
     """

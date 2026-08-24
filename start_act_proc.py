@@ -1,6 +1,6 @@
 import argparse
-from prog.action_processor.action_processor import ActionProcessor
-from prog.action_processor.bootstrap import init_infrastruct
+from action_processor.action_processor import ActionProcessor
+from action_processor.bootstrap import init_infrastruct
 
 
 def parse_args() -> argparse.Namespace:

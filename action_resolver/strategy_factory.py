@@ -1,7 +1,7 @@
 import yaml
 from pathlib import Path
-from prog.action_processor.state.state import State
-from prog.common.trading_info import TradingInfo
+from action_processor.state.state import State
+from common.trading_info import TradingInfo
 
 
 class StrategyFactory:
@@ -61,9 +61,9 @@ class StrategyFactory:
         # --- СТРАТЕГИЯ 1: grid_mtf ---
         # =========================================================
         if strategy_name == "grid_mtf":
-            from prog.action_resolver.grid_mtf_strategy.grid_mtf_schema import GridMTFSchema
-            from prog.action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
-            from prog.action_resolver.grid_mtf_strategy.grid_mtf_strategy import GridMTFStrategy
+            from action_resolver.grid_mtf_strategy.grid_mtf_schema import GridMTFSchema
+            from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
+            from action_resolver.grid_mtf_strategy.grid_mtf_strategy import GridMTFStrategy
 
             # Валидируем данные через Pydantic
             config_data = GridMTFSchema.model_validate(parsed_data)
@@ -101,8 +101,8 @@ class StrategyFactory:
         # --- СТРАТЕГИЯ 2: hedge_2 ---
         # =========================================================
         if strategy_name == "hedge_2":
-            from prog.action_resolver.hedge_2_strategy.hedge_2_schema import Hedge2Schema
-            from prog.action_resolver.hedge_2_strategy.hedge_2_strategy import Hedge2Strategy
+            from action_resolver.hedge_2_strategy.hedge_2_schema import Hedge2Schema
+            from action_resolver.hedge_2_strategy.hedge_2_strategy import Hedge2Strategy
 
             # Валидируем данные через Pydantic
             config_data = Hedge2Schema.model_validate(parsed_data)

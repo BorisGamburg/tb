@@ -1,7 +1,7 @@
 from typing import Optional
-from prog.action_processor.state.state import State
-from prog.action_resolver.grid_mtf_strategy.struct_detector import StructureDetector
-from prog.action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
+from action_processor.state.state import State
+from action_resolver.grid_mtf_strategy.struct_detector import StructureDetector
+from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
 
 class StartConditionChecker:
     def __init__(

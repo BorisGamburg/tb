@@ -1,9 +1,9 @@
-from prog.action_processor.action import Action, ActionCommand
-from prog.proxy_server.proxy_driver import ProxyDriver
-from prog.action_processor.execution.chase_mng import ChaseMng
-from prog.action_processor.execution.execution_waiter import ExecutionWaiter
+from action_processor.action import Action, ActionCommand
+from proxy_server.proxy_driver import ProxyDriver
+from action_processor.execution.chase_mng import ChaseMng
+from action_processor.execution.execution_waiter import ExecutionWaiter
 import logging
-from prog.action_processor.execution_result import ExecutionResult
+from action_processor.execution.execution_result import ExecutionResult
 
 
 class Execution:
