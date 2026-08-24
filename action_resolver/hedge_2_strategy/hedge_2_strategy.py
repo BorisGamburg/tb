@@ -30,7 +30,7 @@ class Hedge2Strategy(BaseStrategy):
 
     def resolve(self, ctx) -> ResolveResult:
         # Получаем режим 
-        mode_result = self.hedge_mode_mng.check()
+        mode_result, status = self.hedge_mode_mng.check()
         report = mode_result.report
 
         # Преобразуем режим в команду действия
