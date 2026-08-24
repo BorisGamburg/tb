@@ -14,7 +14,7 @@ from action_resolver.hedge_2_strategy.build_mng import (
 from action_resolver.hedge_2_strategy.optimization_mng import (
     OptimizationMng,
 )
-
+from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
 from action_resolver.hedge_2_strategy.position_info import (
     PositionInfo,
 )
@@ -52,6 +52,7 @@ class HedgeModeMng:
         self.max_hedge_ratio = 0.5
         self.prev_work_price: float | None = None
         self.mode: HedgeMode | None = None
+        self.status: HedgeStatus | None = None
         self.trend_active: bool
 
         self.ha_trend = HATrendChecker(
@@ -130,6 +131,15 @@ class HedgeModeMng:
             )
         )
         self.mode = mode
+
+        self.status = HedgeStatus(
+            price=ctx.work_price,
+            protection_current=curr_ratio,
+            protection_required=required_ratio,
+            pnl=ctx.main_position.unrealised_pnl,
+            mode=mode,
+            pairs=0,
+        )
 
         # Если защита еще не набрана — проверяем, можно ли добавить следующий уровень
         if mode == HedgeMode.BUILD:
