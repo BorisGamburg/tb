@@ -66,6 +66,8 @@ class HedgeModeSelector:
             return (
                 HedgeMode.OPTIMIZATION,
                 report,
+                0.0,
+                0.0,
             )
 
         # Рассчитываем текущий и требуемый уровень защиты
@@ -93,6 +95,8 @@ class HedgeModeSelector:
             return (
                 HedgeMode.BUILD,
                 report,
+                curr_ratio,
+                required_ratio,
             )
 
         # Защиты достаточно
@@ -103,5 +107,6 @@ class HedgeModeSelector:
         return (
             HedgeMode.OPTIMIZATION,
             report,
+            curr_ratio,
+            required_ratio,
         )
-
