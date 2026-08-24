@@ -33,5 +33,3 @@ if __name__ == "__main__":
     finally:
         act_proc.stop()
         app_ctx.logger.info("Программа завершена.")
-
-# GitHub write test: 2026-08-22
