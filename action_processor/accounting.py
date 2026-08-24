@@ -1,6 +1,6 @@
 from prog.action_processor.state.state import State
 from prog.action_processor.state.stack_mng import StackMng
-from prog.action_processor.execution import ExecutionResult
+from prog.action_processor.execution.execution_result import ExecutionResult
 from prog.action_processor.action import Action
 
 class Accounting:
