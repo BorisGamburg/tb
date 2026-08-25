@@ -22,6 +22,8 @@ from action_resolver.hedge_2_strategy.position_info import (
 @dataclass
 class HedgeContext:
     work_price: float
+    bid: float
+    ask: float
     prev_work_price: float | None
     hedge_position: PositionInfo
     main_position: PositionInfo
@@ -98,6 +100,8 @@ class HedgeModeMng:
         # Формируем HedgeContext
         ctx = HedgeContext(
             work_price=work_price,
+            bid=float(ticker["bid"]),
+            ask=float(ticker["ask"]),
             prev_work_price=self.prev_work_price,
             hedge_position=hedge_position,
             main_position=main_position,
@@ -139,7 +143,8 @@ class HedgeModeMng:
         self.mode = mode
 
         status = HedgeStatus(
-            price=ctx.work_price,
+            bid=ctx.bid,
+            ask=ctx.ask,
             protection_current=curr_ratio,
             protection_required=required_ratio,
             pnl=ctx.main_unrealised_pnl,
