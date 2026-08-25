@@ -195,14 +195,12 @@ class HedgeModeMng:
             side=self.hedge_side,
             qty=float(hedge_pos["size"]),
             entry_price=float(hedge_pos["entry_price"]),
-            unrealised_pnl=float(hedge_pos["unrealisedPnl"]),
         )
 
         main_position = PositionInfo(
             side=self.main_side,
             qty=main_qty,
             entry_price=float(main_pos["entry_price"]),
-            unrealised_pnl=float(main_pos["unrealisedPnl"]),
         )
 
         return hedge_position, main_position
