@@ -130,7 +130,7 @@ class HedgeModeMng:
         # В зависимости от того, нужна защита или нет, выбираем режим работы
         mode, report, curr_ratio, required_ratio = (
             self.mode_selector.select_mode(
-                unrealised_pnl=ctx.main_position.unrealised_pnl,
+                unrealised_pnl=ctx.main_unrealised_pnl,
                 main_pos_size=ctx.main_position.qty,
                 hedge_pos_size=ctx.hedge_position.qty,
                 entry_price=ctx.main_position.entry_price,
@@ -142,7 +142,7 @@ class HedgeModeMng:
             price=ctx.work_price,
             protection_current=curr_ratio,
             protection_required=required_ratio,
-            pnl=ctx.main_position.unrealised_pnl,
+            pnl=ctx.main_unrealised_pnl,
             mode=mode,
             pairs=0,
         )
