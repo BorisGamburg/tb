@@ -25,6 +25,7 @@ class HedgeContext:
     prev_work_price: float | None
     hedge_position: PositionInfo
     main_position: PositionInfo
+    main_unrealised_pnl: float
     entries: list
     trend_active: bool
     hedge_qty_ratio: float
@@ -100,6 +101,7 @@ class HedgeModeMng:
             prev_work_price=self.prev_work_price,
             hedge_position=hedge_position,
             main_position=main_position,
+            main_unrealised_pnl=main_unrealised_pnl,
             entries=self.state_store.stack_mng.data.entries,
             trend_active=self.trend_active,
             hedge_qty_ratio=self.hedge_qty_ratio,
