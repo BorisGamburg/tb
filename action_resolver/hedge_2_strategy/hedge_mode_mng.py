@@ -84,6 +84,11 @@ class HedgeModeMng:
         # Получаем данные по позициям
         hedge_position, main_position = self._get_positions_data()
 
+        main_unrealised_pnl = self._calc_main_unrealised_pnl(
+            ticker,
+            main_position,
+        )
+
         # Проверяем, активен ли тренд 
         self.trend_active = self.ha_trend.is_active(
             self.state_store.data.start_tf,
@@ -204,4 +209,20 @@ class HedgeModeMng:
         )
 
         return hedge_position, main_position
+
+    def _calc_main_unrealised_pnl(
+        self,
+        ticker,
+        main_position: PositionInfo,
+    ) -> float:
+        if self.main_side == "Buy":
+            market_price = float(ticker["bid"])
+            return (
+                market_price - main_position.entry_price
+            ) * main_position.qty
+
+        market_price = float(ticker["ask"])
+        return (
+            main_position.entry_price - market_price
+        ) * main_position.qty
         
