@@ -5,7 +5,8 @@ from action_resolver.hedge_2_strategy.hedge_mode_selector import HedgeMode
 
 @dataclass
 class HedgeStatus:
-    price: float
+    bid: float
+    ask: float
     protection_current: float
     protection_required: float
     pnl: float
