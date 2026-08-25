@@ -1,3 +1,4 @@
+import os
 import socket
 
 
@@ -14,28 +15,33 @@ class HedgeServer:
         server.bind(self.socket_path)
         server.listen()
 
-        while True:
-            conn, _ = server.accept()
-
-            try:
-                data = conn.recv(4096)
-
-                if not data:
-                    continue
-
-                command = data.decode().strip()
+        try:
+            while True:
+                conn, _ = server.accept()
 
                 try:
-                    handler(command)
+                    data = conn.recv(4096)
 
-                    response = "DONE"
+                    if not data:
+                        continue
 
-                except Exception as e:
-                    response = f"ERROR:{e}"
+                    command = data.decode().strip()
 
-                conn.sendall(
-                    (response + "\n").encode()
-                )
+                    try:
+                        handler(command)
 
-            finally:
-                conn.close()
+                        response = "DONE"
+
+                    except Exception as e:
+                        response = f"ERROR:{e}"
+
+                    conn.sendall(
+                        (response + "\n").encode()
+                    )
+
+                finally:
+                    conn.close()
+
+        finally:
+            server.close()
+            os.unlink(self.socket_path)
