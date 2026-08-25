@@ -52,8 +52,7 @@ class PositionMng:
                     "symbol": p['symbol'],
                     "size": float(p['size']),
                     "entry_price": float(p['entry_price']),
-                    "side": side,
-                    "unrealisedPnl": float(p.get("unrealisedPnl", 0))
+                    "side": side
                 }
 
     def update_from_ws(self, msg):
@@ -81,18 +80,11 @@ class PositionMng:
                     else:
                         new_entry = old_pos.get('entry_price', 0.0)
 
-                    raw_pnl = p.get("unrealisedPnl")
-                    if raw_pnl is not None:
-                        pnl = float(raw_pnl)
-                    else:
-                        pnl = old_pos.get("unrealisedPnl", 0.0)
-
                     # Обновляем структуру
                     self._positions[key] = {
                         "symbol": symbol,
                         "size": size,
                         "entry_price": new_entry if size > 0 else 0.0,
-                        "unrealisedPnl": pnl,
                         "side": side
                     }
                     
@@ -106,7 +98,7 @@ class PositionMng:
         with self._lock:
             return self._positions.get(
                 f"{symbol}_{side}",
-                {"size": 0, "entry_price": 0, "unrealisedPnl": 0}
+                {"size": 0, "entry_price": 0}
             )
 
     def get_all(self) -> dict:
