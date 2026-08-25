@@ -57,7 +57,8 @@ class Hedge2Strategy(BaseStrategy):
         protection_ok = status.protection_current >= status.protection_required
         protection_mark = "✓" if protection_ok else "✗"
         return (
-            f"PRICE: {status.price:.6f} | "
+            f"BID: {status.bid:.6f} | "
+            f"ASK: {status.ask:.6f} | "
             f"PROTECTION: {status.protection_current:.3f}/"
             f"{status.protection_required:.3f} {protection_mark} | "
             f"PNL: {status.pnl:+.6f} | "
