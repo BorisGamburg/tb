@@ -35,9 +35,12 @@ class HedgeServer:
                     except Exception as e:
                         response = f"ERROR:{e}"
 
-                    conn.sendall(
-                        (response + "\n").encode()
-                    )
+                    try:
+                        conn.sendall(
+                            (response + "\n").encode()
+                        )
+                    except BrokenPipeError:
+                        pass
 
                 finally:
                     conn.close()
