@@ -102,6 +102,9 @@ class ActionProcessor:
         finally:
             self.stop()
 
+    def _get_external_command(self):
+        return None
+
     def _exec_action(self, resolve_result):
         # Запускаем Executor
         exec_result = self.execution.execute(resolve_result.action_command)
