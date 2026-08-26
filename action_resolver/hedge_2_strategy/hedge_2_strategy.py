@@ -29,7 +29,7 @@ class Hedge2Strategy(BaseStrategy):
             trading_info=trading_info,
         )
 
-    def resolve(self, ctx) -> ResolveResult:
+    def resolve(self, external_command) -> ResolveResult:
         # Получаем режим 
         mode_result, status = self.hedge_mode_mng.check()
 
