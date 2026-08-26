@@ -4,6 +4,7 @@ from action_processor.state.state import State
 from action_processor.execution.execution import Execution
 from action_processor.accounting import Accounting
 import time
+import zmq
 from action_processor.bootstrap import AppContext
 from rich.live import Live
 from rich.text import Text
@@ -35,6 +36,10 @@ class ActionProcessor:
             config_file=self.config_file_path,
             app_ctx=self.app_ctx,
         )
+
+        self.zmq_context = zmq.Context()
+        self.zmq_socket = self.zmq_context.socket(zmq.REP)
+        self.zmq_socket.bind(self._get_external_endpoint())
 
         # 4. Инициализация Execution
         self.execution = Execution(
