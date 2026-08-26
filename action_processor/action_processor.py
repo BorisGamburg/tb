@@ -106,6 +106,9 @@ class ActionProcessor:
             self.stop()
 
     def _get_external_command(self):
+        if self.zmq_socket.poll(0):
+            return self.zmq_socket.recv_json()
+
         return None
 
     def _get_external_endpoint(self):
