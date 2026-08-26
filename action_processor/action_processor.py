@@ -85,8 +85,11 @@ class ActionProcessor:
                     # Если команда есть -> выполняем ее
                     if cmd:
                         self.notifier.notify_action(resolve_result.action_command)
-                        result = self._exec_action(resolve_result)
-                        self._send_external_result(result)
+                        self._exec_action(resolve_result)
+                        self.zmq_socket.send_json({
+                            "success": True,
+                            "message": "done",
+                        })
 
                     # Обновляем строку статуса
                     self.live.update(resolve_result.status)
@@ -122,9 +125,6 @@ class ActionProcessor:
         self.zmq_context = zmq.Context()
         self.zmq_socket = self.zmq_context.socket(zmq.REP)
         self.zmq_socket.bind(self._get_external_endpoint())
-
-    def _send_external_result(self, result):
-        self.zmq_socket.send_json(result)
 
     def _exec_action(self, resolve_result):
         # Запускаем Executor
