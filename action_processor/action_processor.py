@@ -70,14 +70,18 @@ class ActionProcessor:
                 screen=False,
             ) as self.live:
                 while not self.shutdown_event.is_set():
+                    # Стратегия
                     resolve_result = self.strategy.resolve(None)
 
+                    # Получаем команду стратегии
                     cmd = resolve_result.action_command
 
+                    # Если команда есть -> выполняем ее
                     if cmd:
                         self.notifier.notify_action(resolve_result.action_command)
                         self._exec_action(resolve_result)
 
+                    # Обновляем строку статуса
                     self.live.update(resolve_result.status)
 
                     if not resolve_result.skip_sleep:
