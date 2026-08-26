@@ -76,15 +76,23 @@ class ActionProcessor:
                     # Получаем внешнюю команду
                     external_command = self._get_external_command()
 
-                    # Полный цикл обработки команды
-                    resolve_result = self._process_command(external_command)
+                    try:
+                        # Полный цикл обработки команды
+                        resolve_result = self._process_command(external_command)
 
-                    # Если команда пришла извне -> сообщаем результат
-                    if external_command:
-                        self.zmq_socket.send_json({
-                            "success": True,
-                            "message": "done",
-                        })
+                        # Если команда пришла извне -> сообщаем результат
+                        if external_command:
+                            self.zmq_socket.send_json({
+                                "success": True,
+                                "message": "done",
+                            })
+                    except Exception as e:
+                        if external_command:
+                            self.zmq_socket.send_json({
+                                "success": False,
+                                "message": str(e),
+                            })
+                        raise
 
                     # Обновляем строку статуса
                     self.live.update(resolve_result.status)
