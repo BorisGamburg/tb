@@ -105,6 +105,12 @@ class ActionProcessor:
     def _get_external_command(self):
         return None
 
+    def _get_external_endpoint(self):
+        symbol = self.state_store.data.symbol
+        strategy = self.state_store.data.strategy
+
+        return f"ipc:///tmp/{symbol}_{strategy}.sock"
+
     def _exec_action(self, resolve_result):
         # Запускаем Executor
         exec_result = self.execution.execute(resolve_result.action_command)
