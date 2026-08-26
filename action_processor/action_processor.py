@@ -76,16 +76,11 @@ class ActionProcessor:
                     # Получаем внешнюю команду
                     external_command = self._get_external_command()
 
-                    # Стратегия
-                    resolve_result = self.strategy.resolve(external_command)                    
+                    # Полный цикл обработки команды
+                    resolve_result = self._process_command(external_command)
 
-                    # Получаем команду стратегии
-                    cmd = resolve_result.action_command
-
-                    # Если команда есть -> выполняем ее
-                    if cmd:
-                        self.notifier.notify_action(resolve_result.action_command)
-                        self._exec_action(resolve_result)
+                    # Если команда пришла извне -> сообщаем результат
+                    if external_command:
                         self.zmq_socket.send_json({
                             "success": True,
                             "message": "done",
@@ -126,6 +121,17 @@ class ActionProcessor:
         self.zmq_socket = self.zmq_context.socket(zmq.REP)
         self.zmq_socket.bind(self._get_external_endpoint())
 
+    def _process_command(self, command):
+        resolve_result = self.strategy.resolve(command)
+
+        cmd = resolve_result.action_command
+
+        if cmd:
+            self.notifier.notify_action(cmd)
+            self._exec_action(resolve_result)
+
+        return resolve_result
+
     def _exec_action(self, resolve_result):
         # Запускаем Executor
         exec_result = self.execution.execute(resolve_result.action_command)
@@ -155,4 +161,3 @@ class ActionProcessor:
         self.state_store.save()
              
         self.logger.info("TradeOverBot остановлен.")
-
