@@ -37,9 +37,7 @@ class ActionProcessor:
             app_ctx=self.app_ctx,
         )
 
-        self.zmq_context = zmq.Context()
-        self.zmq_socket = self.zmq_context.socket(zmq.REP)
-        self.zmq_socket.bind(self._get_external_endpoint())
+        self._initialize_external_server()
 
         # 4. Инициализация Execution
         self.execution = Execution(
@@ -115,6 +113,11 @@ class ActionProcessor:
         strategy = self.state_store.data.strategy
 
         return f"ipc:///tmp/{symbol}_{strategy}.sock"
+
+    def _initialize_external_server(self):
+        self.zmq_context = zmq.Context()
+        self.zmq_socket = self.zmq_context.socket(zmq.REP)
+        self.zmq_socket.bind(self._get_external_endpoint())
 
     def _exec_action(self, resolve_result):
         # Запускаем Executor
