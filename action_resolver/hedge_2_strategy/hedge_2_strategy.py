@@ -30,7 +30,15 @@ class Hedge2Strategy(BaseStrategy):
         )
 
     def resolve(self, external_command) -> ResolveResult:
-        # Получаем режим 
+        if external_command and external_command.get("command") == "TEST":
+            print("TEST")
+            return ResolveResult(
+                action_command=None,
+                status="TEST",
+                skip_sleep=False,
+            )
+
+        # Получаем режим
         mode_result, status = self.hedge_mode_mng.check()
 
         # Преобразуем режим в команду действия
@@ -40,15 +48,14 @@ class Hedge2Strategy(BaseStrategy):
             side=self.state_store.data.side,
         )
 
-        # Формируем статусную строку 
+        # Формируем статусную строку
         status_line = self._build_status_line(status=status)
 
-        # Возвращаем результат разрешения
         return ResolveResult(
             action_command=action_command,
             status=status_line,
             skip_sleep=False,
-        )    
+        )
 
     def _build_status_line(
         self,
