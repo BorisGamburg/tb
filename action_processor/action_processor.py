@@ -129,14 +129,13 @@ class ActionProcessor:
     def _exec_action(self, resolve_result):
         # Запускаем Executor
         exec_result = self.execution.execute(resolve_result.action_command)
-        
-        # Лог
+        # Логируем результаты запуска
         self.notifier.log_execution(exec_result)
         self.notifier.notify_telegram(exec_result)
 
         # Запускаем Accounter
         accounting_message = self.accounting.apply(exec_result)
-        # Логи
+        # Логируем результаты запуска
         self.notifier.log(accounting_message)
         self.notifier.log_trade_table(exec_result)
 
