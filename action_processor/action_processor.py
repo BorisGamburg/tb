@@ -129,6 +129,7 @@ class ActionProcessor:
     def _exec_action(self, resolve_result):
         # Запускаем Executor
         exec_result = self.execution.execute(resolve_result.action_command)
+        
         # Лог
         self.notifier.log_execution(exec_result)
         self.notifier.notify_telegram(exec_result)
