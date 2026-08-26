@@ -129,8 +129,8 @@ class ActionProcessor:
         self.zmq_socket = self.zmq_context.socket(zmq.REP)
         self.zmq_socket.bind(self._get_external_endpoint())
 
-    def _resolve_exec_account(self, command):
-        resolve_result = self.strategy.resolve(command)
+    def _resolve_exec_account(self, external_command):
+        resolve_result = self.strategy.resolve(external_command)
 
         cmd = resolve_result.action_command
 
