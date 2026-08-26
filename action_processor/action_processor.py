@@ -78,7 +78,7 @@ class ActionProcessor:
 
                     try:
                         # Полный цикл обработки команды
-                        resolve_result = self._process_command(external_command)
+                        resolve_result = self._resolve_exec_account(external_command)
 
                         # Если команда пришла извне -> сообщаем результат
                         if external_command:
@@ -129,7 +129,7 @@ class ActionProcessor:
         self.zmq_socket = self.zmq_context.socket(zmq.REP)
         self.zmq_socket.bind(self._get_external_endpoint())
 
-    def _process_command(self, command):
+    def _resolve_exec_account(self, command):
         resolve_result = self.strategy.resolve(command)
 
         cmd = resolve_result.action_command
