@@ -70,8 +70,11 @@ class ActionProcessor:
                 screen=False,
             ) as self.live:
                 while not self.shutdown_event.is_set():
+                    # Получаем внешнюю команду
+                    external_command = self._get_external_command()
+
                     # Стратегия
-                    resolve_result = self.strategy.resolve(None)
+                    resolve_result = self.strategy.resolve(external_command)                    
 
                     # Получаем команду стратегии
                     cmd = resolve_result.action_command
