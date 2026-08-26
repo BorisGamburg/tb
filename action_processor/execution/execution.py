@@ -63,20 +63,20 @@ class Execution:
 
         return order_id, order_price, filled_qty, fee    
 
-    def execute(self, result: ActionCommand) -> ExecutionResult:
-        action = result.action
+    def execute(self, act_cmd: ActionCommand) -> ExecutionResult:
+        action = act_cmd.action
 
         if action == Action.OPEN:
-            price, qty, fee = self._exec_open(result)
+            price, qty, fee = self._exec_open(act_cmd)
 
         elif action == Action.CLOSE:
-            price, qty, fee = self._exec_close(result)
+            price, qty, fee = self._exec_close(act_cmd)
 
         else:
             raise ValueError(f"Unknown Action: {action}")
 
         return ExecutionResult(
-            action_command=result,
+            action_command=act_cmd,
             price=price,
             qty=qty,
             fee=fee,
