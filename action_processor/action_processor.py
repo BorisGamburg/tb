@@ -35,7 +35,6 @@ class ActionProcessor:
         self.state_store, self.strategy = StrategyFactory.initialize(
             config_file=self.config_file_path,
             app_ctx=self.app_ctx,
-            config_file=self.app_ctx.config_file,
         )        
 
         self._initialize_external_server()
