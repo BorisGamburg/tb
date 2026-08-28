@@ -62,6 +62,7 @@ class GridMTFStrategy(BaseStrategy):
         self.logger = app_ctx.logger
         self.map_mng = map_mng
         self.trading_info = trading_info
+        self.app_ctx = app_ctx
 
         # sleep (можешь заменить на свою политику)
         self.sleep_interval = 5.0
@@ -245,6 +246,10 @@ class GridMTFStrategy(BaseStrategy):
         return text
 
     def resolve(self, ctx) -> ResolveResult:
+        self.app_ctx.notifier.log(
+            self.app_ctx.notifier.build_stack_report()
+        )
+        
         status_line = self._get_status_line()
 
         start_result = self._check_start_strategy(status_line)
