@@ -1,3 +1,5 @@
+import time
+
 from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
@@ -37,6 +39,9 @@ class Hedge2Strategy(BaseStrategy):
                 status="TEST",
                 skip_sleep=False,
             )
+
+        if external_command and external_command.get("command") == "TEST_TIMEOUT":
+            time.sleep(10)
 
         # Получаем режим
         mode_result, status = self.hedge_mode_mng.check()
