@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import logging
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -10,6 +11,9 @@ from rich.logging import RichHandler
 from utils.telegram import Telegram
 from proxy_server.proxy_driver import ProxyDriver
 from common.price_service import PriceService
+
+if TYPE_CHECKING:
+    from action_processor.notifier import Notifier
 
 
 # CONTEXTS
@@ -34,6 +38,7 @@ class AppContext:
     console: Console
 
     dir_ctx: DirCtx
+    notifier: Notifier | None = None
 
 # Подготавливаем каталоги проекта: root, log, state, config 
 def prepare_dirs(
@@ -237,9 +242,7 @@ def setup_logger(
         "pybit"
     )
 
-    pybit_logger.setLevel(
-        logging.WARNING
-    )
+    pybit_logger.setLevel(logging.WARNING)
 
     return logger
 
@@ -298,4 +301,3 @@ def setup_trade_logger(
         trade_logger.info(header)
 
     return trade_logger
-
