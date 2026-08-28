@@ -32,6 +32,14 @@ class Hedge2Strategy(BaseStrategy):
             trading_info=trading_info,
         )
 
+        self._log_parameters()
+
+    def _log_parameters(self) -> None:
+        self.app_ctx.notifier.log(
+            f"Symbol: {self.state_store.data.symbol} | "
+            f"Side: {self.state_store.data.side}"
+        )
+
     def resolve(self, external_command) -> ResolveResult:
         if external_command and external_command.get("command") == "TEST":
             print("TEST")
