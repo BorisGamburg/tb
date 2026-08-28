@@ -14,6 +14,8 @@ class OrchestratorStrategy(BaseStrategy):
         super().__init__()
 
         self.state_store = state_store
+        self.symbol = state_store.data.symbol
+        self.managed_strategies = state_store.data.managed_strategies
         self.app_ctx = app_ctx
 
     def resolve(self, ctx) -> ResolveResult:
