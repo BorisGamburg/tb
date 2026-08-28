@@ -124,5 +124,27 @@ class StrategyFactory:
 
             return state_store, strategy
 
+        # =========================================================
+        # --- СТРАТЕГИЯ 3: orchestrator ---
+        # =========================================================
+        if strategy_name == "orchestrator":
+            from action_resolver.orchestrator_strategy.orchestrator_schema import OrchestratorSchema
+            from action_resolver.orchestrator_strategy.orchestrator_strategy import OrchestratorStrategy
+
+            config_data = OrchestratorSchema.model_validate(parsed_data)
+
+            state_store = State(
+                config_file=config_file,
+                config_data=config_data,
+                logger=app_ctx.logger,
+            )
+
+            strategy = OrchestratorStrategy(
+                state_store=state_store,
+                app_ctx=app_ctx,
+            )
+
+            return state_store, strategy        
+
         raise ValueError(f"Неизвестная стратегия: {strategy_name}")
 
