@@ -6,9 +6,11 @@ if __name__ == "__main__":
         "ipc:///tmp/CHILLGUYUSDT_hedge_2.sock"
     )
 
-    result = orchestrator.send_command({
-        "command": "TEST",
-    })
+    result = orchestrator.send_command(
+        {"command": "TEST"},
+        timeout=5.0,
+    )
 
     print(result)
+
     orchestrator.close()
