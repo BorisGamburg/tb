@@ -58,6 +58,7 @@ class ActionProcessor:
             telegram=self.telegram,
             state_store=self.state_store,
         )
+        self.app_ctx.notifier = self.notifier
 
         # Логирование параметров при инициализации
         self.notifier.log_parameters()
