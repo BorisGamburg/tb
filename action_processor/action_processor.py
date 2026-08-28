@@ -16,7 +16,8 @@ class ActionProcessor:
         # 1. Инициализация Strategy
         self.state_store, self.strategy = StrategyFactory.initialize(
             app_ctx=self.app_ctx,
-        )
+            config_file=self.app_ctx.config_file,
+        )        
 
         # 2. Инициализация Accounting
         self.accounting = Accounting(
