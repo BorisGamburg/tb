@@ -60,8 +60,6 @@ class ActionProcessor:
         )
         self.app_ctx.notifier = self.notifier
 
-        # Логирование параметров при инициализации
-        self.notifier.log_parameters()
 
     def run(self) -> None:
         self.iteration = 1
