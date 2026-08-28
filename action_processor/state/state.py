@@ -18,7 +18,7 @@ class State:
 
         # 2. Инициализируем StackManager только для стратегий со stack
         stack = getattr(self.data, "stack", None)
-        if self.data.stack is not None:
+        if stack is not None:
             self.stack_mng = StackMng(self.data.stack, self.logger) 
             self.stack_mng.sort_stack(self.data.side)
         else:
