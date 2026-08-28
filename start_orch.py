@@ -7,7 +7,7 @@ if __name__ == "__main__":
     )
 
     result = orchestrator.send_command(
-        {"command": "TEST"},
+        {"command": "TEST_TIMEOUT"},
         timeout=5.0,
     )
 
