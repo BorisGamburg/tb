@@ -7,9 +7,13 @@ class ZmqClient:
         self.socket = self.context.socket(zmq.REQ)
         self.socket.connect(endpoint)
 
-    def request(self, command: dict) -> dict:
+    def request(self, command: dict, timeout: float) -> dict | None:
         self.socket.send_json(command)
-        return self.socket.recv_json()
+
+        if self.socket.poll(int(timeout * 1000)):
+            return self.socket.recv_json()
+
+        return None
 
     def close(self):
         self.socket.close()
