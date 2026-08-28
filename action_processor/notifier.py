@@ -155,7 +155,6 @@ class Notifier:
     def log_iteration(self, iteration):
         self.logger.info("════════════════════════════════════════════════════════════")
         self.logger.info(f"Итерация {iteration}")
-        self.logger.info(self.build_stack_report())
 
     def log_parameters(self) -> None:
         state = self.state_store.data
