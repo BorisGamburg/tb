@@ -147,6 +147,26 @@ class GridMTFStrategy(BaseStrategy):
             runtime=self.runtime,
         )        
 
+        self._log_parameters()
+
+    def _log_parameters(self) -> None:
+        data = self.state_store.data
+        self.app_ctx.notifier.log(
+            f"Symbol: {data.symbol} | "
+            f"Side: {data.side} | "
+            f"Strategy: {data.strategy} | "
+            f"Min rearm distance: {data.min_rearm_distance_pct} | "
+            f"Min profit: {data.min_profit_pct} | "
+            f"Max profit: {data.max_profit_pct} | "
+            f"Sleep interval: {data.sleep_interval} | "
+            f"Require start condition: {data.require_start_condition} | "
+            f"Start condition type: {data.start_condition_type} | "
+            f"Start TF: {data.start_tf} | "
+            f"Start RSI threshold: {data.start_rsi_threshold} | "
+            f"TP price: {data.tp_price} | "
+            f"TP enabled: {data.tp_enabled}"
+        )    
+
     def _resolve_action(self, status_line: Text) -> ResolveResult | None:
         # Выход по пересечению предыдущего уровня
         action = self.partial_exit_cross.check()
