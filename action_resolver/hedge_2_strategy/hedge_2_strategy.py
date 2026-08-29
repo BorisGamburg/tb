@@ -43,9 +43,6 @@ class Hedge2Strategy(BaseStrategy):
                 skip_sleep=False,
             )
 
-        if external_command and external_command.get("command") == "TEST_TIMEOUT":
-            time.sleep(10)
-
         self.app_ctx.notifier.log(
             self.app_ctx.notifier.build_stack_report()
         )

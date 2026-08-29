@@ -216,7 +216,6 @@ class GridMTFStrategy(BaseStrategy):
         status_line = self._build_status_line(last_price)
         return status_line
 
-
     def _build_status_line(
         self,
         price: float,
@@ -247,7 +246,15 @@ class GridMTFStrategy(BaseStrategy):
 
         return text
 
-    def resolve(self, ctx) -> ResolveResult:
+    def resolve(self, external_command) -> ResolveResult:
+        if external_command and external_command.get("command") == "TEST":
+            print("TEST")
+            return ResolveResult(
+                action_command=None,
+                status="TEST",
+                skip_sleep=False,
+            )
+        
         self.app_ctx.notifier.log(
             self.app_ctx.notifier.build_stack_report()
         )
