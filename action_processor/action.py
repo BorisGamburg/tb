@@ -6,7 +6,8 @@ from action_processor.state.stack_schema import StackElem
 class Action(Enum):
     OPEN = "open"
     CLOSE = "close"
-    
+    CLOSE_POSITION = "close_position"
+
 @dataclass
 class ActionCommand:
     action: Action
