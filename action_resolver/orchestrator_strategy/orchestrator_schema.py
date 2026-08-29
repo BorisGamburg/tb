@@ -9,3 +9,4 @@ class OrchestratorSchema(BaseModel):
     symbol: str
     strategy: str
     managed_strategies: list[str]
+    sleep_interval: float
