@@ -20,6 +20,8 @@ class Accounting:
             message = self._apply_open(result)
         elif result.action_command.action == Action.CLOSE:
             message = self._apply_close(result)
+        elif result.action_command.action == Action.CLOSE_POSITION:
+            message = self._apply_close_position(result)            
         else:
             raise ValueError(f"⚠️ Unrecognized action: {result.action_command}")
 
@@ -57,4 +59,13 @@ class Accounting:
             f"[ACCOUNTING] OPEN | qty={result.qty} "
             f"| price={result.price} "
             f"| stack={len(self.stack_mng.data.entries)}"
+        )
+    
+    def _apply_close_position(self, result: ExecutionResult):
+        self.stack_mng.clear()
+    
+        return (
+            f"[ACCOUNTING] CLOSE_POSITION | "
+            f"qty={result.qty} "
+            f"| price={result.price}"
         )
