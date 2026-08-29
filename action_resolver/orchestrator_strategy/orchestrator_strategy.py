@@ -27,7 +27,7 @@ class OrchestratorStrategy(BaseStrategy):
 
             try:
                 result = orchestrator.send_command(
-                    {"command": "TEST"},
+                    {"command": "CLOSE_POSITION"},
                     timeout=5.0,
                 )
                 self.app_ctx.logger.info(
@@ -38,6 +38,6 @@ class OrchestratorStrategy(BaseStrategy):
 
         return ResolveResult(
             action_command=None,
-            status="TEST SENT",
+            status="CLOSE_POSITION SENT",
             skip_sleep=False,
-        )
+        )    

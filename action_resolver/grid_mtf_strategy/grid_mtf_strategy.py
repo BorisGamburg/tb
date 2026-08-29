@@ -248,6 +248,8 @@ class GridMTFStrategy(BaseStrategy):
         return text
 
     def resolve(self, external_command) -> ResolveResult:
+        print("external_command")
+        print(external_command)
         external_result = self._handle_external_command(external_command)
         if external_result is not None:
             return external_result
