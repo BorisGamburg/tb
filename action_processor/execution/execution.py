@@ -134,11 +134,7 @@ class Execution:
         position_qty = float(position["size"])
 
         if position_qty <= 0:
-            raise RuntimeError(
-                f"Cannot close position: position is empty "
-                f"| symbol={result.symbol} "
-                f"| side={result.side}"
-            )
+            return None, 0.0, 0.0
 
         order_side = get_inverse_side(result.side)
 
