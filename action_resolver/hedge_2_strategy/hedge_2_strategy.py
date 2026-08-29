@@ -1,5 +1,4 @@
 import time
-
 from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
@@ -8,6 +7,7 @@ from action_resolver.hedge_2_strategy.mode_to_action_transformer import transfor
 from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
 from action_resolver.resolve_result import ResolveResult
 from common.trading_info import TradingInfo
+from action_processor.action import Action, ActionCommand
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -35,14 +35,9 @@ class Hedge2Strategy(BaseStrategy):
         self._log_parameters()
 
     def resolve(self, external_command) -> ResolveResult:
-        if external_command and external_command.get("command") == "TEST":
-            print("TEST")
-            return ResolveResult(
-                action_command=None,
-                status="TEST",
-                skip_sleep=False,
-            )
-
+        external_result = self._handle_external_command(external_command)
+        if external_result is not None:
+            return external_result
 
         # Получаем режим
         mode_result, status = self.hedge_mode_mng.check()
@@ -89,3 +84,36 @@ class Hedge2Strategy(BaseStrategy):
         self.app_ctx.notifier.log(
             self.app_ctx.notifier.build_stack_report()
         )        
+
+    def _handle_external_command(
+        self,
+        external_command,
+    ) -> ResolveResult | None:
+
+        if not external_command:
+            return None
+
+        command = external_command.get("command")
+
+        if command == "CLOSE_POSITION":
+            action_command = ActionCommand(
+                action=Action.CLOSE_POSITION,
+                symbol=self.symbol,
+                side=self.state_store.data.side,
+            )
+
+            return ResolveResult(
+                action_command=action_command,
+                status="CLOSE_POSITION",
+                skip_sleep=False,
+            )
+
+        if command == "TEST":
+            print("TEST")
+            return ResolveResult(
+                action_command=None,
+                status="TEST",
+                skip_sleep=False,
+            )
+
+        return None        

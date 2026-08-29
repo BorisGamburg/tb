@@ -14,6 +14,7 @@ from action_resolver.resolve_result import ResolveResult
 from rich.text import Text
 from common.trading_info import TradingInfo
 from action_processor.action_guard import ActionGuard
+from action_processor.action import Action, ActionCommand
 
 
 @dataclass(slots=True)
@@ -247,14 +248,10 @@ class GridMTFStrategy(BaseStrategy):
         return text
 
     def resolve(self, external_command) -> ResolveResult:
-        if external_command and external_command.get("command") == "TEST":
-            print("TEST")
-            return ResolveResult(
-                action_command=None,
-                status="TEST",
-                skip_sleep=False,
-            )
-        
+        external_result = self._handle_external_command(external_command)
+        if external_result is not None:
+            return external_result
+            
         status_line = self._get_status_line()
 
         start_result = self._check_start_strategy(status_line)
@@ -306,3 +303,36 @@ class GridMTFStrategy(BaseStrategy):
         self.app_ctx.notifier.log(
             self.app_ctx.notifier.build_stack_report()
         )        
+
+    def _handle_external_command(
+        self,
+        external_command,
+    ) -> ResolveResult | None:
+
+        if not external_command:
+            return None
+
+        command = external_command.get("command")
+
+        if command == "CLOSE_POSITION":
+            action_command = ActionCommand(
+                action=Action.CLOSE_POSITION,
+                symbol=self.symbol,
+                side=self.state_store.data.side,
+            )
+
+            return ResolveResult(
+                action_command=action_command,
+                status="CLOSE_POSITION",
+                skip_sleep=False,
+            )
+
+        if command == "TEST":
+            print("TEST")
+            return ResolveResult(
+                action_command=None,
+                status="TEST",
+                skip_sleep=False,
+            )
+
+        return None        
