@@ -4,6 +4,7 @@ from action_processor.execution.chase_mng import ChaseMng
 from action_processor.execution.execution_waiter import ExecutionWaiter
 import logging
 from action_processor.execution.execution_result import ExecutionResult
+from utils.utils import get_inverse_side
 
 
 class Execution:
@@ -72,6 +73,9 @@ class Execution:
         elif action == Action.CLOSE:
             price, qty, fee = self._exec_close(act_cmd)
 
+        elif action == Action.CLOSE_POSITION:
+            price, qty, fee = self._exec_close_position(act_cmd)            
+
         else:
             raise ValueError(f"Unknown Action: {action}")
 
@@ -120,3 +124,42 @@ class Execution:
             )
 
         return order_price, filled_qty, fee
+
+    def _exec_close_position(self, result):
+        position = self.proxy_driver.get_position(
+            symbol=result.symbol,
+            side=result.side,
+        )
+
+        position_qty = float(position["size"])
+
+        if position_qty <= 0:
+            raise RuntimeError(
+                f"Cannot close position: position is empty "
+                f"| symbol={result.symbol} "
+                f"| side={result.side}"
+            )
+
+        order_side = get_inverse_side(result.side)
+
+        res = self._place_market_order(
+            symbol=result.symbol,
+            side=order_side,
+            qty=position_qty,
+        )
+
+        real_qty, avg_price, fee = self._get_order_details(
+            res=res,
+            symbol=result.symbol,
+        )
+
+        if abs(real_qty - position_qty) > 1e-8:
+            raise RuntimeError(
+                f"Close position partially filled "
+                f"| symbol={result.symbol} "
+                f"| side={result.side} "
+                f"| requested_qty={position_qty} "
+                f"| executed_qty={real_qty}"
+            )
+
+        return avg_price, real_qty, fee
