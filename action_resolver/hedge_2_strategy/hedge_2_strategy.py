@@ -34,12 +34,6 @@ class Hedge2Strategy(BaseStrategy):
 
         self._log_parameters()
 
-    def _log_parameters(self) -> None:
-        self.app_ctx.notifier.log(
-            f"Symbol: {self.state_store.data.symbol} | "
-            f"Side: {self.state_store.data.side}"
-        )
-
     def resolve(self, external_command) -> ResolveResult:
         if external_command and external_command.get("command") == "TEST":
             print("TEST")
@@ -88,4 +82,11 @@ class Hedge2Strategy(BaseStrategy):
             f"PNL: {status.pnl:+.6f} | "
             f"MODE: {status.mode.name} | "
             f"PAIRS: {status.pairs}"
+        )
+
+
+    def _log_parameters(self) -> None:
+        self.app_ctx.logger.info(
+            f"Symbol: {self.state_store.data.symbol} | "
+            f"Side: {self.state_store.data.side}"
         )
