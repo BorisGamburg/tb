@@ -7,6 +7,9 @@ class StackMng:
     def __init__(self, stack_data: StackData, logger: logging.Logger):
         self.data = stack_data # Ссылка на StateDataSchema.order_stack (StackData)
         self.logger = logger
+
+    def clear(self):
+        self.data.entries.clear()    
     
     def size(self) -> int:
         """Возвращает текущий размер стека."""
