@@ -155,6 +155,7 @@ class Notifier:
     def log_iteration(self, iteration):
         self.logger.info("════════════════════════════════════════════════════════════")
         self.logger.info(f"Итерация {iteration}")
+        self.log_stack_report()
 
     def log_parameters(self) -> None:
         state = self.state_store.data
@@ -205,3 +206,7 @@ class Notifier:
             f"| qty={exec_result.qty} "
             f"| price={exec_result.price}"
         )             
+
+    def log_stack_report(self) -> None:
+        if hasattr(self.state_store.data, "stack"):
+            self.log(self.build_stack_report())

@@ -157,6 +157,7 @@ class ActionProcessor:
 
         # Логируем итерацию
         self.notifier.log_iteration(self.iteration)
+        self.strategy.log_stack_report()
 
     def stop(self) -> None:
         self.logger.info("Остановка TradeOverBot...")
