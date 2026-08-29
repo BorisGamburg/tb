@@ -255,10 +255,6 @@ class GridMTFStrategy(BaseStrategy):
                 skip_sleep=False,
             )
         
-        self.app_ctx.notifier.log(
-            self.app_ctx.notifier.build_stack_report()
-        )
-        
         status_line = self._get_status_line()
 
         start_result = self._check_start_strategy(status_line)
@@ -305,3 +301,8 @@ class GridMTFStrategy(BaseStrategy):
             f"Start RSI threshold: {data.start_rsi_threshold} | "
             # здесь оставь остальные текущие строки параметров без изменений
         )
+
+    def on_iteration(self) -> None:
+        self.app_ctx.notifier.log(
+            self.app_ctx.notifier.build_stack_report()
+        )        

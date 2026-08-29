@@ -43,9 +43,6 @@ class Hedge2Strategy(BaseStrategy):
                 skip_sleep=False,
             )
 
-        self.app_ctx.notifier.log(
-            self.app_ctx.notifier.build_stack_report()
-        )
 
         # Получаем режим
         mode_result, status = self.hedge_mode_mng.check()
@@ -87,3 +84,8 @@ class Hedge2Strategy(BaseStrategy):
             f"Symbol: {self.state_store.data.symbol} | "
             f"Side: {self.state_store.data.side}"
         )
+
+    def on_iteration(self) -> None:
+        self.app_ctx.notifier.log(
+            self.app_ctx.notifier.build_stack_report()
+        )        

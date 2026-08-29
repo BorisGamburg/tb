@@ -63,7 +63,7 @@ class ActionProcessor:
 
     def run(self) -> None:
         self.iteration = 1
-        self.notifier.log_iteration(self.iteration)
+        self._on_iteration()
         try:
             with Live(
                 Text(),
@@ -155,9 +155,7 @@ class ActionProcessor:
         # Увеличиваем номер итерации
         self.iteration += 1
 
-        # Логируем итерацию
-        self.notifier.log_iteration(self.iteration)
-        self.strategy.log_stack_report()
+        self._on_iteration()
 
     def stop(self) -> None:
         self.logger.info("Остановка TradeOverBot...")
@@ -169,3 +167,11 @@ class ActionProcessor:
         self.state_store.save()
              
         self.logger.info("TradeOverBot остановлен.")
+
+    def _on_iteration(self) -> None:
+        self.notifier.log_iteration(self.iteration)
+
+        on_iteration = getattr(self.strategy, "on_iteration", None)
+
+        if on_iteration is not None:
+            on_iteration()        
