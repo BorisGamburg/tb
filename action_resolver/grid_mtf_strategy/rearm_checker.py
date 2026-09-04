@@ -6,6 +6,7 @@ from services.distance_service import (
     is_distance_ok,
 )
 from common.trading_info import TradingInfo
+from action_processor.action_source import ActionSource
 
 
 class RearmChecker:
@@ -47,31 +48,30 @@ class RearmChecker:
             "rsi_last_closed"
         )
 
-    def _is_rsi_ok(
-        self,
-        rsi,
-        threshold,
-    ):
-
-        if rsi is None:
-            return False
-
-        if self.side == "Sell":
-            return rsi >= threshold
-
-        return rsi <= threshold
-    
-    def check(self):
+   
+    def check(self, execution_result=None) -> ActionCommand | None:
+        # Проверяем, есть ли запрос на rearm. 
         if not self.runtime.pending_rearm:
             return None
 
-        self.runtime.pending_rearm = False
+        # Проверяем результат rearm-ордера из предыдущего цикла.
+        if (
+            execution_result is not None
+            and execution_result.action_command.source
+            == ActionSource.REARM_CHECKER
+        ):
+            if execution_result.executed:
+                # Предыдущий rearm успешно выполнен.
+                self.runtime.pending_rearm = False
+                return None
+
+            # Предыдущий rearm НЕ выполнен.
+            # pending_rearm оставляем True — будем пробовать снова.
 
         rearm_ready = self._is_rearm_ready()
-
         if not rearm_ready:
             self.logger.info(
-                "[REARM][BLOCKED] Перезарядка пропущена: дистанция от входа не набрана"
+                f"[REARM] {self.runtime.rearm_status}"
             )
             return None
 
@@ -83,6 +83,7 @@ class RearmChecker:
             side=self.side,
             qty=qty,
             reason="rearm",
+            source=ActionSource.REARM_CHECKER,
         )    
     
     def _is_rearm_distance_ok(
@@ -125,12 +126,16 @@ class RearmChecker:
             tpl.htf_filter
         )
 
-        threshold = tpl.htf_rsi_entry_threshold
+        threshold = tpl.htf_rsi_rearm_threshold
 
         rsi_ok = self._is_rsi_ok(
             rsi,
             threshold,
         )
+
+        self.runtime.rsi_exit_status = (
+            "OK" if rsi_ok else "BLOCK"
+        )        
 
         return rsi_ok    
     
@@ -138,7 +143,7 @@ class RearmChecker:
 
         entries = self.state_store.stack_mng.data.entries
 
-        chase_price = self.price_service.get_chase_price(
+        chase_price = self.price_service.get_orderbook_side_price(
             self.symbol,
             self.side,
         )
@@ -148,11 +153,18 @@ class RearmChecker:
             entries,
         )
 
-        # rsi_ok = self.is_rearm_rsi_ok(entries)
+        rsi_ok = self.is_rearm_rsi_ok(entries)
 
-        return distance_ok
+        if distance_ok and rsi_ok:
+            self.runtime.rearm_status = "READY"
+        elif not distance_ok and not rsi_ok:
+            self.runtime.rearm_status = "BLOCK: DISTANCE + RSI"
+        elif not distance_ok:
+            self.runtime.rearm_status = "BLOCK: DISTANCE"
+        else:
+            self.runtime.rearm_status = "BLOCK: RSI"        
 
-        # return distance_ok and rsi_ok
+        return distance_ok and rsi_ok
 
     def _get_qty(self):
         level = len(self.state_store.stack_mng.data.entries)
@@ -175,3 +187,19 @@ class RearmChecker:
             )
 
         return qty        
+
+    def _is_rsi_ok(
+        self,
+        rsi,
+        threshold,
+    ):
+
+        if rsi is None:
+            raise RuntimeError(
+                f"RSI is unavailable: symbol={self.symbol}"
+            )
+
+        if self.side == "Sell":
+            return rsi >= threshold
+
+        return rsi <= threshold    

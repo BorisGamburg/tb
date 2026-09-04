@@ -8,6 +8,8 @@ from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
 from action_resolver.resolve_result import ResolveResult
 from common.trading_info import TradingInfo
 from action_processor.action import Action, ActionCommand
+from signals.ha_reversal_signal import HAReversalSignal
+from action_resolver.hedge_2_strategy.build_mng import calc_hedge_qty
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -25,6 +27,7 @@ class Hedge2Strategy(BaseStrategy):
         self.proxy_driver = app_ctx.proxy_driver
 
         self.symbol = state_store.data.symbol
+        self.trading_info = trading_info
 
         self.hedge_mode_mng = HedgeModeMng(
             app_ctx=app_ctx,
@@ -32,12 +35,22 @@ class Hedge2Strategy(BaseStrategy):
             trading_info=trading_info,
         )
 
+        self.ha_signal = HAReversalSignal(
+            proxy_driver=self.proxy_driver,
+            symbol=self.symbol,
+        )
+
         self._log_parameters()
 
-    def resolve(self, external_command) -> ResolveResult:
+    def resolve(self, external_command, execution_result=None) -> ResolveResult:
         external_result = self._handle_external_command(external_command)
         if external_result is not None:
             return external_result
+
+        # 1. Проверяем одноразовый триггер Recovery
+        recovery_result = self._try_execute_recovery()
+        if recovery_result is not None:
+            return recovery_result        
 
         # Получаем режим
         mode_result, status = self.hedge_mode_mng.check()
@@ -118,3 +131,54 @@ class Hedge2Strategy(BaseStrategy):
             )
 
         return None        
+
+    def _try_execute_recovery(self) -> ResolveResult | None:
+        # Если recovery не нужен, то выходим
+        if not self.state_store.data.recovery_enabled:
+            return None
+
+        # Читаем параметры нужные для recovery
+        rec_tf = self.state_store.data.recovery_timeframe
+        side = self.state_store.data.side
+
+        is_reversal, _ = self.ha_signal.is_entry(tf=rec_tf, side=side)
+        if is_reversal:
+            # Получаем размер уровня для recovery
+            qty = self._calc_recovery_qty()
+            if qty == 0.0:
+                return None
+
+            # Отключаем recovery-флаг
+            self.state_store.data.recovery_enabled = False
+            self.state_store.save()
+
+            # Формируем команду для открытия уровня
+            action_command = ActionCommand(
+                action=Action.OPEN,
+                symbol=self.symbol,
+                side=side,
+                qty=qty,
+                reason="recovery_reversal",
+            )
+
+            return ResolveResult(
+                action_command=action_command,
+                status=f"RECOVERY EXECUTED on {rec_tf} | qty={qty}",
+                skip_sleep=False,
+            )
+
+        return None
+
+    def _calc_recovery_qty(self) -> float:
+        side = self.state_store.data.side
+        main_side = "Sell" if side == "Buy" else "Buy"
+
+        main_pos = self.proxy_driver.get_position(self.symbol, main_side)
+        main_qty = float(main_pos["size"])
+
+        hedge_qty_ratio = self.state_store.data.hedge_qty_pct / 100
+        return calc_hedge_qty(
+            main_qty=main_qty,
+            hedge_qty_ratio=hedge_qty_ratio,
+            trading_info=self.trading_info,
+        )

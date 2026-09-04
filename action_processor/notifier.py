@@ -110,12 +110,19 @@ class Notifier:
             
             # Пытаемся достать имя темплейта
             template_name = "unknown"
+            qty_pct = None
             if hasattr(map_mng, 'templates_sorted') and level < len(map_mng.templates_sorted):
-                template_name, _ = map_mng.templates_sorted[level]
+                template_name, map_elem = map_mng.templates_sorted[level]
+                qty_pct = map_elem.qty_pct
             elif level >= len(map_mng.templates_sorted):
                 template_name = "MAX_LEVEL"
 
-            return f"TEMPLATE: {template_name} | TF: {tf}"
+            return (
+                f"TEMPLATE: {template_name} | "
+                f"TF: {tf} | "
+                f"QTY PCT: {qty_pct}%"
+            )
+
             
         except Exception as e:
             return f"TF_INFO: Error ({e})"       
@@ -206,3 +213,34 @@ class Notifier:
             f"| price={exec_result.price}"
         )             
 
+    def log_distance_blocked(self, runtime) -> None:
+        """
+        Логирует событие, когда сигналы HA и RSI готовы к входу, но дистанция блокирует ордер.
+        Пишет в лог строго один раз при наступлении события.
+        Состояние флага хранится внутри самой функции.
+        """
+        fn = Notifier.log_distance_blocked
+        is_logged = getattr(fn, "_logged", False)
+
+        ha_status = getattr(runtime, 'ha_entry_status', '')
+        rsi_status = getattr(runtime, 'rsi_entry_status', '')
+        dist_status = getattr(runtime, 'distance_entry_status', '')
+
+        ha_plain = getattr(ha_status, 'plain', str(ha_status))
+        rsi_plain = getattr(rsi_status, 'plain', str(rsi_status))
+
+        ha_ok = 'PASS' in ha_plain
+        rsi_ok = 'PASS' in rsi_plain
+        dist_blocked = 'BLOCK' in str(dist_status)
+
+        if ha_ok and rsi_ok and dist_blocked:
+            if not is_logged:
+                symbol = self.state_store.data.symbol
+                side = self.state_store.data.side
+                self.logger.info(
+                    f"[ENTRY BLOCKED BY DISTANCE] Symbol: {symbol} | Side: {side} | "
+                    f"HA: PASS | RSI: PASS | DIST: {dist_status}"
+                )
+                fn._logged = True
+        else:
+            fn._logged = False

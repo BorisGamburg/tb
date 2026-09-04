@@ -133,6 +133,11 @@ class StrategyFactory:
 
             config_data = OrchestratorSchema.model_validate(parsed_data)
 
+            trading_info = cls._load_trading_info(
+                symbol=config_data.symbol,
+                proxy_driver=app_ctx.proxy_driver,
+            )
+
             state_store = State(
                 config_file=config_file,
                 config_data=config_data,
@@ -142,9 +147,10 @@ class StrategyFactory:
             strategy = OrchestratorStrategy(
                 state_store=state_store,
                 app_ctx=app_ctx,
+                trading_info=trading_info,
             )
 
-            return state_store, strategy        
+            return state_store, strategy
 
         raise ValueError(f"Неизвестная стратегия: {strategy_name}")
 

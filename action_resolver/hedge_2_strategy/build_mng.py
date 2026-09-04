@@ -9,7 +9,7 @@ class BuildResult:
     report: str
 
 
-def _calc_hedge_qty(
+def calc_hedge_qty(
     main_qty: float,
     hedge_qty_ratio: float,
     trading_info,
@@ -57,7 +57,7 @@ def check_build(
     report = ""
 
     # Рассчитываем объем одного уровня защиты
-    hedge_qty = _calc_hedge_qty(
+    hedge_qty = calc_hedge_qty(
         main_qty=main_pos_size,
         hedge_qty_ratio=hedge_qty_ratio,
         trading_info=trading_info,

@@ -639,6 +639,33 @@ class BybitDriver:
         
         # Вызов с повторными попытками
         return self.retry_api_call(call)
+    
+    def get_order_status(self, symbol, order_id):
+        """
+        Получает текущее состояние ордера от Bybit.
+        """
+        def call():
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "orderId": order_id,
+            }
+
+            response: Any = self.http_client.get_open_orders(**params)
+
+            if response["retCode"] != 0:
+                raise Exception(
+                    f"Ошибка получения статуса ордера: {response['retMsg']}"
+                )
+
+            orders = response.get("result", {}).get("list", [])
+
+            if not orders:
+                return None
+
+            return orders[0]
+
+        return self.retry_api_call(call)    
 
     def get_total_equity(self):
         """Возвращает общую стоимость аккаунта (Equity) в USDT."""

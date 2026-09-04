@@ -24,6 +24,10 @@ class Hedge2Schema(BaseModel):
     # Start
     start_tf: AllowedTimeframes | None
 
+    # --- Recovery ---
+    recovery_enabled: bool
+    recovery_timeframe: AllowedTimeframes
+
     sleep_interval: float
 
     # --- Stack / текущие уровни ---

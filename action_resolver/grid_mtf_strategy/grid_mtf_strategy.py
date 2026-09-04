@@ -5,9 +5,9 @@ from action_resolver.grid_mtf_strategy.start_condition_checker import StartCondi
 from action_processor.bootstrap import AppContext
 from action_resolver.grid_mtf_strategy.partial_exit_cross import PartialExitCross
 from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
-from action_resolver.grid_mtf_strategy.ha_exit import HAExit
 from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW
+from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
 from dataclasses import dataclass, field
 from action_resolver.grid_mtf_strategy.rearm_checker import RearmChecker
 from action_resolver.resolve_result import ResolveResult
@@ -24,9 +24,6 @@ class GridMTFRuntime:
     rearm_status: Text = field(
         default_factory=lambda: Text("OFF", style="dim")
     )
-    ha_exit_status: Text = field(
-        default_factory=lambda: Text("N/A", style="dim")
-    )
     rsi_exit_status: Text = field(
         default_factory=lambda: Text("N/A", style="dim")
     )
@@ -42,6 +39,7 @@ class GridMTFRuntime:
     distance_status: Text = field(
         default_factory=lambda: Text("N/A", style="dim")
     )
+    distance_entry_status: str = "N/A"
     guard_status: Text | None = None
 
 class GridMTFStrategy(BaseStrategy):
@@ -95,17 +93,6 @@ class GridMTFStrategy(BaseStrategy):
             breakeven_checker=self.breakeven_checker,
         )    
 
-        self.ha_exit = HAExit(
-            runtime=self.runtime,
-            state_store=self.state_store,
-            map_mng=self.map_mng,
-            proxy_driver=self.proxy_driver,
-            price_service=self.price_service,
-            symbol=self.symbol,
-            side=self.side,
-            fee_taker=self.trading_info.fee_taker,
-        )
-
         self.entry_checker = EntryChecker(
             runtime=self.runtime,
             state_store=self.state_store,
@@ -146,11 +133,19 @@ class GridMTFStrategy(BaseStrategy):
             logger=self.logger,
             telegram=app_ctx.telegram,
             runtime=self.runtime,
-        )        
+            state_store=self.state_store,
+        )
+
+        self.profit_filter = ProfitFilter(
+            price_service=self.price_service,
+            symbol=self.symbol,
+            side=self.side,
+            fee_taker=self.trading_info.fee_taker,
+        )
 
         self._log_parameters()
 
-    def _resolve_action(self, status_line: Text) -> ResolveResult | None:
+    def _resolve_action(self, status_line: Text, execution_result=None,) -> ResolveResult:
         # Выход по пересечению предыдущего уровня
         action = self.partial_exit_cross.check()
         if action:
@@ -169,17 +164,8 @@ class GridMTFStrategy(BaseStrategy):
                 skip_sleep=self.runtime.pending_rearm,
             )
 
-        # Выход по HA exit
-        action = self.ha_exit.check()
-        if action:
-            return ResolveResult(
-                action_command=action,
-                status=status_line,
-                skip_sleep=self.runtime.pending_rearm,
-            )
-
         # Проверка на rearm
-        action = self.rearm_checker.check()
+        action = self.rearm_checker.check(execution_result)
         if action:
             return ResolveResult(
                 action_command=action,
@@ -189,6 +175,7 @@ class GridMTFStrategy(BaseStrategy):
 
         # Проверка на вход
         action = self.entry_checker.check()
+        self.app_ctx.notifier.log_distance_blocked(self.runtime)
         if action:
             return ResolveResult(
                 action_command=action,
@@ -196,8 +183,12 @@ class GridMTFStrategy(BaseStrategy):
                 skip_sleep=self.runtime.pending_rearm,
             )
 
-        return None
-
+        return ResolveResult(
+            action_command=None,
+            status=status_line,
+            skip_sleep=self.runtime.pending_rearm,
+        )
+    
     def _check_start_strategy(self, status_line: Text) -> ResolveResult | None:
         if self.state_store.data.require_start_condition and not self._started:
             if not self.start_condition_checker.check():
@@ -223,7 +214,6 @@ class GridMTFStrategy(BaseStrategy):
     ) -> Text:
 
         text = Text()
-
         text.append(f"PRICE: {price:.6f}  ", style="cyan")
 
         text.append("\nENTRY | HA: ", style="cyan")
@@ -232,10 +222,7 @@ class GridMTFStrategy(BaseStrategy):
         text.append(" | RSI: ", style="cyan")
         text.append(self.runtime.rsi_entry_status)
 
-        text.append("\nEXIT  | HA: ", style="cyan")
-        text.append(self.runtime.ha_exit_status)
-
-        text.append(" | RSI: ", style="cyan")
+        text.append("\nEXIT  | RSI: ", style="cyan")
         text.append(self.runtime.rsi_exit_status)
 
         text.append(" | BBW: ", style="cyan")
@@ -247,57 +234,22 @@ class GridMTFStrategy(BaseStrategy):
 
         return text
 
-    def resolve(self, external_command) -> ResolveResult:
-        external_result = self._handle_external_command(external_command)
-        if external_result is not None:
-            return external_result
-            
-        status_line = self._get_status_line()
-
-        start_result = self._check_start_strategy(status_line)
-        if start_result is not None:
-            return start_result
-
-        resolve_result = self._resolve_action(status_line)
-
-        if resolve_result is None:
-            return ResolveResult(
-                action_command=None,
-                status=status_line,
-                skip_sleep=self.runtime.pending_rearm,
-            )
-
-        # Проверяем разрешена ли эта команда
-        cmd = resolve_result.action_command
-        if cmd and not self.action_guard.is_allowed(cmd):
-            # ActionGuard мог изменить runtime.guard_status,
-            # поэтому обновляем статусную строку.
-            status_line = self._get_status_line()
-
-            return ResolveResult(
-                action_command=None,
-                status=status_line,
-                skip_sleep=self.runtime.pending_rearm,
-            )
-
-        return resolve_result    
-
     def _log_parameters(self) -> None:
         data = self.state_store.data
-        self.app_ctx.logger.info(
-            f"Symbol: {data.symbol} | "
-            f"Side: {data.side} | "
-            f"Strategy: {data.strategy} | "
-            f"Min rearm distance: {data.min_rearm_distance_pct} | "
-            f"Min profit: {data.min_profit_pct} | "
-            f"Max profit: {data.max_profit_pct} | "
-            f"Sleep interval: {data.sleep_interval} | "
-            f"Require start condition: {data.require_start_condition} | "
-            f"Start condition type: {data.start_condition_type} | "
-            f"Start TF: {data.start_tf} | "
-            f"Start RSI threshold: {data.start_rsi_threshold} | "
-            # здесь оставь остальные текущие строки параметров без изменений
+        params = (
+            f"Symbol: {data.symbol}\n"
+            f"Side: {data.side}\n"
+            f"Strategy: {data.strategy}\n"
+            f"Min rearm distance: {data.min_rearm_distance_pct}\n"
+            f"Min profit: {data.min_profit_pct}\n"
+            f"Max profit: {data.max_profit_pct}\n"
+            f"Sleep interval: {data.sleep_interval}\n"
+            f"Require start condition: {data.require_start_condition}\n"
+            f"Start condition type: {data.start_condition_type}\n"
+            f"Start TF: {data.start_tf}\n"
+            f"Start RSI threshold: {data.start_rsi_threshold}"
         )
+        self.app_ctx.logger.info(params)
 
     def on_iteration(self) -> None:
         self.app_ctx.notifier.log(
@@ -336,3 +288,32 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         return None        
+
+    def is_exit_allowed(self) -> bool:
+        """
+        Проверяет, можно ли закрывать уровни сейчас.
+        """
+        if not self.state_store.data.exit_guard_enabled:
+            self.runtime.guard_status = None
+            return True
+
+        return self.action_guard.is_allowed()
+
+    def resolve(self, external_command, execution_result=None,) -> ResolveResult:
+            external_result = self._handle_external_command(external_command)
+            if external_result is not None:
+                return external_result
+
+            is_allowed = self.is_exit_allowed()
+            status_line = self._get_status_line()
+
+            if not is_allowed:
+                return ResolveResult(
+                    action_command=None,
+                    status=status_line,
+                    skip_sleep=self.runtime.pending_rearm,
+                )
+
+            return self._resolve_action(status_line, execution_result,)
+
+             

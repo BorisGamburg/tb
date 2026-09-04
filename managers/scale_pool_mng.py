@@ -1,27 +1,39 @@
+from logging import Logger
 import random
+from common.market_service import MarketService
+from proxy_server.proxy_driver import ProxyDriver
 
 
-class ChasePoolMng:
+class ScalePoolMng:
     POOL_DIST_THRESHOLD_RATIO = 0.5
 
-    def __init__(self, proxy_driver, price_service, logger):
+    def __init__(
+        self,
+        proxy_driver: ProxyDriver,
+        price_service: MarketService,
+        logger: Logger,
+    ) -> None:
         self.proxy_driver = proxy_driver
         self.price_service = price_service
         self.logger = logger
 
-    def move_lim_order_from_pool(self, symbol, side, qty, sl_ratio=None):
-        # Перемещаем лим ордер из пула
-        # Получение текущей цены
-        chase_price = self.price_service.get_chase_price(
+    # Перемещаем лим ордер из пула
+    def move_chase_order_from_pool(self, symbol, side, qty, sl_ratio=None):
+        order = self._get_pool_order(
+            symbol=symbol,
+            side=side,
+        )
+        # Получаем текущую цену с нужной стороны стакана
+        orderbook_side_price = self.price_service.get_orderbook_side_price(
             symbol=symbol,
             side=side,
         )
 
-        # Вызываем функцию для перемещения ордера из пула
-        move_result = self._move_lim_order_from_pool(
+        # Перемещаем ордер из пула на новую цену и количество
+        move_result = self.move_order_from_pool(
             symbol=symbol, 
             side=side, 
-            new_price=chase_price, 
+            new_price=orderbook_side_price, 
             new_qty=qty,
             sl_ratio=sl_ratio,
         )
@@ -29,28 +41,7 @@ class ChasePoolMng:
         # Успешный выход
         return move_result
 
-    def _move_lim_order_from_pool(
-        self,
-        symbol,
-        side,
-        new_price,
-        new_qty,
-        sl_ratio=None,
-    ):
-        order = self._get_pool_order_for_move(
-            symbol=symbol,
-            side=side,
-        )
-        return self._try_to_move_order(
-            symbol=symbol,
-            side=side,
-            order_id=order["orderId"],
-            new_price=new_price,
-            new_qty=new_qty,
-            sl_ratio=sl_ratio,
-        )    
-
-    def _get_pool_order_for_move(self, symbol, side):
+    def _get_pool_order(self, symbol, side):
         """
         Получает подходящий ордер из пула для перемещения.
         Валидирует наличие открытых лимитных ордеров и ищет ордер в пуле.
@@ -131,7 +122,54 @@ class ChasePoolMng:
         if status != "ORDER_CHANGED":
             raise Exception(f"❌ Не удалось переместить ордер из пула: {res}")
         
-        return {"retCode": "OK", "orderId": order_id, "newPrice": new_price}
+        return {"retCode": "OK", 
+                "orderId": order_id, 
+                "newPrice": new_price
+                }
 
+    def move_order_from_pool(
+        self,
+        symbol,
+        side,
+        new_price,
+        new_qty,
+        sl_ratio=None,
+    ):
+        order = self._get_pool_order(
+            symbol=symbol,
+            side=side,
+        )
 
+        return self._try_to_move_order(
+            symbol=symbol,
+            side=side,
+            order_id=order["orderId"],
+            new_price=new_price,
+            new_qty=new_qty,
+            sl_ratio=sl_ratio,
+        )    
+
+    def move_order_to_pool(
+        self,
+        symbol,
+        side,
+        order_id,
+        new_qty,
+        sl_ratio=None,
+    ):
+        pool_order = self._get_pool_order(
+            symbol=symbol,
+            side=side,
+        )
+
+        pool_price = float(pool_order["price"])
+
+        return self._try_to_move_order(
+            symbol=symbol,
+            side=side,
+            order_id=order_id,
+            new_price=pool_price,
+            new_qty=new_qty,
+            sl_ratio=sl_ratio,
+        )    
 

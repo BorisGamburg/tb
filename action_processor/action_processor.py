@@ -31,6 +31,7 @@ class ActionProcessor:
         self.proxy_driver = app_ctx.proxy_driver
         self.config_file_path = app_ctx.config_file
         self.telegram = app_ctx.telegram
+        self.previous_execution_result = None
 
         self.state_store, self.strategy = StrategyFactory.initialize(
             config_file=self.config_file_path,
@@ -129,7 +130,10 @@ class ActionProcessor:
         self.zmq_socket.bind(self._get_external_endpoint())
 
     def _resolve_exec_account(self, external_command):
-        resolve_result = self.strategy.resolve(external_command)
+        resolve_result = self.strategy.resolve(
+            external_command, 
+            execution_result=self.previous_execution_result,
+        )
 
         cmd = resolve_result.action_command
 
@@ -138,24 +142,6 @@ class ActionProcessor:
             self._exec_action(resolve_result)
 
         return resolve_result
-
-    def _exec_action(self, resolve_result):
-        # Запускаем Executor
-        exec_result = self.execution.execute(resolve_result.action_command)
-        # Логируем результаты запуска
-        self.notifier.log_execution(exec_result)
-        self.notifier.notify_telegram(exec_result)
-
-        # Запускаем Accounter
-        accounting_message = self.accounting.apply(exec_result)
-        # Логируем результаты запуска
-        self.notifier.log(accounting_message)
-        self.notifier.log_trade_table(exec_result)
-
-        # Увеличиваем номер итерации
-        self.iteration += 1
-
-        self._on_iteration()
 
     def stop(self) -> None:
         self.logger.info("Остановка TradeOverBot...")
@@ -174,4 +160,34 @@ class ActionProcessor:
         on_iteration = getattr(self.strategy, "on_iteration", None)
 
         if on_iteration is not None:
-            on_iteration()        
+            on_iteration()       
+
+    def _exec_action(self, resolve_result):
+        # Запускаем Executor
+        exec_result = self.execution.execute(
+            resolve_result.action_command
+        )
+
+        # Логируем результат попытки
+        self.notifier.log_execution(exec_result)
+
+        # Сохраняем результат последнего исполнения для использования в следующей итерации
+        self.previous_execution_result = exec_result
+
+        # Если ордер не был исполнен, выходим из функции
+        if not exec_result.executed:
+            return
+
+        # Уведомляем о фактическом исполнении
+        self.notifier.notify_telegram(exec_result)
+
+        # Запускаем Accounter
+        accounting_message = self.accounting.apply(exec_result)
+
+        # Логируем результаты
+        self.notifier.log(accounting_message)
+        self.notifier.log_trade_table(exec_result)
+
+        # Увеличиваем номер итерации
+        self.iteration += 1
+        self._on_iteration()             

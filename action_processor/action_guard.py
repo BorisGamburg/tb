@@ -19,7 +19,8 @@ class ActionGuard:
         side,
         logger,
         telegram,
-        runtime=None,
+        runtime,
+        state_store,
     ):
         self.proxy_driver = proxy_driver
         self.symbol = symbol
@@ -27,37 +28,51 @@ class ActionGuard:
         self.logger = logger
         self.telegram = telegram
         self.runtime = runtime
+        self.state_store = state_store
 
         self._last_state: tuple | None = None
 
-    def is_allowed(self, act_cmd: ActionCommand) -> bool:
-        if not act_cmd:
-            self._update_status(None)
-            return False
+    def is_allowed(self) -> bool:
+        result = self._check()
 
-        result = self._check(act_cmd)
-
-        self._update_status(act_cmd, result)
-        self._handle_state_change(act_cmd, result)
+        self._update_status(result)
+        self._handle_state_change(result)
 
         return result.allowed
 
-    def _check(
-        self,
-        act_cmd: ActionCommand,
-    ) -> GuardResult:
+    def _check(self) -> GuardResult:
 
-        if act_cmd.action == Action.CLOSE:
-            levels = act_cmd.levels
+        candidate = self._get_most_profitable_level(
+            self.state_store.stack_mng.data.entries,
+        )
+        if candidate is None:
+            return GuardResult(
+                allowed=True,
+            )
 
-            if not self.can_close_levels(levels):
-                return GuardResult(
-                    allowed=False,
-                    reason="hedge_ratio",
-                )
+        if not self.can_close_levels([candidate]):
+            return GuardResult(
+                allowed=False,
+                reason="hedge_ratio",
+            )
 
         return GuardResult(
             allowed=True,
+        )
+
+    def _get_most_profitable_level(self, levels):
+        if not levels:
+            return None
+
+        if self.side == "Sell":
+            return max(
+                levels,
+                key=lambda level: float(level.price),
+            )
+
+        return min(
+            levels,
+            key=lambda level: float(level.price),
         )
 
     def can_close_levels(
@@ -69,16 +84,14 @@ class ActionGuard:
             return True
 
         close_qty = sum(
-            level.qty
+            float(level.qty)
             for level in levels
         )
 
-        main_pos = self.proxy_driver.get_position(
-            self.symbol,
-            self.side,
-        )
-        main_qty = float(
-            main_pos["size"]
+        entries = self.state_store.stack_mng.data.entries
+        main_qty = sum(
+            float(entry.qty)
+            for entry in entries
         )
 
         hedge_pos = self.proxy_driver.get_position(
@@ -95,37 +108,42 @@ class ActionGuard:
 
     def _update_status(
         self,
-        act_cmd: ActionCommand | None,
         result: GuardResult | None = None,
     ) -> None:
         if self.runtime is None:
             return
 
-        if act_cmd is None or result is None or result.allowed:
+        if result is None:
             self.runtime.guard_status = None
             return
 
-        action_name = act_cmd.action.value.upper()
+        if result.allowed:
+            status = Text()
+            status.append(
+                "CLOSE",
+                style="white on green",
+            )
+            status.append(" ALLOWED")
+            self.runtime.guard_status = status
+            return
 
         status = Text()
         status.append(
-            action_name,
+            "CLOSE",
             style="white on red",
         )
         status.append(
             f" BLOCK({result.reason})"
         )
 
-        self.runtime.guard_status = status    
+        self.runtime.guard_status = status
 
     def _handle_state_change(
         self,
-        act_cmd: ActionCommand,
         result: GuardResult,
     ) -> None:
-        action_name = act_cmd.action.value.upper()
         state = (
-            action_name,
+            "CLOSE",
             result.allowed,
             result.reason,
         )
@@ -141,7 +159,7 @@ class ActionGuard:
         message = (
             f"{self.symbol} | "
             f"ACTION GUARD | "
-            f"{action_name} BLOCKED | "
+            f"CLOSE BLOCKED | "
             f"reason={result.reason}"
         )
 

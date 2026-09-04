@@ -30,7 +30,7 @@ class PartialExitBBW:
             symbol=self.symbol,
         )
 
-    def get_distance(self, price, entry):
+    def get_prof_level_dist(self, price, entry):
         if self.side == "Sell":
             distance = entry.price - price
         else:
@@ -38,13 +38,19 @@ class PartialExitBBW:
             
         return distance
     
-    def get_take_profit(self):
-        entries = self.state_store.stack_mng.data.entries
-        level_number = len(entries) - 1
-        tf = self.map_mng.get_tf_for_level(level_number)
+    def get_bb_tp(self):
+        # Получаем tf для расчета take profit
+        tf = self.get_tf()
 
+        # Получаем BB для данного tf
         bb = self.bb_service.get_last_closed(tf)
 
+        # Рассчитываем tp на основе BB
+        tp = self._get_bb_tp(bb)
+
+        return tp 
+
+    def _get_bb_tp(self, bb):
         if self.side == "Sell":
             take_profit = (
                 bb["mid"]
@@ -55,10 +61,15 @@ class PartialExitBBW:
                 bb["mid"]
                 + (bb["upper"] - bb["mid"]) * 0.85
             )
+        return take_profit
 
-        return take_profit, tf    
+    def get_tf(self):
+        entries = self.state_store.stack_mng.data.entries
+        level_nr = len(entries) - 1
+        tf = self.map_mng.get_tf_for_level(level_nr)
+        return tf   
 
-    def get_min_max_distances(self, entry):
+    def get_min_max_dist(self, entry):
         min_distance = (
             entry.price *
             self.state_store.data.min_profit_pct / 100
@@ -74,37 +85,64 @@ class PartialExitBBW:
             entry = max(entries, key=lambda e: e.price)
         else:
             entry = min(entries, key=lambda e: e.price)
-        return entry   
+        return entry
 
-    def check(self):
+    def _get_exit_context(self):
+        # Получаем entries 
         entries = self.state_store.stack_mng.data.entries
-
         if not entries:
             self.runtime.bbw_exit_status = "NO_POS"
             return None
 
+        # Получаем текущую цену
         cur_price = self.price_service.get_market_close_price(
             symbol=self.symbol,
             side=self.side,
         )
 
-        entry = self.get_most_profitable_level(entries)
+        # Получаем наиболее прибыльный уровень
+        prof_level = self.get_most_profitable_level(entries)
 
-        distance = self.get_distance(cur_price, entry)
-        min_distance, max_distance = self.get_min_max_distances(entry)
+        # Получаем дистанцию от наиболее прибыльного уровня до текущей цены 
+        cur_dist = self.get_prof_level_dist(cur_price, prof_level)
 
-        if distance < min_distance:
+        # Получаем min и max дистанции для выхода
+        min_dist, max_dist = self.get_min_max_dist(prof_level)
+
+        return prof_level, cur_price, cur_dist, min_dist, max_dist
+
+    def _check_exit(self, exit_context):
+        # Если контекст выхода не получен, то выходим без действий
+        if exit_context is None:
             return None
 
-        if distance >= max_distance:
-            return self._close(entry)
+        # Распаковываем контекст выхода
+        prof_level, cur_price, cur_dist, min_dist, max_dist = exit_context
 
-        if not self._is_take_profit_reached(cur_price):
+        # Проверяем, превысила ли текущая дистанция минимальную 
+        # Если нет, то выходим без действий
+        if cur_dist < min_dist:
             return None
 
-        return self._close(entry)    
+        # Проверяем, превысила ли текущая дистанция максимальную
+        # Если да, то даем команду на закрытие 
+        if cur_dist >= max_dist:
+            return self._exit(prof_level)
 
-    def _close(self, entry):
+        # Проверяем, достигнут ли tp по BB
+        if not self._is_bb_tp_reached(cur_price):
+            return None
+
+        return self._exit(prof_level)
+
+    def check(self):
+        # Получаем данные для проверки выхода
+        exit_context = self._get_exit_context()
+
+        # Проверка выхода 
+        return self._check_exit(exit_context)
+
+    def _exit(self, entry):
         self.runtime.pending_rearm = True
 
         return ActionCommand(
@@ -119,11 +157,11 @@ class PartialExitBBW:
     def _update_exit_status(self, take_profit):
         self.runtime.bbw_exit_status = f"[tp={take_profit:.6f}]"    
 
-    def _is_take_profit_reached(self, cur_price):
-        take_profit, _ = self.get_take_profit()
-        self._update_exit_status(take_profit)
+    def _is_bb_tp_reached(self, cur_price):
+        tp = self.get_bb_tp()
+        self._update_exit_status(tp)
 
         if self.side == "Sell":
-            return cur_price <= take_profit
+            return cur_price <= tp
 
-        return cur_price >= take_profit        
+        return cur_price >= tp        

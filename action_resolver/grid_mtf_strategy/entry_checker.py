@@ -182,6 +182,7 @@ class EntryChecker:
     ) -> bool:
 
         if not entries:
+            self.runtime.distance_entry_status = "PASS"
             return True
 
         price = self.proxy_driver.get_last_price(
@@ -214,6 +215,8 @@ class EntryChecker:
                 price <
                 last_entry.price - required_move
             )
+
+        self.runtime.distance_entry_status = "PASS" if dist_ok else "BLOCK"
 
         return dist_ok
 

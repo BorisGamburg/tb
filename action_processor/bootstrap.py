@@ -10,7 +10,7 @@ from rich.logging import RichHandler
 
 from utils.telegram import Telegram
 from proxy_server.proxy_driver import ProxyDriver
-from common.price_service import PriceService
+from common.market_service import MarketService
 
 if TYPE_CHECKING:
     from action_processor.notifier import Notifier
@@ -31,7 +31,7 @@ class AppContext:
 
     telegram: Telegram
     proxy_driver: ProxyDriver
-    price_service: PriceService
+    price_service: MarketService
 
     config_file: Path
 
@@ -105,7 +105,7 @@ def init_infrastruct(
         logger=logger
     )
 
-    price_service = PriceService(
+    price_service = MarketService(
         proxy_driver=proxy_driver
     )
 

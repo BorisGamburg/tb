@@ -12,10 +12,9 @@ class GridMTFTemplate(BaseModel):
 
     tf_filter: AllowedTimeframes              
     tf_rsi_entry_threshold: float
-    tf_rsi_exit_threshold: float
     htf_filter: AllowedTimeframes
     htf_rsi_entry_threshold: float
-    htf_rsi_exit_threshold: float
+    htf_rsi_rearm_threshold: float
 
     qty_pct: Pct            # Обычно нужно для расчета объема
 
@@ -32,6 +31,7 @@ class GridMTFSchema(BaseModel):
     min_profit_pct: Pct
     max_profit_pct: Pct
     sleep_interval: int  # Интервал сна в секундах
+    exit_guard_enabled: bool
 
     # Start
     require_start_condition: bool
@@ -42,8 +42,6 @@ class GridMTFSchema(BaseModel):
     # --- TP ---
     tp_price: float = 0.0
     tp_enabled: bool = False
-    
-    # ---  ---
 
     # --- STACK ---
     stack: StackData

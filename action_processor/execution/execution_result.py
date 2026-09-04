@@ -8,3 +8,4 @@ class ExecutionResult:
     price: float | None = None
     qty: float | None = None
     fee: float | None = None
+    executed: bool = False

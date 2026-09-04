@@ -1,7 +1,7 @@
 from action_processor.action import Action, ActionCommand
 from utils.utils import get_inverse_side
 from action_processor.state.state import State
-from common.price_service import PriceService
+from common.market_service import MarketService
 from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
 
 
@@ -9,7 +9,7 @@ class PartialExitCross:
     def __init__(
         self,
         state_store: State,
-        price_service: PriceService,
+        price_service: MarketService,
         side: str,
         symbol: str,
         breakeven_checker: BreakevenChecker,

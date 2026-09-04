@@ -1,10 +1,10 @@
 from action_processor.action import Action, ActionCommand
 from proxy_server.proxy_driver import ProxyDriver
-from action_processor.execution.chase_mng import ChaseMng
 from action_processor.execution.execution_waiter import ExecutionWaiter
 import logging
 from action_processor.execution.execution_result import ExecutionResult
 from utils.utils import get_inverse_side
+from action_processor.execution.limit_order_mng import OpenLimitOrderMng
 
 
 class Execution:
@@ -12,8 +12,12 @@ class Execution:
         self.proxy_driver = proxy_driver
         self.price_service = price_service
         self.logger = logger
-        self.chase_mng = ChaseMng(proxy_driver, price_service, logger)
         self.execution_waiter = ExecutionWaiter(proxy_driver)
+        self.limit_order_mng = OpenLimitOrderMng(
+            proxy_driver=proxy_driver,
+            price_service=price_service,
+            logger=logger,
+        )        
 
     def _get_order_details(self, res, symbol):
         order_id = res["result"]["orderId"]
@@ -44,37 +48,19 @@ class Execution:
 
         return res
     
-    def _place_chase_order(self, symbol, side, qty):
-        status, order_id, order_price, filled_qty, fee = (
-            self.chase_mng.wait_chase_order(
-                symbol=symbol,
-                side=side,
-                qty=qty,
-                sl_ratio=None,
-            )
-        )
-
-        if status == "SKIPPED":
-            raise RuntimeError(
-                f"Chase skipped "
-                f"| symbol={symbol} "
-                f"| side={side} "
-                f"| qty={qty}"
-            )
-
-        return order_id, order_price, filled_qty, fee    
-
     def execute(self, act_cmd: ActionCommand) -> ExecutionResult:
         action = act_cmd.action
 
         if action == Action.OPEN:
-            price, qty, fee = self._exec_open(act_cmd)
+            price, qty, fee, executed = self._exec_open(act_cmd)
 
         elif action == Action.CLOSE:
             price, qty, fee = self._exec_close(act_cmd)
+            executed = True
 
         elif action == Action.CLOSE_POSITION:
             price, qty, fee = self._exec_close_position(act_cmd)            
+            executed = True
 
         else:
             raise ValueError(f"Unknown Action: {action}")
@@ -84,6 +70,7 @@ class Execution:
             price=price,
             qty=qty,
             fee=fee,
+            executed=executed,
         )    
 
     def _exec_close(self, result):
@@ -107,23 +94,6 @@ class Execution:
             )
 
         return avg_price, real_qty, fee    
-
-    def _exec_open(self, result):
-        order_id, order_price, filled_qty, fee = self._place_chase_order(
-            symbol=result.symbol,
-            side=result.side,
-            qty=result.qty,
-        )
-
-        if abs(filled_qty - result.qty) > 1e-8:
-            raise RuntimeError(
-                f"Open order partially filled "
-                f"| symbol={result.symbol} "
-                f"| requested_qty={result.qty} "
-                f"| executed_qty={filled_qty}"
-            )
-
-        return order_price, filled_qty, fee
 
     def _exec_close_position(self, result):
         position = self.proxy_driver.get_position(
@@ -159,3 +129,27 @@ class Execution:
             )
 
         return avg_price, real_qty, fee
+
+    def _exec_open(self, result):
+        order_result = self.limit_order_mng.wait_limit_order(
+            symbol=result.symbol,
+            side=result.side,
+            qty=result.qty,
+        )
+
+        if order_result.filled and abs(
+            order_result.filled_qty - result.qty
+        ) > 1e-8:
+            raise RuntimeError(
+                f"Open order partially filled "
+                f"| symbol={result.symbol} "
+                f"| requested_qty={result.qty} "
+                f"| executed_qty={order_result.filled_qty}"
+            )
+
+        return (
+            order_result.avg_price,
+            order_result.filled_qty,
+            order_result.fee,
+            order_result.filled,
+        )    

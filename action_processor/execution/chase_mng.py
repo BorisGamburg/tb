@@ -1,6 +1,6 @@
 import time
 from proxy_server.proxy_driver import ProxyDriver
-from managers.chase_pool_mng import ChasePoolMng
+from prog.managers._pool_mng import ScalePoolMng
 from action_processor.execution.execution_waiter import ExecutionWaiter
 
 
@@ -10,7 +10,7 @@ class ChaseMng:
         self.price_service = price_service
         self.logger = logger
         self.execution_waiter = ExecutionWaiter(proxy_driver)
-        self.chase_pool_mng = ChasePoolMng(
+        self.chase_pool_mng = ScalePoolMng(
             proxy_driver=proxy_driver,
             price_service=price_service,
             logger=logger,
@@ -52,7 +52,7 @@ class ChaseMng:
 
             else:
                 # Ордер еще не выставлен. Выставляем ордер из пула
-                res = self.chase_pool_mng.move_lim_order_from_pool(
+                res = self.chase_pool_mng.move_chase_order_from_pool(
                     symbol=symbol,
                     side=side,
                     qty=qty,
@@ -91,7 +91,7 @@ class ChaseMng:
         orderId,
         old_price,
     ):
-        chase_price = self.price_service.get_chase_price(
+        chase_price = self.price_service.get_orderbook_side_price(
             symbol=symbol,
             side=side,
         )
