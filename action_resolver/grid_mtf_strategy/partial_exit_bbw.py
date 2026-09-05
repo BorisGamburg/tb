@@ -143,8 +143,6 @@ class PartialExitBBW:
         return self._check_exit(exit_context)
 
     def _exit(self, entry):
-        self.runtime.pending_rearm = True
-
         return ActionCommand(
             action=Action.CLOSE,
             symbol=self.symbol,

@@ -15,12 +15,11 @@ from rich.text import Text
 from common.trading_info import TradingInfo
 from action_processor.action_guard import ActionGuard
 from action_processor.action import Action, ActionCommand
+from action_processor.action_service import ActionService
 
 
 @dataclass(slots=True)
 class GridMTFRuntime:
-    pending_rearm: bool = False
-
     rearm_status: Text = field(
         default_factory=lambda: Text("OFF", style="dim")
     )
@@ -62,6 +61,11 @@ class GridMTFStrategy(BaseStrategy):
         self.map_mng = map_mng
         self.trading_info = trading_info
         self.app_ctx = app_ctx
+
+        self.action_service = ActionService(
+            app_ctx=app_ctx,
+            state_store=state_store,
+        )        
 
         # sleep (можешь заменить на свою политику)
         self.sleep_interval = 5.0
@@ -152,7 +156,6 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
-                skip_sleep=self.runtime.pending_rearm,
             )
 
         # Выход по BBW
@@ -161,7 +164,6 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
-                skip_sleep=self.runtime.pending_rearm,
             )
 
         # Проверка на rearm
@@ -170,7 +172,6 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
-                skip_sleep=self.runtime.pending_rearm,
             )
 
         # Проверка на вход
@@ -180,13 +181,11 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
-                skip_sleep=self.runtime.pending_rearm,
             )
 
         return ResolveResult(
             action_command=None,
             status=status_line,
-            skip_sleep=self.runtime.pending_rearm,
         )
     
     def _check_start_strategy(self, status_line: Text) -> ResolveResult | None:
@@ -195,7 +194,6 @@ class GridMTFStrategy(BaseStrategy):
                 return ResolveResult(
                     action_command=None,
                     status=status_line,
-                    skip_sleep=self.runtime.pending_rearm,
                 )
 
             self._started = True
@@ -311,7 +309,6 @@ class GridMTFStrategy(BaseStrategy):
                 return ResolveResult(
                     action_command=None,
                     status=status_line,
-                    skip_sleep=self.runtime.pending_rearm,
                 )
 
             return self._resolve_action(status_line, execution_result,)

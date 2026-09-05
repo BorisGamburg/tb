@@ -24,14 +24,13 @@ class ActionService:
 
         self.notifier: Notifier = app_ctx.notifier
 
-    def process_action(self, resolve_result):
+    def process_action(self, action_command):
         # Логируем команду
-        cmd = resolve_result.action_command
-        self.notifier.notify_action(cmd)
+        self.notifier.notify_action(action_command)
 
         # Запускаем Executor
         exec_result = self.execution.execute(
-            resolve_result.action_command
+            action_command
         )
 
         # Логируем результат попытки
