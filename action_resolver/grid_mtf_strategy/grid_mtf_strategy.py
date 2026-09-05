@@ -156,6 +156,7 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
+                executed=False
             )
 
         # Выход по BBW
@@ -164,6 +165,7 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
+                executed=False
             )
 
         # Проверка на rearm
@@ -172,6 +174,7 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
+                executed=False
             )
 
         # Проверка на вход
@@ -181,11 +184,13 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action,
                 status=status_line,
+                executed=False
             )
 
         return ResolveResult(
             action_command=None,
             status=status_line,
+            executed=False
         )
     
     def _check_start_strategy(self, status_line: Text) -> ResolveResult | None:
@@ -194,6 +199,7 @@ class GridMTFStrategy(BaseStrategy):
                 return ResolveResult(
                     action_command=None,
                     status=status_line,
+                    executed=False
                 )
 
             self._started = True
@@ -275,6 +281,7 @@ class GridMTFStrategy(BaseStrategy):
                 action_command=action_command,
                 status="CLOSE_POSITION",
                 skip_sleep=False,
+                executed=False
             )
 
         if command == "TEST":
@@ -283,6 +290,7 @@ class GridMTFStrategy(BaseStrategy):
                 action_command=None,
                 status="TEST",
                 skip_sleep=False,
+                executed=False
             )
 
         return None        
@@ -309,6 +317,7 @@ class GridMTFStrategy(BaseStrategy):
                 return ResolveResult(
                     action_command=None,
                     status=status_line,
+                    executed=False
                 )
 
             return self._resolve_action(status_line, execution_result,)

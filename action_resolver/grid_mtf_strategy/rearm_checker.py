@@ -51,25 +51,7 @@ class RearmChecker:
         )
 
    
-    def check(self, execution_result=None) -> ActionCommand | None:
-        # Проверяем, есть ли запрос на rearm. 
-        if not self.runtime.pending_rearm:
-            return None
-
-        # Проверяем результат rearm-ордера из предыдущего цикла.
-        if (
-            execution_result is not None
-            and execution_result.action_command.source
-            == ActionSource.REARM_CHECKER
-        ):
-            if execution_result.executed:
-                # Предыдущий rearm успешно выполнен.
-                self.runtime.pending_rearm = False
-                return None
-
-            # Предыдущий rearm НЕ выполнен.
-            # pending_rearm оставляем True — будем пробовать снова.
-
+    def check(self) -> ActionCommand | None:
         rearm_ready = self._is_rearm_ready()
         if not rearm_ready:
             self.logger.info(
@@ -107,10 +89,7 @@ class RearmChecker:
             required_distance=required_distance,
         )
 
-        if not self.runtime.pending_rearm:
-            self.runtime.distance_status = "OFF"
-        else:
-            self.runtime.distance_status = "OK" if distance_ok else "BLOCK"
+        self.runtime.distance_status = "OK" if distance_ok else "BLOCK"
 
         return distance_ok    
 

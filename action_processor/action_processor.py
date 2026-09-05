@@ -8,7 +8,6 @@ from rich.live import Live
 from rich.text import Text
 from action_processor.notifier import Notifier
 from action_resolver.strategy_factory import StrategyFactory
-from action_processor.action_service import ActionService
 
 
 class ActionProcessor:
@@ -28,7 +27,6 @@ class ActionProcessor:
         self.proxy_driver = app_ctx.proxy_driver
         self.config_file_path = app_ctx.config_file
         self.telegram = app_ctx.telegram
-        self.previous_execution_result = None
 
         self.state_store, self.strategy = StrategyFactory.initialize(
             config_file=self.config_file_path,
@@ -45,11 +43,6 @@ class ActionProcessor:
             state_store=self.state_store,
         )
         self.app_ctx.notifier = self.notifier
-
-        self.action_service = ActionService(
-            app_ctx=self.app_ctx,
-            state_store=self.state_store,
-        )        
 
 
     def _get_external_command(self):
@@ -91,16 +84,11 @@ class ActionProcessor:
     def _process_internal_logic(self, external_command):
         resolve_result = self.strategy.resolve(
             external_command,
-            execution_result=self.previous_execution_result,
         )
 
-        if resolve_result.action_command:
-            exec_result = self.action_service.process_action(resolve_result)
-            self.previous_execution_result = exec_result
-            if exec_result.executed:
-                self.iteration += 1
-                self._on_iteration()
-
+        if resolve_result.executed:
+            self.iteration += 1
+            self._on_iteration()
 
         return resolve_result
 

@@ -5,4 +5,4 @@ from action_processor.action import ActionCommand
 class ResolveResult:
     action_command: ActionCommand | None
     status: str
-    skip_sleep: bool
+    executed: bool
