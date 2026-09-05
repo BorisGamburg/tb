@@ -146,9 +146,7 @@ class Notifier:
                 reverse=True,
             )
 
-            visible_entries = sorted_entries[-10:]
-
-            for i, e in enumerate(visible_entries):
+            for i, e in enumerate(sorted_entries):
                 lines.append(
                     f"[{i:02d}] "
                     f"{e.price:>10.6f} | "

@@ -2,7 +2,7 @@ import time
 
 from managers.scale_pool_mng import ScalePoolMng
 from action_processor.execution.chase_order_mng import ChaseOrderMng
-from action_processor.execution.limit_order_result import LimitOrderResult
+from action_processor.execution.limit_order_result import LimitOrderResult, LimitOrderStatus
 from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
 
@@ -69,7 +69,7 @@ class OpenLimitOrderMng:
 
     def move_order_from_pool(self, symbol, side, qty, sl_ratio=None):
         # Получаем цену для быстрого исполнения лимитного ордера 
-        fast_execution_limit_price = self.price_service.get_fast_execution_limit_price(
+        fast_execution_limit_price = self.price_service.get_market_price(
             symbol=symbol,
             side=side,
         )
@@ -188,8 +188,8 @@ class OpenLimitOrderMng:
             avg_price=None,
             filled_qty=0.0,
             fee=0.0,
-            pnl=0.0,
             filled=False,
+            status=LimitOrderStatus.NOT_FILLED,
         )
 
     def _handle_partial_order(
@@ -213,8 +213,8 @@ class OpenLimitOrderMng:
             avg_price=avg_price,
             filled_qty=filled_qty,
             fee=fee,
-            pnl=0.0,
             filled=True,
+            status=LimitOrderStatus.PARTIALLY_FILLED,
         )
 
 
@@ -232,6 +232,6 @@ class OpenLimitOrderMng:
             avg_price=avg_price,
             filled_qty=filled_qty,
             fee=fee,
-            pnl=0.0,
             filled=True,
+            status=LimitOrderStatus.FILLED,
         )    

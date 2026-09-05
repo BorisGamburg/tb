@@ -4,7 +4,9 @@ from action_processor.execution.execution_waiter import ExecutionWaiter
 import logging
 from action_processor.execution.execution_result import ExecutionResult
 from utils.utils import get_inverse_side
-from action_processor.execution.limit_order_mng import OpenLimitOrderMng
+from action_processor.execution.open_limit_order_mng import OpenLimitOrderMng
+from action_processor.execution.close_limit_order_mng import CloseLimitOrderMng
+from action_processor.execution.limit_order_result import LimitOrderStatus
 
 
 class Execution:
@@ -12,12 +14,20 @@ class Execution:
         self.proxy_driver = proxy_driver
         self.price_service = price_service
         self.logger = logger
+
         self.execution_waiter = ExecutionWaiter(proxy_driver)
+
         self.limit_order_mng = OpenLimitOrderMng(
             proxy_driver=proxy_driver,
             price_service=price_service,
             logger=logger,
-        )        
+        )
+
+        self.close_limit_order_mng = CloseLimitOrderMng(
+            proxy_driver=proxy_driver,
+            market_service=price_service,
+            logger=logger,
+        )                
 
     def _get_order_details(self, res, symbol):
         order_id = res["result"]["orderId"]
@@ -55,8 +65,7 @@ class Execution:
             price, qty, fee, executed = self._exec_open(act_cmd)
 
         elif action == Action.CLOSE:
-            price, qty, fee = self._exec_close(act_cmd)
-            executed = True
+            price, qty, fee, executed = self._exec_close(act_cmd)
 
         elif action == Action.CLOSE_POSITION:
             price, qty, fee = self._exec_close_position(act_cmd)            
@@ -72,28 +81,6 @@ class Execution:
             fee=fee,
             executed=executed,
         )    
-
-    def _exec_close(self, result):
-        res = self._place_market_order(
-            symbol=result.symbol,
-            qty=result.qty,
-            side=result.side,
-        )
-
-        real_qty, avg_price, fee = self._get_order_details(
-            res=res,
-            symbol=result.symbol,
-        )
-
-        if abs(real_qty - result.qty) > 1e-8:
-            raise RuntimeError(
-                f"Close order partially filled "
-                f"| symbol={result.symbol} "
-                f"| requested_qty={result.qty} "
-                f"| executed_qty={real_qty}"
-            )
-
-        return avg_price, real_qty, fee    
 
     def _exec_close_position(self, result):
         position = self.proxy_driver.get_position(
@@ -153,3 +140,24 @@ class Execution:
             order_result.fee,
             order_result.filled,
         )    
+
+    def _exec_close(self, result):
+        order_result = self.close_limit_order_mng.wait_limit_order(
+            symbol=result.symbol,
+            side=result.side,
+            qty=result.qty,
+        )
+
+        if order_result.status == LimitOrderStatus.PARTIALLY_FILLED:
+            result.action = Action.CLOSE_PARTIAL
+
+        executed = (
+            order_result.status != LimitOrderStatus.NOT_FILLED
+        )
+
+        return (
+            order_result.avg_price,
+            order_result.filled_qty,
+            order_result.fee,
+            executed,
+        )

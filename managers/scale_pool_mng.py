@@ -24,7 +24,7 @@ class ScalePoolMng:
             side=side,
         )
         # Получаем текущую цену с нужной стороны стакана
-        orderbook_side_price = self.price_service.get_orderbook_side_price(
+        orderbook_side_price = self.price_service.get_limit_price(
             symbol=symbol,
             side=side,
         )

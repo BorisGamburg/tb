@@ -8,6 +8,7 @@ class Action(Enum):
     OPEN = "open"
     CLOSE = "close"
     CLOSE_POSITION = "close_position"
+    CLOSE_PARTIAL = "close_partial"
 
 @dataclass
 class ActionCommand:

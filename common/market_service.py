@@ -66,7 +66,7 @@ class MarketService:
             else ticker["ask"]
         )    
 
-    def get_orderbook_side_price(
+    def get_limit_price(
         self,
         symbol: str,
         side: str,
@@ -79,7 +79,7 @@ class MarketService:
             else ticker["ask"]
         )   
 
-    def get_fast_execution_limit_price(
+    def get_market_price(
         self,
         symbol: str,
         side: str,

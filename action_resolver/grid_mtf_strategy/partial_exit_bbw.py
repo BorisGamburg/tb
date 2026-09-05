@@ -54,12 +54,12 @@ class PartialExitBBW:
         if self.side == "Sell":
             take_profit = (
                 bb["mid"]
-                - (bb["mid"] - bb["lower"]) * 0.85
+                - (bb["mid"] - bb["lower"]) * 1
             )
         else:
             take_profit = (
                 bb["mid"]
-                + (bb["upper"] - bb["mid"]) * 0.85
+                + (bb["upper"] - bb["mid"]) * 1
             )
         return take_profit
 

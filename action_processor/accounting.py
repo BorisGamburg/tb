@@ -21,7 +21,9 @@ class Accounting:
         elif result.action_command.action == Action.CLOSE:
             message = self._apply_close(result)
         elif result.action_command.action == Action.CLOSE_POSITION:
-            message = self._apply_close_position(result)            
+            message = self._apply_close_position(result)    
+        elif result.action_command.action == Action.CLOSE_PARTIAL:
+            message = self._apply_close_partial(result)                    
         else:
             raise ValueError(f"⚠️ Unrecognized action: {result.action_command}")
 
@@ -68,4 +70,38 @@ class Accounting:
             f"[ACCOUNTING] CLOSE_POSITION | "
             f"qty={result.qty} "
             f"| price={result.price}"
+        )
+
+    def _apply_close_partial(self, result: ExecutionResult):
+        # Получаем уровень, который мы закрываем частично
+        levels = result.action_command.levels or []
+        if len(levels) != 1:
+            raise ValueError(
+                f"CLOSE_PARTIAL expects exactly one level | "
+                f"levels={levels}"
+            )
+        level = levels[0]
+
+        # Проверяем, что количество для закрытия частично корректно
+        if result.qty is None or result.qty <= 0:
+            raise ValueError(
+                f"CLOSE_PARTIAL requires positive qty | "
+                f"qty={result.qty}"
+            )
+        if result.qty >= level.qty:
+            raise ValueError(
+                f"CLOSE_PARTIAL qty must be less than level qty | "
+                f"level_qty={level.qty} | "
+                f"close_qty={result.qty}"
+            )
+
+        # Уменьшаем количество на уровне
+        level.qty -= result.qty
+
+        # Возвращаем сообщение о закрытии частичного ордера
+        return (
+            f"[ACCOUNTING] CLOSE_PARTIAL | "
+            f"price={level.price} | "
+            f"closed_qty={result.qty} | "
+            f"remaining_qty={level.qty}"
         )

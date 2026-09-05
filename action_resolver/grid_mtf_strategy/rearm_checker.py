@@ -7,6 +7,8 @@ from services.distance_service import (
 )
 from common.trading_info import TradingInfo
 from action_processor.action_source import ActionSource
+from common.market_service import MarketService
+from proxy_server.proxy_driver import ProxyDriver
 
 
 class RearmChecker:
@@ -16,8 +18,8 @@ class RearmChecker:
         runtime,
         state_store,
         map_mng,
-        proxy_driver,
-        price_service,
+        proxy_driver: ProxyDriver,
+        price_service: MarketService,
         logger,
         symbol,
         side,
@@ -143,13 +145,13 @@ class RearmChecker:
 
         entries = self.state_store.stack_mng.data.entries
 
-        chase_price = self.price_service.get_orderbook_side_price(
+        market_price = self.price_service.get_market_price(
             self.symbol,
             self.side,
         )
 
         distance_ok = self._is_rearm_distance_ok(
-            chase_price,
+            market_price,
             entries,
         )
 
