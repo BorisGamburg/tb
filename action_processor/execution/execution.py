@@ -74,13 +74,17 @@ class Execution:
         else:
             raise ValueError(f"Unknown Action: {action}")
 
-        return ExecutionResult(
+        exec_result = ExecutionResult(
             action_command=act_cmd,
             price=price,
             qty=qty,
             fee=fee,
             executed=executed,
-        )    
+        )
+
+        self.log_exec(exec_result)           
+
+        return exec_result
 
     def _exec_close_position(self, result):
         position = self.proxy_driver.get_position(
