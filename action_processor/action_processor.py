@@ -10,6 +10,7 @@ from action_processor.notifier import Notifier
 from action_resolver.strategy_factory import StrategyFactory
 from action_processor.action_service import ActionService
 from action_processor.external_command_processor import ExternalCommandProcessor
+from action_processor.process_result import ProcessResult
 
 
 class ActionProcessor:
@@ -102,12 +103,8 @@ class ActionProcessor:
     def _process_internal_logic(self):
         resolve_result = self.strategy.resolve()
 
-        if resolve_result.executed:
-            self.iteration += 1
-            self._on_iteration()
-
-        return resolve_result    
-
+        return resolve_result
+    
     def run(self) -> None:
         self.iteration = 1
         self._on_iteration()
@@ -121,10 +118,10 @@ class ActionProcessor:
             ) as self.live:
                 while not self.shutdown_event.is_set():
                     # Логика цикла
-                    resolve_result = self._process_cycle()
+                    process_result = self._process_cycle()
 
                     # Обновляем строку статуса 
-                    self.live.update(resolve_result.status)
+                    self.live.update(process_result.status)
 
                     # Sleep, если не отменен
                     time.sleep(
@@ -147,9 +144,15 @@ class ActionProcessor:
         external_result = self._process_external_logic()
 
         if external_result is not None:
-            return external_result
+            process_result = external_result
+        else:
+            process_result = self._process_internal_logic()
 
-        return self._process_internal_logic()
+        if process_result.executed:
+            self.iteration += 1
+            self._on_iteration()
+
+        return process_result
 
     def _process_external_logic(self):
         external_command = self._get_external_command()
