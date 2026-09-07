@@ -1,0 +1,58 @@
+[1mdiff --git a/action_processor/action_processor.py b/action_processor/action_processor.py[m
+[1mindex 9733a2a..b7d1b83 100644[m
+[1m--- a/action_processor/action_processor.py[m
+[1m+++ b/action_processor/action_processor.py[m
+[36m@@ -10,6 +10,7 @@[m [mfrom action_processor.notifier import Notifier[m
+ from action_resolver.strategy_factory import StrategyFactory[m
+ from action_processor.action_service import ActionService[m
+ from action_processor.external_command_processor import ExternalCommandProcessor[m
+[32m+[m[32mfrom action_processor.process_result import ProcessResult[m
+ [m
+ [m
+ class ActionProcessor:[m
+[36m@@ -102,12 +103,8 @@[m [mclass ActionProcessor:[m
+     def _process_internal_logic(self):[m
+         resolve_result = self.strategy.resolve()[m
+ [m
+[31m-        if resolve_result.executed:[m
+[31m-            self.iteration += 1[m
+[31m-            self._on_iteration()[m
+[31m-[m
+[31m-        return resolve_result    [m
+[31m-[m
+[32m+[m[32m        return resolve_result[m
+[32m+[m[41m    [m
+     def run(self) -> None:[m
+         self.iteration = 1[m
+         self._on_iteration()[m
+[36m@@ -121,10 +118,10 @@[m [mclass ActionProcessor:[m
+             ) as self.live:[m
+                 while not self.shutdown_event.is_set():[m
+                     # Логика цикла[m
+[31m-                    resolve_result = self._process_cycle()[m
+[32m+[m[32m                    process_result = self._process_cycle()[m
+ [m
+                     # Обновляем строку статуса [m
+[31m-                    self.live.update(resolve_result.status)[m
+[32m+[m[32m                    self.live.update(process_result.status)[m
+ [m
+                     # Sleep, если не отменен[m
+                     time.sleep([m
+[36m@@ -147,9 +144,15 @@[m [mclass ActionProcessor:[m
+         external_result = self._process_external_logic()[m
+ [m
+         if external_result is not None:[m
+[31m-            return external_result[m
+[32m+[m[32m            process_result = external_result[m
+[32m+[m[32m        else:[m
+[32m+[m[32m            process_result = self._process_internal_logic()[m
+[32m+[m
+[32m+[m[32m        if process_result.executed:[m
+[32m+[m[32m            self.iteration += 1[m
+[32m+[m[32m            self._on_iteration()[m
+ [m
+[31m-        return self._process_internal_logic()[m
+[32m+[m[32m        return process_result[m
+ [m
+     def _process_external_logic(self):[m
+         external_command = self._get_external_command()[m

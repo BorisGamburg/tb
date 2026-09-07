@@ -100,11 +100,6 @@ class ActionProcessor:
         if on_iteration is not None:
             on_iteration()       
 
-    def _process_internal_logic(self):
-        resolve_result = self.strategy.resolve()
-
-        return resolve_result
-    
     def run(self) -> None:
         self.iteration = 1
         self._on_iteration()
@@ -118,7 +113,8 @@ class ActionProcessor:
             ) as self.live:
                 while not self.shutdown_event.is_set():
                     # Логика цикла
-                    process_result = self._process_cycle()
+                    process_result = ProcessResult()
+                    self._process_cycle(process_result)
 
                     # Обновляем строку статуса 
                     self.live.update(process_result.status)
@@ -140,26 +136,48 @@ class ActionProcessor:
         finally:
             self.stop()
 
-    def _process_cycle(self):
-        external_result = self._process_external_logic()
+    def _process_cycle(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        # 1. Проверяем внешние команды
+        process_result = self._process_external_logic(process_result)
 
-        if external_result is not None:
-            process_result = external_result
-        else:
-            process_result = self._process_internal_logic()
+        # Если внешней команды нет, продолжаем с внутренней логикой
+        if process_result.external_command is None:
+            process_result = self._process_internal_logic(process_result)
 
+        # 2. Если было выполнено действие, увеличиваем итерацию и вызываем on_iteration
         if process_result.executed:
             self.iteration += 1
             self._on_iteration()
 
+        # Возвращаем process_result 
         return process_result
 
-    def _process_external_logic(self):
+    def _process_external_logic(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
         external_command = self._get_external_command()
 
         if not external_command:
-            return None
+            return process_result
+
+        process_result.external_command = external_command
 
         return self.external_command_processor.process(
-            external_command
-        )    
+            process_result,
+        )
+
+    def _process_internal_logic(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        resolve_result = self.strategy.resolve()
+
+        process_result.action_command = resolve_result.action_command
+        process_result.status = resolve_result.status
+        process_result.executed = resolve_result.executed
+
+        return process_result        

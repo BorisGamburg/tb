@@ -1,7 +1,7 @@
+from action_resolver.resolve_result import ResolveResult
+
+
 class BaseStrategy:
-    def resolve(self, ctx):
-        """
-        Должен вернуть:
-        ActionCommand
-        """
+
+    def resolve(self) -> ResolveResult:
         raise NotImplementedError
