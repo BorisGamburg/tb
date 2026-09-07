@@ -9,6 +9,7 @@ from rich.text import Text
 from action_processor.notifier import Notifier
 from action_resolver.strategy_factory import StrategyFactory
 from action_processor.action_service import ActionService
+from action_processor.external_command_processor import ExternalCommandProcessor
 
 
 class ActionProcessor:
@@ -35,11 +36,19 @@ class ActionProcessor:
             app_ctx=self.app_ctx,
         )        
 
-        # 3. Инициализация ActionService
+        # 3. Инициализация модуля для execution и accounting
         self.action_service = ActionService(
             app_ctx=self.app_ctx,
             state_store=self.state_store,
         )        
+
+        # Инициализация модуля для обработки внешних команд
+        self.external_command_processor = ExternalCommandProcessor(
+            symbol=self.state_store.data.symbol,
+            side=self.state_store.data.side,
+            action_service=self.action_service,
+            logger=self.logger,
+        )   
 
         # 4. Инициализация ZMQ сервера для внешних команд
         self._initialize_external_server()
@@ -90,16 +99,14 @@ class ActionProcessor:
         if on_iteration is not None:
             on_iteration()       
 
-    def _process_internal_logic(self, external_command):
-        resolve_result = self.strategy.resolve(
-            external_command,
-        )
+    def _process_internal_logic(self):
+        resolve_result = self.strategy.resolve()
 
         if resolve_result.executed:
             self.iteration += 1
             self._on_iteration()
 
-        return resolve_result
+        return resolve_result    
 
     def run(self) -> None:
         self.iteration = 1
@@ -120,10 +127,9 @@ class ActionProcessor:
                     self.live.update(resolve_result.status)
 
                     # Sleep, если не отменен
-                    if not resolve_result.skip_sleep:
-                        time.sleep(
-                            self.state_store.data.sleep_interval
-                        )
+                    time.sleep(
+                        self.state_store.data.sleep_interval
+                    )
 
         except KeyboardInterrupt:
             self.logger.info("Остановлено пользователем")
@@ -137,38 +143,20 @@ class ActionProcessor:
         finally:
             self.stop()
 
-    def _process_external_command(self, external_command):
-        try:
-            resolve_result = self.strategy._handle_external_command(
-                external_command
-            )
-
-            if resolve_result is not None:
-                self.action_service.process_action(resolve_result)
-
-            self.zmq_socket.send_json({
-                "success": True,
-                "message": "done",
-            })
-
-            return resolve_result
-
-        except Exception as e:
-            self.zmq_socket.send_json({
-                "success": False,
-                "message": str(e),
-            })
-            raise            
-
     def _process_cycle(self):
-        # Определяем ветку: внешняя команда или внутренняя логика
+        external_result = self._process_external_logic()
+
+        if external_result is not None:
+            return external_result
+
+        return self._process_internal_logic()
+
+    def _process_external_logic(self):
         external_command = self._get_external_command()
 
-        if external_command:
-            # Обрабатываем внешнюю команду
-            return self._process_external_command(
-                external_command
-            )
+        if not external_command:
+            return None
 
-        # Отрабатываем внутреннюю логику
-        return self._process_internal_logic(None)    
+        return self.external_command_processor.process(
+            external_command
+        )    

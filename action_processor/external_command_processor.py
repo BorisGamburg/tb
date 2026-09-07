@@ -9,10 +9,12 @@ class ExternalCommandProcessor:
         symbol: str,
         side: str,
         action_service: ActionService,
+        logger,
     ):
         self.symbol = symbol
         self.side = side
         self.action_service = action_service
+        self.logger = logger
 
     def process(self, external_command):
         if not external_command:
@@ -31,8 +33,8 @@ class ExternalCommandProcessor:
                 action_command
             )
 
-        if command == "TEST":
-            print("TEST")
-            return None
+        self.logger.error(
+            f"Неизвестная внешняя команда: {command}"
+        )
 
         return None
