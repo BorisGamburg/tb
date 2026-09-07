@@ -15,7 +15,6 @@ from rich.text import Text
 from common.trading_info import TradingInfo
 from action_processor.action_guard import ActionGuard
 from action_processor.action import Action, ActionCommand
-from action_processor.action_service import ActionService
 
 
 @dataclass(slots=True)
@@ -61,11 +60,6 @@ class GridMTFStrategy(BaseStrategy):
         self.map_mng = map_mng
         self.trading_info = trading_info
         self.app_ctx = app_ctx
-
-        self.action_service = ActionService(
-            app_ctx=app_ctx,
-            state_store=state_store,
-        )        
 
         # sleep (можешь заменить на свою политику)
         self.sleep_interval = 5.0
