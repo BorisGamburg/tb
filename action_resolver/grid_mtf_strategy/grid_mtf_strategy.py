@@ -280,7 +280,6 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=action_command,
                 status="CLOSE_POSITION",
-                skip_sleep=False,
                 executed=False
             )
 
@@ -289,7 +288,6 @@ class GridMTFStrategy(BaseStrategy):
             return ResolveResult(
                 action_command=None,
                 status="TEST",
-                skip_sleep=False,
                 executed=False
             )
 

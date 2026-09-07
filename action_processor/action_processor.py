@@ -8,6 +8,7 @@ from rich.live import Live
 from rich.text import Text
 from action_processor.notifier import Notifier
 from action_resolver.strategy_factory import StrategyFactory
+from action_processor.action_service import ActionService
 
 
 class ActionProcessor:
@@ -28,11 +29,19 @@ class ActionProcessor:
         self.config_file_path = app_ctx.config_file
         self.telegram = app_ctx.telegram
 
+        # 2. Инициализация стратегии и состояния
         self.state_store, self.strategy = StrategyFactory.initialize(
             config_file=self.config_file_path,
             app_ctx=self.app_ctx,
         )        
 
+        # 3. Инициализация ActionService
+        self.action_service = ActionService(
+            app_ctx=self.app_ctx,
+            state_store=self.state_store,
+        )        
+
+        # 4. Инициализация ZMQ сервера для внешних команд
         self._initialize_external_server()
 
         # 6. Инициализация Notifier
