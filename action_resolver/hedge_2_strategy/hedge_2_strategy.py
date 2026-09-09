@@ -94,11 +94,6 @@ class Hedge2Strategy(BaseStrategy):
             f"Side: {self.state_store.data.side}"
         )
 
-    def on_iteration(self) -> None:
-        self.app_ctx.notifier.log(
-            self.app_ctx.notifier.build_stack_report()
-        )        
-
     def _handle_external_command(
         self,
         external_command,

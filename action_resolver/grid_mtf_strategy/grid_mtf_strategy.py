@@ -248,11 +248,6 @@ class GridMTFStrategy(BaseStrategy):
         )
         self.app_ctx.logger.info(params)
 
-    def on_iteration(self) -> None:
-        self.app_ctx.notifier.log(
-            self.app_ctx.notifier.build_stack_report()
-        )        
-
     def is_exit_allowed(self) -> bool:
         """
         Проверяет, можно ли закрывать уровни сейчас.

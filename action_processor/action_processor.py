@@ -94,11 +94,9 @@ class ActionProcessor:
 
     def _on_iteration(self) -> None:
         self.notifier.log_iteration(self.iteration)
-
-        on_iteration = getattr(self.strategy, "on_iteration", None)
-
-        if on_iteration is not None:
-            on_iteration()       
+        self.notifier.log(
+            self.notifier.build_stack_report()
+        )   
 
     def run(self) -> None:
         self.iteration = 1
