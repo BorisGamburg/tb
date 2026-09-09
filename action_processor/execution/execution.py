@@ -4,8 +4,8 @@ from action_processor.execution.execution_waiter import ExecutionWaiter
 import logging
 from action_processor.execution.execution_result import ExecutionResult
 from utils.utils import get_inverse_side
-from action_processor.execution.open_limit_order_mng import OpenLimitOrderMng
-from action_processor.execution.close_limit_order_mng import CloseLimitOrderMng
+from action_processor.execution.open_active_limit_mng import OpenActiveLimitMng
+from action_processor.execution.close_passive_limit_mng import ClosePassiveLimitMng
 from action_processor.execution.limit_order_result import LimitOrderStatus
 
 
@@ -17,13 +17,13 @@ class Execution:
 
         self.execution_waiter = ExecutionWaiter(proxy_driver)
 
-        self.limit_order_mng = OpenLimitOrderMng(
+        self.open_active_limit_mng = OpenActiveLimitMng(
             proxy_driver=proxy_driver,
             price_service=price_service,
             logger=logger,
         )
 
-        self.close_limit_order_mng = CloseLimitOrderMng(
+        self.close_passive_limit_mng = ClosePassiveLimitMng(
             proxy_driver=proxy_driver,
             market_service=price_service,
             logger=logger,
@@ -120,7 +120,7 @@ class Execution:
         return avg_price, real_qty, fee
 
     def _exec_open(self, result):
-        order_result = self.limit_order_mng.wait_limit_order(
+        order_result = self.open_active_limit_mng.wait_limit_order(
             symbol=result.symbol,
             side=result.side,
             qty=result.qty,
@@ -144,7 +144,7 @@ class Execution:
         )    
 
     def _exec_close(self, result):
-        order_result = self.close_limit_order_mng.wait_limit_order(
+        order_result = self.close_passive_limit_mng.wait_limit_order(
             symbol=result.symbol,
             side=result.side,
             qty=result.qty,

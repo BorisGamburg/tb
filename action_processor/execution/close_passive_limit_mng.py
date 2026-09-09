@@ -8,7 +8,7 @@ from action_processor.execution.limit_order_result import (
 )
 
 
-class CloseLimitOrderMng:
+class ClosePassiveLimitMng:
     def __init__(
         self,
         proxy_driver: ProxyDriver,

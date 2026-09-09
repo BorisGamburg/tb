@@ -7,7 +7,7 @@ from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
 
 
-class OpenLimitOrderMng:
+class OpenActiveLimitMng:
     def __init__(self, 
         proxy_driver: ProxyDriver,
         price_service: MarketService, 
