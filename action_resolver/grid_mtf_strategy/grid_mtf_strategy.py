@@ -1,7 +1,6 @@
 from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
-from action_resolver.grid_mtf_strategy.start_condition_checker import StartConditionChecker
 from action_processor.bootstrap import AppContext
 from action_resolver.grid_mtf_strategy.partial_exit_cross import PartialExitCross
 from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
@@ -74,15 +73,6 @@ class GridMTFStrategy(BaseStrategy):
         self._started = False
 
         self.runtime = GridMTFRuntime()
-
-        # Инициализируем чекер условий старта
-        self.start_condition_checker = StartConditionChecker(
-            proxy_driver=self.proxy_driver,
-            state_store=self.state_store,
-            symbol=self.symbol,
-            side=self.side,
-            runtime=self.runtime,
-        )    
 
         # Инициализируем модуль проверки выхода на безубыток
         self.breakeven_checker = BreakevenChecker(
@@ -190,10 +180,6 @@ class GridMTFStrategy(BaseStrategy):
             f"Min profit: {data.min_profit_pct}\n"
             f"Max profit: {data.max_profit_pct}\n"
             f"Sleep interval: {data.sleep_interval}\n"
-            f"Require start condition: {data.require_start_condition}\n"
-            f"Start condition type: {data.start_condition_type}\n"
-            f"Start TF: {data.start_tf}\n"
-            f"Start RSI threshold: {data.start_rsi_threshold}"
         )
         self.app_ctx.logger.info(params)
 
@@ -228,30 +214,26 @@ class GridMTFStrategy(BaseStrategy):
         process_result: ProcessResult,
     ) -> ProcessResult:
         # Выход по пересечению предыдущего уровня
-        should_exit, entry = self.partial_exit_cross.check()
-        if should_exit:
-            return self._execute_close(
-                entry,
-                process_result,
-                reason="cross",
-            )
+        process_result = self._resolve_exit_cross(
+            process_result,
+        )
+        if process_result.signal:
+            return process_result
+        
                 
         # Выход по BBW
         process_result = self._resolve_bbw_exit(
             process_result,
         )
-        if process_result is not None:
+        if process_result.signal:
             return process_result
 
-        # Проверка на вход
-        entry_allowed = self.entry_checker.check()
-        self.app_ctx.notifier.log_distance_blocked(self.runtime)
-        if entry_allowed:
-            return self._execute_open(
-                process_result,
-            )
 
-        process_result.executed = False
+        # Проверка на вход
+        process_result = self._resolve_entry(
+            process_result,
+        )
+
 
         return process_result
 
@@ -331,10 +313,10 @@ class GridMTFStrategy(BaseStrategy):
     def _resolve_bbw_exit(
         self,
         process_result: ProcessResult,
-    ) -> ProcessResult | None:
+    ) -> ProcessResult:
         # Есть сигнал на выход?
-        should_exit, entry = self.partial_exit_bbw.check()
-        if should_exit:
+        process_result.signal, entry = self.partial_exit_bbw.check()
+        if process_result.signal:
             # Сигнал на выход есть
             process_result = self._execute_close(
                 entry,
@@ -353,7 +335,7 @@ class GridMTFStrategy(BaseStrategy):
                 return process_result
         else:
             # Сигнала на выход нет
-            return None
+            return process_result
 
     def _execute_close(
         self,
@@ -415,5 +397,37 @@ class GridMTFStrategy(BaseStrategy):
             action,
             process_result,
         )
+
+        return process_result    
+
+    def _resolve_exit_cross(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        should_exit, entry = self.partial_exit_cross.check()
+
+        if should_exit:
+            return self._execute_close(
+                entry,
+                process_result,
+                reason="cross",
+            )
+
+        return process_result    
+
+
+    def _resolve_entry(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        entry_allowed = self.entry_checker.check()
+        self.app_ctx.notifier.log_distance_blocked(self.runtime)
+
+        if entry_allowed:
+            return self._execute_open(
+                process_result,
+            )
+
+        process_result.executed = False
 
         return process_result    

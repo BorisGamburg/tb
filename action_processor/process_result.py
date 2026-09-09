@@ -8,6 +8,7 @@ class ProcessResult:
     action_command: ActionCommand | None = None
     status: str | None = None
     executed: bool | None = None
+    signal: bool | None = None
     price: float | None = None
     qty: float | None = None
     fee: float | None = None

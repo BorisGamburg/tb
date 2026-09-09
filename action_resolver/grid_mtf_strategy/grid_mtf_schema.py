@@ -33,12 +33,6 @@ class GridMTFSchema(BaseModel):
     sleep_interval: int  # Интервал сна в секундах
     exit_guard_enabled: bool
 
-    # Start
-    require_start_condition: bool
-    start_condition_type: Literal["ha_reversal", "structure_break"] | None
-    start_tf: AllowedTimeframes | None
-    start_rsi_threshold: float
-
     # --- TP ---
     tp_price: float = 0.0
     tp_enabled: bool = False

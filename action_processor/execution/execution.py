@@ -82,8 +82,6 @@ class Execution:
             executed=executed,
         )
 
-        self.log_exec(exec_result)           
-
         return exec_result
 
     def _exec_close_position(self, result):
