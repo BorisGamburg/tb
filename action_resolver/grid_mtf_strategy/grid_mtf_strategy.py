@@ -10,10 +10,13 @@ from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW
 from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
 from dataclasses import dataclass, field
 from action_resolver.grid_mtf_strategy.rearm_checker import RearmChecker
-from action_resolver.resolve_result import ResolveResult
 from rich.text import Text
 from common.trading_info import TradingInfo
 from action_processor.action_guard import ActionGuard
+from action_processor.action_service import ActionService
+from action_processor.process_result import ProcessResult
+from action_processor.action import Action, ActionCommand
+from utils.utils import get_inverse_side
 
 
 @dataclass(slots=True)
@@ -60,6 +63,11 @@ class GridMTFStrategy(BaseStrategy):
         self.trading_info = trading_info
         self.app_ctx = app_ctx
 
+        self.action_service = ActionService(
+            app_ctx=app_ctx,
+            state_store=state_store,
+        )        
+
         # sleep (можешь заменить на свою политику)
         self.sleep_interval = 5.0
 
@@ -98,7 +106,6 @@ class GridMTFStrategy(BaseStrategy):
             price_service=self.price_service,
             symbol=self.symbol,
             side=self.side,
-            trading_info=self.trading_info
         )     
 
         self.partial_exit_bbw = PartialExitBBW(
@@ -141,64 +148,6 @@ class GridMTFStrategy(BaseStrategy):
         )
 
         self._log_parameters()
-
-    def _resolve_action(self, status_line: Text) -> ResolveResult:
-        # Выход по пересечению предыдущего уровня
-        action = self.partial_exit_cross.check()
-        if action:
-            return ResolveResult(
-                action_command=action,
-                status=status_line,
-                executed=False
-            )
-
-        # Выход по BBW
-        action = self.partial_exit_bbw.check()
-        if action:
-            return ResolveResult(
-                action_command=action,
-                status=status_line,
-                executed=False
-            )
-
-        # Проверка на rearm
-        action = self.rearm_checker.check()
-        if action:
-            return ResolveResult(
-                action_command=action,
-                status=status_line,
-                executed=False
-            )
-
-        # Проверка на вход
-        action = self.entry_checker.check()
-        self.app_ctx.notifier.log_distance_blocked(self.runtime)
-        if action:
-            return ResolveResult(
-                action_command=action,
-                status=status_line,
-                executed=False
-            )
-
-        return ResolveResult(
-            action_command=None,
-            status=status_line,
-            executed=False
-        )
-    
-    def _check_start_strategy(self, status_line: Text) -> ResolveResult | None:
-        if self.state_store.data.require_start_condition and not self._started:
-            if not self.start_condition_checker.check():
-                return ResolveResult(
-                    action_command=None,
-                    status=status_line,
-                    executed=False
-                )
-
-            self._started = True
-            self.logger.info("[START] condition satisfied → strategy armed")
-
-        return None
 
     def _get_status_line(self):
         last_price = self.proxy_driver.get_last_price(self.symbol)
@@ -258,17 +207,213 @@ class GridMTFStrategy(BaseStrategy):
 
         return self.action_guard.is_allowed()
 
-    def resolve(self) -> ResolveResult:
+    def resolve(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
             is_allowed = self.is_exit_allowed()
             status_line = self._get_status_line()
+            process_result.status = status_line
 
             if not is_allowed:
-                return ResolveResult(
-                    action_command=None,
-                    status=status_line,
-                    executed=False
+                process_result.executed = False
+                return process_result
+
+            return self._resolve_action(
+                process_result,
+            )
+
+    def _resolve_action(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        # Выход по пересечению предыдущего уровня
+        should_exit, entry = self.partial_exit_cross.check()
+        if should_exit:
+            return self._execute_close(
+                entry,
+                process_result,
+                reason="cross",
+            )
+                
+        # Выход по BBW
+        process_result = self._resolve_bbw_exit(
+            process_result,
+        )
+        if process_result is not None:
+            return process_result
+
+        # Проверка на вход
+        entry_allowed = self.entry_checker.check()
+        self.app_ctx.notifier.log_distance_blocked(self.runtime)
+        if entry_allowed:
+            return self._execute_open(
+                process_result,
+            )
+
+        process_result.executed = False
+
+        return process_result
+
+    def _get_rearm_qty(self) -> float:
+        level = len(self.state_store.stack_mng.data.entries)
+
+        cur_map_elem = self.map_mng.get_template_by_level(level)
+        qty_factor = cur_map_elem.qty_pct / 100
+
+        balance = self.proxy_driver.get_balance()
+        price = self.proxy_driver.get_last_price(self.symbol)
+
+        qty_in_usd = qty_factor * balance
+        qty = qty_in_usd / price
+
+        qty = self.trading_info.get_valid_order_qty(qty)
+
+        if qty <= 0:
+            raise RuntimeError(
+                f"Invalid REARM qty: {qty} "
+                f"(level={level}, qty_factor={qty_factor})"
+            )
+
+        return qty
+
+    def _build_rearm_action(self) -> ActionCommand:
+        qty = self._get_rearm_qty()
+
+        return ActionCommand(
+            action=Action.OPEN,
+            symbol=self.symbol,
+            side=self.side,
+            qty=qty,
+            reason="REARM",
+        )
+
+    def _execute_rearm(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        action = self._build_rearm_action()
+
+        process_result = self.action_service.process_action(
+            action,
+            process_result,
+        )
+
+        return process_result
+
+    def _resolve_rearm(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        while True:
+            # Проверяем, нужно ли выполнять REARM
+            rearm_needed = self.rearm_checker.check()
+
+            if not rearm_needed:
+                # REARM не нужен -> выходим из цикла
+                return process_result
+            else:
+                # REARM нужен -> выполняем его
+                process_result = self._execute_rearm(
+                    process_result,
                 )
 
-            return self._resolve_action(status_line)
+                # Проверяем, выполнен ли REARM
+                if process_result.executed:
+                    # REARM выполнен -> выходим из цикла
+                    return process_result
+                else:
+                    # REARM не выполнен -> повторно проверяем условия
+                    self.logger.warning(
+                        "REARM не выполнен, повторная попытка..."
+                    )    
 
-             
+    def _resolve_bbw_exit(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult | None:
+        # Есть сигнал на выход?
+        should_exit, entry = self.partial_exit_bbw.check()
+        if should_exit:
+            # Сигнал на выход есть
+            process_result = self._execute_close(
+                entry,
+                process_result,
+                reason="bbw",
+            )
+
+            # Выполнен ли CLOSE?
+            if process_result.executed:
+                # CLOSE выполнен -> запускаем REARM
+                return self._resolve_rearm(
+                    process_result,
+                )
+            else:
+                # CLOSE не выполнен -> выходим
+                return process_result
+        else:
+            # Сигнала на выход нет
+            return None
+
+    def _execute_close(
+        self,
+        entry,
+        process_result: ProcessResult,
+        reason: str,
+    ) -> ProcessResult:
+        # Сигнал есть -> запускаем CLOSE
+        action = ActionCommand(
+                action=Action.CLOSE,
+                symbol=self.symbol,
+                levels=[entry],
+                side=get_inverse_side(self.side),
+                qty=entry.qty,
+                reason=reason,
+            )
+        process_result = self.action_service.process_action(
+                action,
+                process_result,
+            )
+        return process_result
+
+    def _get_entry_qty(self) -> float:
+        level = len(self.state_store.stack_mng.data.entries)
+
+        cur_map_elem = self.map_mng.get_template_by_level(level)
+        qty_factor = cur_map_elem.qty_pct / 100
+
+        balance = self.proxy_driver.get_balance()
+        qty_in_usd = qty_factor * balance
+
+        price = self.proxy_driver.get_last_price(self.symbol)
+
+        qty = qty_in_usd / price
+
+        qty = self.trading_info.get_valid_order_qty(qty)
+
+        if qty <= 0:
+            raise RuntimeError(
+                f"Invalid OPEN qty: {qty} "
+                f"(qty_factor={qty_factor})"
+            )
+
+        return qty    
+
+    def _execute_open(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        action = ActionCommand(
+            action=Action.OPEN,
+            symbol=self.symbol,
+            side=self.side,
+            qty=self._get_entry_qty(),
+            reason="ha_reversal",
+        )
+
+        process_result = self.action_service.process_action(
+            action,
+            process_result,
+        )
+
+        return process_result    

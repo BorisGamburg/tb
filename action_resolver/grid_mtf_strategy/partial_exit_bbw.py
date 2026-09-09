@@ -1,9 +1,4 @@
-from action_processor.action import (
-    Action,
-    ActionCommand,
-)
 from services.bb_service import BBService
-from utils.utils import get_inverse_side
 
 
 class PartialExitBBW:
@@ -114,7 +109,7 @@ class PartialExitBBW:
     def _check_exit(self, exit_context):
         # Если контекст выхода не получен, то выходим без действий
         if exit_context is None:
-            return None
+            return False, None
 
         # Распаковываем контекст выхода
         prof_level, cur_price, cur_dist, min_dist, max_dist = exit_context
@@ -122,18 +117,17 @@ class PartialExitBBW:
         # Проверяем, превысила ли текущая дистанция минимальную 
         # Если нет, то выходим без действий
         if cur_dist < min_dist:
-            return None
+            return False, None
 
         # Проверяем, превысила ли текущая дистанция максимальную
         # Если да, то даем команду на закрытие 
         if cur_dist >= max_dist:
-            return self._exit(prof_level)
-
+            return True, prof_level
         # Проверяем, достигнут ли tp по BB
         if not self._is_bb_tp_reached(cur_price):
-            return None
+            return False, None
 
-        return self._exit(prof_level)
+        return True, prof_level
 
     def check(self):
         # Получаем данные для проверки выхода
@@ -141,16 +135,6 @@ class PartialExitBBW:
 
         # Проверка выхода 
         return self._check_exit(exit_context)
-
-    def _exit(self, entry):
-        return ActionCommand(
-            action=Action.CLOSE,
-            symbol=self.symbol,
-            levels=[entry],
-            side=get_inverse_side(self.side),
-            qty=entry.qty,
-            reason="bbw",
-        )    
 
     def _update_exit_status(self, take_profit):
         self.runtime.bbw_exit_status = f"[tp={take_profit:.6f}]"    

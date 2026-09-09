@@ -1,5 +1,3 @@
-from action_processor.action import Action, ActionCommand
-from utils.utils import get_inverse_side
 from action_processor.state.state import State
 from common.market_service import MarketService
 from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
@@ -37,7 +35,7 @@ class PartialExitCross:
 
         # Если у нас меньше 2 уровней, то сразу выходим
         if len(entries) < 2:
-            return None
+            return False, None
 
         # Сортируем уровни по цене по возрастанию
         sorted_entries = sorted(entries, key=lambda x: x.price)
@@ -52,18 +50,11 @@ class PartialExitCross:
         # и находится ли текущая цена выше/ниже предыдущего уровня
         most_profitable_level, prev, cond = self._evaluate_cross_condition(sorted_entries, market_close_price)
         if not cond:
-            return None
+            return False, None
 
         # Не даем закрывать уровень, если он не прошел проверку на безубыток
         if not self.breakeven_checker.is_ok(entry=most_profitable_level, price=market_close_price):
-            return None
+            return False, None
 
         # Возвращаем команду на закрытие уровня
-        return ActionCommand(
-            action=Action.CLOSE,
-            symbol=self.symbol,
-            levels=[most_profitable_level],
-            side=get_inverse_side(self.side),
-            qty=most_profitable_level.qty,
-            reason="cross",
-        )
+        return True, most_profitable_level

@@ -37,7 +37,6 @@ class ExternalCommandProcessor:
 
             return self.action_service.process_action(
                 action_command,
-                process_result,
             )
 
         self.logger.error(

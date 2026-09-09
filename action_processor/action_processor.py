@@ -172,10 +172,6 @@ class ActionProcessor:
         self,
         process_result: ProcessResult,
     ) -> ProcessResult:
-        resolve_result = self.strategy.resolve()
+        process_result = self.strategy.resolve(process_result)
 
-        process_result.action_command = resolve_result.action_command
-        process_result.status = resolve_result.status
-        process_result.executed = resolve_result.executed
-
-        return process_result        
+        return process_result

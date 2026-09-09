@@ -1,9 +1,7 @@
-from action_processor.action import Action, ActionCommand
 from action_processor.state.state import State
 from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from rich.text import Text
-from common.trading_info import TradingInfo
 
 
 class EntryChecker:
@@ -16,7 +14,6 @@ class EntryChecker:
         price_service,
         symbol: str,
         side: str,
-        trading_info: TradingInfo,
     ):
         self.runtime = runtime
         self.state_store = state_store
@@ -25,7 +22,6 @@ class EntryChecker:
         self.price_service = price_service
         self.symbol = symbol
         self.side = side
-        self.trading_info = trading_info
 
         self.ha_signal = HAReversalSignal(
             proxy_driver=self.proxy_driver,
@@ -143,38 +139,10 @@ class EntryChecker:
 
         # Принимаем решение только после проверки всех фильтров
         if not ha_ok or not rsi_ok or not distance_ok:
-            return None
+            return False
 
-        # Формируем команду
-        qty = self._get_qty()     
-        return ActionCommand(
-            action=Action.OPEN,
-            symbol=self.symbol,
-            side=self.side,
-            qty=qty,
-            reason="ha_reversal",
-        )
-
-    def _get_qty(self):
-        cur_map_elem = self.map_mng.get_cur_map_elem()
-        qty_factor = cur_map_elem.qty_pct / 100
-
-        balance = self.proxy_driver.get_balance()
-        qty_in_usd = qty_factor * balance
-
-        price = self.proxy_driver.get_last_price(self.symbol)
-
-        qty = qty_in_usd / price
-
-        qty = self.trading_info.get_valid_order_qty(qty)
-
-        if qty <= 0:
-            raise RuntimeError(
-                f"Invalid OPEN qty: {qty} "
-                f"(qty_factor={qty_factor})"
-            )
-
-        return qty    
+        # Сигнал есть
+        return True
 
     def _is_distance_ok(
         self,

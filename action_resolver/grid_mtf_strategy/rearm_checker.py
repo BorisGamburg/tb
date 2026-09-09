@@ -1,12 +1,7 @@
-from action_processor.action import (
-    Action,
-    ActionCommand,
-)
 from services.distance_service import (
     is_distance_ok,
 )
 from common.trading_info import TradingInfo
-from action_processor.action_source import ActionSource
 from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
 
@@ -50,25 +45,16 @@ class RearmChecker:
             "rsi_last_closed"
         )
 
-   
-    def check(self) -> ActionCommand | None:
+    def check(self) -> bool:
         rearm_ready = self._is_rearm_ready()
+
         if not rearm_ready:
             self.logger.info(
                 f"[REARM] {self.runtime.rearm_status}"
             )
-            return None
+            return False
 
-        qty = self._get_qty()
-
-        return ActionCommand(
-            action=Action.OPEN,
-            symbol=self.symbol,
-            side=self.side,
-            qty=qty,
-            reason="rearm",
-            source=ActionSource.REARM_CHECKER,
-        )    
+        return True
     
     def _is_rearm_distance_ok(
         self,

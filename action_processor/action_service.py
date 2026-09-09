@@ -36,9 +36,9 @@ class ActionService:
 
     def process_action(
         self,
-        action_command,
+        action_command: ActionCommand,
         process_result: ProcessResult,
-    ):
+    ) -> ProcessResult:
         # Логируем команду
         self.notify_action(action_command)
 
@@ -46,6 +46,7 @@ class ActionService:
         exec_result = self.execution.execute(action_command)
 
         # Заносим результаты в process_result
+        process_result.action_command = exec_result.action_command
         process_result.price = exec_result.price
         process_result.qty = exec_result.qty
         process_result.fee = exec_result.fee
