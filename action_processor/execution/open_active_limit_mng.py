@@ -1,7 +1,6 @@
 import time
 
 from managers.scale_pool_mng import ScalePoolMng
-from action_processor.execution.chase_order_mng import ChaseOrderMng
 from action_processor.execution.limit_order_result import LimitOrderResult, LimitOrderStatus
 from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
@@ -22,12 +21,6 @@ class OpenActiveLimitMng:
             price_service=price_service,
             logger=logger,
         )
-
-        self.chase_order_mng = ChaseOrderMng(
-            proxy_driver=proxy_driver,
-            price_service=price_service,
-            logger=logger,
-        )        
 
     def get_order_status(self, symbol: str, order_id: str):
         """
@@ -147,9 +140,8 @@ class OpenActiveLimitMng:
 
         if status == "PartiallyFilled":
             return self._handle_partial_order(
-                symbol=symbol,
-                side=side,
                 order_id=order_id,
+                order_data=order_data
             )
 
         if status == "Filled":
@@ -194,19 +186,17 @@ class OpenActiveLimitMng:
 
     def _handle_partial_order(
         self,
-        symbol,
-        side,
         order_id,
+        order_data
     ):
-        order_data = self.chase_order_mng.chase(
-            symbol=symbol,
-            side=side,
-            order_id=order_id,
-        )
-
         filled_qty = float(order_data["cumExecQty"])
         avg_price = float(order_data["avgPrice"])
         fee = float(order_data["cumFeeDetail"]["USDT"])
+
+        self.logger.info(
+            f"[LIMIT] order partially filled | order_id={order_id} "
+            f"| filled_qty={filled_qty}"
+        )
 
         return LimitOrderResult(
             order_id=order_id,
