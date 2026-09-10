@@ -49,35 +49,6 @@ class Hedge2Strategy(BaseStrategy):
 
         self._log_parameters()
 
-    def resolve(self, external_command, execution_result=None) -> ResolveResult:
-        external_result = self._handle_external_command(external_command)
-        if external_result is not None:
-            return external_result
-
-        # 1. Проверяем одноразовый триггер Recovery
-        recovery_result = self._try_execute_recovery()
-        if recovery_result is not None:
-            return recovery_result        
-
-        # Получаем режим
-        mode_result, status = self.hedge_mode_mng.check()
-
-        # Преобразуем режим в команду действия
-        action_command = transform(
-            mode_result,
-            symbol=self.symbol,
-            side=self.state_store.data.side,
-        )
-
-        # Формируем статусную строку
-        status_line = self._build_status_line(status=status)
-
-        return ResolveResult(
-            action_command=action_command,
-            status=status_line,
-            skip_sleep=False,
-        )
-
     def _build_status_line(
         self,
         status: HedgeStatus,
@@ -101,43 +72,16 @@ class Hedge2Strategy(BaseStrategy):
             f"Side: {self.state_store.data.side}"
         )
 
-    def _handle_external_command(
-        self,
-        external_command,
-    ) -> ResolveResult | None:
+    def _check_recovery(self) -> tuple[bool, ResolveResult]:
+        empty_result = ResolveResult(
+            action_command=None,
+            status="",
+            executed=False,
+        )
 
-        if not external_command:
-            return None
-
-        command = external_command.get("command")
-
-        if command == "CLOSE_POSITION":
-            action_command = ActionCommand(
-                action=Action.CLOSE_POSITION,
-                symbol=self.symbol,
-                side=self.state_store.data.side,
-            )
-
-            return ResolveResult(
-                action_command=action_command,
-                status="CLOSE_POSITION",
-                skip_sleep=False,
-            )
-
-        if command == "TEST":
-            print("TEST")
-            return ResolveResult(
-                action_command=None,
-                status="TEST",
-                skip_sleep=False,
-            )
-
-        return None        
-
-    def _try_execute_recovery(self) -> ResolveResult | None:
         # Если recovery не нужен, то выходим
         if not self.state_store.data.recovery_enabled:
-            return None
+            return False, empty_result
 
         # Читаем параметры нужные для recovery
         rec_tf = self.state_store.data.recovery_timeframe
@@ -148,7 +92,7 @@ class Hedge2Strategy(BaseStrategy):
             # Получаем размер уровня для recovery
             qty = self._calc_recovery_qty()
             if qty == 0.0:
-                return None
+                return False, empty_result
 
             # Отключаем recovery-флаг
             self.state_store.data.recovery_enabled = False
@@ -163,13 +107,13 @@ class Hedge2Strategy(BaseStrategy):
                 reason="recovery_reversal",
             )
 
-            return ResolveResult(
+            return True, ResolveResult(
                 action_command=action_command,
-                status=f"RECOVERY EXECUTED on {rec_tf} | qty={qty}",
-                skip_sleep=False,
+                status=f"RECOVERY INITIATED on {rec_tf} | qty={qty}",
+                executed=False
             )
 
-        return None
+        return False, empty_result
 
     def _calc_recovery_qty(self) -> float:
         side = self.state_store.data.side
@@ -184,3 +128,48 @@ class Hedge2Strategy(BaseStrategy):
             hedge_qty_ratio=hedge_qty_ratio,
             trading_info=self.trading_info,
         )
+
+    def _check_mode_action(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        # Получаем режим
+        mode_result, status = self.hedge_mode_mng.check()
+
+        # Преобразуем режим в команду действия
+        action_command = transform(
+            mode_result,
+            symbol=self.symbol,
+            side=self.state_store.data.side,
+        )
+
+        # Формируем статусную строку
+        status_line = self._build_status_line(status=status)
+
+        if action_command is None:
+            process_result.status = status_line
+            return process_result
+
+        # Выполняем действие
+        process_result = self.action_service.process_action(
+            action_command,
+            process_result,
+        )
+        process_result.status = status_line
+
+        return process_result    
+
+    def resolve(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        # 1. Проверяем одноразовый триггер Recovery
+        recovery_triggered, recovery_result = self._check_recovery()
+        if recovery_triggered:
+            return self.action_service.process_action(
+                recovery_result.action_command,
+                process_result,
+            )
+
+        # Основная стратегия
+        return self._check_mode_action(process_result)    
