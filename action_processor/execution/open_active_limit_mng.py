@@ -140,8 +140,11 @@ class OpenActiveLimitMng:
 
         if status == "PartiallyFilled":
             return self._handle_partial_order(
+                symbol=symbol,
+                side=side,
+                qty=qty,
                 order_id=order_id,
-                order_data=order_data
+                order_data=order_data,
             )
 
         if status == "Filled":
@@ -186,16 +189,27 @@ class OpenActiveLimitMng:
 
     def _handle_partial_order(
         self,
+        symbol,
+        side,
+        qty,
         order_id,
-        order_data
+        order_data,
     ):
         filled_qty = float(order_data["cumExecQty"])
         avg_price = float(order_data["avgPrice"])
         fee = float(order_data["cumFeeDetail"]["USDT"])
+        remaining_qty = qty - filled_qty
+
+        self.scale_pool_mng.move_order_to_pool(
+            symbol=symbol,
+            side=side,
+            order_id=order_id,
+            new_qty=remaining_qty,
+        )
 
         self.logger.info(
             f"[LIMIT] order partially filled | order_id={order_id} "
-            f"| filled_qty={filled_qty}"
+            f"| filled_qty={filled_qty} | remaining_qty={remaining_qty}"
         )
 
         return LimitOrderResult(

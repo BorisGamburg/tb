@@ -126,16 +126,6 @@ class Execution:
             qty=result.qty,
         )
 
-        if order_result.filled and abs(
-            order_result.filled_qty - result.qty
-        ) > 1e-8:
-            raise RuntimeError(
-                f"Open order partially filled "
-                f"| symbol={result.symbol} "
-                f"| requested_qty={result.qty} "
-                f"| executed_qty={order_result.filled_qty}"
-            )
-
         return (
             order_result.avg_price,
             order_result.filled_qty,
