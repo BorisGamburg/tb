@@ -10,6 +10,8 @@ from common.trading_info import TradingInfo
 from action_processor.action import Action, ActionCommand
 from signals.ha_reversal_signal import HAReversalSignal
 from action_resolver.hedge_2_strategy.build_mng import calc_hedge_qty
+from action_processor.action_service import ActionService
+from action_processor.process_result import ProcessResult
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -39,6 +41,11 @@ class Hedge2Strategy(BaseStrategy):
             proxy_driver=self.proxy_driver,
             symbol=self.symbol,
         )
+
+        self.action_service = ActionService(
+            app_ctx=app_ctx,
+            state_store=state_store,
+        )        
 
         self._log_parameters()
 

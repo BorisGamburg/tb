@@ -6,6 +6,7 @@ from action_processor.process_result import ProcessResult
 from action_processor.execution.execution_result import ExecutionResult
 from action_processor.trade_table_logger import TradeTableLogger
 from action_processor.action import Action, ActionCommand
+from action_processor.execution.limit_order_result import LimitOrderStatus
 
 
 class ActionService:
@@ -92,19 +93,43 @@ class ActionService:
         side = self.state_store.data.side
 
         if result.action_command.action == Action.OPEN:
+            reason = result.action_command.reason
+            source = result.action_command.source.value
+
+            if result.status == LimitOrderStatus.PARTIALLY_FILLED:
+                return (
+                    "💎 LEVEL PARTIALLY OPENED\n"
+                    f"Symbol: {symbol}\n"
+                    f"Side: {side}\n"
+                    f"Qty: {result.qty}\n"
+                    f"Price: {result.price}\n"
+                    "Status: PARTIALLY_FILLED\n"
+                    f"Reason: {reason}\n"
+                    f"Source: {source}"
+                )
+
             return (
                 "💎 LEVEL OPENED\n"
                 f"Symbol: {symbol}\n"
                 f"Side: {side}\n"
                 f"Qty: {result.qty}\n"
-                f"Price: {result.price}"
+                f"Price: {result.price}\n"
+                f"Reason: {reason}\n"
+                f"Source: {source}"
             )
+            
+        
         if result.action_command.action == Action.CLOSE:
+            reason = result.action_command.reason
+            source = result.action_command.source.value
+
             return (
                 "📉 LEVELS CLOSED\n"
                 f"Symbol: {symbol}\n"
                 f"Qty: {result.qty}\n"
-                f"Price: {result.price}"
+                f"Price: {result.price}\n"
+                f"Reason: {reason}\n"
+                f"Source: {source}"
             )
 
         return None

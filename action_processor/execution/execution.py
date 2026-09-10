@@ -62,14 +62,15 @@ class Execution:
         action = act_cmd.action
 
         if action == Action.OPEN:
-            price, qty, fee, executed = self._exec_open(act_cmd)
+            price, qty, fee, executed, status = self._exec_open(act_cmd)
 
         elif action == Action.CLOSE:
-            price, qty, fee, executed = self._exec_close(act_cmd)
+            price, qty, fee, executed, status = self._exec_close(act_cmd)
 
         elif action == Action.CLOSE_POSITION:
-            price, qty, fee = self._exec_close_position(act_cmd)            
+            price, qty, fee = self._exec_close_position(act_cmd)
             executed = True
+            status = None
 
         else:
             raise ValueError(f"Unknown Action: {action}")
@@ -80,6 +81,7 @@ class Execution:
             qty=qty,
             fee=fee,
             executed=executed,
+            status=status,
         )
 
         return exec_result
@@ -131,7 +133,8 @@ class Execution:
             order_result.filled_qty,
             order_result.fee,
             order_result.filled,
-        )    
+            order_result.status,
+        )
 
     def _exec_close(self, result):
         order_result = self.close_passive_limit_mng.wait_limit_order(
@@ -152,4 +155,5 @@ class Execution:
             order_result.filled_qty,
             order_result.fee,
             executed,
+            order_result.status,
         )
