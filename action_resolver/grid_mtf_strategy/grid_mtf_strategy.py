@@ -16,6 +16,7 @@ from action_processor.action_service import ActionService
 from action_processor.process_result import ProcessResult
 from action_processor.action import Action, ActionCommand
 from utils.utils import get_inverse_side
+from action_processor.action_source import ActionSource
 
 
 @dataclass(slots=True)
@@ -268,6 +269,7 @@ class GridMTFStrategy(BaseStrategy):
             side=self.side,
             qty=qty,
             reason="REARM",
+            source=ActionSource.REARM_CHECKER
         )
 
     def _execute_rearm(
@@ -322,6 +324,7 @@ class GridMTFStrategy(BaseStrategy):
                 entry,
                 process_result,
                 reason="bbw",
+                source=ActionSource.PARTIAL_EXIT_BBW
             )
 
             # Выполнен ли CLOSE?
@@ -342,6 +345,7 @@ class GridMTFStrategy(BaseStrategy):
         entry,
         process_result: ProcessResult,
         reason: str,
+        source: ActionSource,
     ) -> ProcessResult:
         # Сигнал есть -> запускаем CLOSE
         action = ActionCommand(
@@ -351,6 +355,7 @@ class GridMTFStrategy(BaseStrategy):
                 side=get_inverse_side(self.side),
                 qty=entry.qty,
                 reason=reason,
+                source=source
             )
         process_result = self.action_service.process_action(
                 action,
@@ -391,6 +396,7 @@ class GridMTFStrategy(BaseStrategy):
             side=self.side,
             qty=self._get_entry_qty(),
             reason="ha_reversal",
+            source=ActionSource.ENTRY_CHECKER
         )
 
         process_result = self.action_service.process_action(
@@ -411,6 +417,7 @@ class GridMTFStrategy(BaseStrategy):
                 entry,
                 process_result,
                 reason="cross",
+                source=ActionSource.PARTIAL_EXIT_CROSS
             )
 
         return process_result    

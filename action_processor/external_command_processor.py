@@ -1,6 +1,7 @@
 from action_processor.action import Action, ActionCommand
 from action_processor.action_service import ActionService
 from action_processor.process_result import ProcessResult
+from action_processor.action_source import ActionSource
 
 
 class ExternalCommandProcessor:
@@ -31,12 +32,14 @@ class ExternalCommandProcessor:
                 action=Action.CLOSE_POSITION,
                 symbol=self.symbol,
                 side=self.side,
+                source=ActionSource.EXTERNAL_COMMAND
             )
 
             process_result.action_command = action_command            
 
             return self.action_service.process_action(
-                action_command,
+                action_command=action_command,
+                process_result=process_result
             )
 
         self.logger.error(

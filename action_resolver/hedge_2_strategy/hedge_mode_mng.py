@@ -172,10 +172,8 @@ class HedgeModeMng:
         if mode == HedgeMode.OPTIMIZATION:
             optimization_result = self.optimization_manager.check(
                 work_price=ctx.work_price,
-                prev_work_price=ctx.prev_work_price,
                 entries=ctx.entries,
                 profit_tolerance_ratio=ctx.profit_tolerance_ratio,
-                loss_tolerance_ratio=ctx.loss_tolerance_ratio,
             )
 
             optimization_result.report = report + optimization_result.report

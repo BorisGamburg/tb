@@ -8,6 +8,13 @@ class OptimizationResult:
     close_qty: float
     report: str
 
+from enum import Enum
+
+class CloseTiming(Enum):
+    EARLY = "EARLY"
+    TIMELY = "TIMELY"
+    LATE = "LATE"    
+
 
 class OptimizationMng:
 
@@ -121,10 +128,8 @@ class OptimizationMng:
     def check(
         self,
         work_price: float,
-        prev_work_price: float | None,
         entries,
         profit_tolerance_ratio: float,
-        loss_tolerance_ratio: float,        
     ):
         report = ""
 
@@ -143,21 +148,18 @@ class OptimizationMng:
             )      
 
         # Проверяем, пора ли закрывать пару
-        ok, msg = self._should_close_pair(
+        timing = self._should_close_pair(
             pair=pair,
             last_price=work_price,
-            prev_price=prev_work_price,
             profit_tolerance=profit_tolerance_ratio,
-            loss_tolerance=loss_tolerance_ratio,
         )
-        report += msg
-        if not ok:
+        if timing != CloseTiming.TIMELY:
             return OptimizationResult(
                 allowed=False,
                 levels=[],
                 report=report,
                 close_qty=0.0,
-            )          
+            )        
 
         # Успешно прошли все проверки — оптимизация разрешена
         return OptimizationResult(
@@ -178,114 +180,62 @@ class OptimizationMng:
             next_entry.qty
         )    
 
-    def _should_close_pair(
-        self,
-        pair,
-        last_price: float,
-        prev_price: float | None,
-        profit_tolerance: float,
-        loss_tolerance: float,
-    ):
-        report = ""
-
-        if prev_price is None:
-            report += "Close: previous price unavailable.\n"
-            return False, report
-
-        # Распаковываем пару
-        prev_entry, next_entry = pair
-
-        # Вычисляем среднюю цену пары
-        avg_entry = self._calc_avg_entry(
-            prev_entry,
-            next_entry,
-        )
-
-        # Вычисляем безубыток
-        breakeven = self._calc_breakeven_price(
-            avg_entry,
-        )
-
-        # 1. Приоритет — прибыльная зона.
-        if self._is_in_profit_zone(
-            breakeven=breakeven,
-            last_price=last_price,
-            profit_tolerance=profit_tolerance,
-        ):
-            report += "Close: profit zone.\n"
-            return (True, report)
-
-        # 2. Проверяем пересечение BE в прибыльном направлении.
-        crossed = self._is_breakeven_crossing(
-            breakeven=breakeven,
-            prev_price=prev_price,
-            last_price=last_price,
-        )
-        if not crossed:
-            report += "Close: no breakeven crossing.\n"
-            return (False, report)
-
-        # 3. Проверяем величину проскока.
-        if self._is_acceptable_overshoot(
-            breakeven=breakeven,
-            last_price=last_price,
-            loss_tolerance=loss_tolerance,
-        ):
-            report += "Close: acceptable overshoot.\n"
-            return (True, report)
-
-        report += "Close: overshoot too large.\n"
-        return (False, report)
-    
     def _is_in_profit_zone(
         self,
         breakeven: float,
         last_price: float,
         profit_tolerance: float,
-    ) -> bool:
+    ) -> CloseTiming:
 
         if self.hedge_side == "Buy":
-            return (
-                breakeven <= last_price <= breakeven * (1 + profit_tolerance)
+            # BUY: ниже зоны — EARLY, выше зоны — LATE
+            band_low = breakeven
+            band_high = breakeven * (
+                1 + profit_tolerance
             )
 
-        return (
-            breakeven * (1 - profit_tolerance) <= last_price <= breakeven
+            if last_price < band_low:
+                return CloseTiming.EARLY
+
+            if last_price > band_high:
+                return CloseTiming.LATE
+
+            return CloseTiming.TIMELY
+
+        # SELL: выше зоны — EARLY, ниже зоны — LATE
+        band_low = breakeven * (
+            1 - profit_tolerance
+        )
+        band_high = breakeven
+
+        if last_price > band_high:
+            return CloseTiming.EARLY
+
+        if last_price < band_low:
+            return CloseTiming.LATE
+
+        return CloseTiming.TIMELY
+
+    
+    def _should_close_pair(
+        self,
+        pair,
+        last_price: float,
+        profit_tolerance: float,
+    ):
+        prev_entry, next_entry = pair
+
+        avg_entry = self._calc_avg_entry(
+            prev_entry,
+            next_entry,
         )
 
-    
-    def _is_breakeven_crossing(
-        self,
-        breakeven: float,
-        prev_price: float,
-        last_price: float,
-    ) -> bool:
+        breakeven = self._calc_breakeven_price(
+            avg_entry,
+        )
 
-        if self.hedge_side == "Buy":
-            return (
-                prev_price > breakeven and
-                last_price <= breakeven
-            )
-
-        return (
-            prev_price < breakeven and
-            last_price >= breakeven
-        )    
-    
-    def _is_acceptable_overshoot(
-        self,
-        breakeven: float,
-        last_price: float,
-        loss_tolerance: float,
-    ) -> bool:
-
-        if self.hedge_side == "Buy":
-            return (
-                last_price >=
-                breakeven * (1 - loss_tolerance)
-            )
-
-        return (
-            last_price <=
-            breakeven * (1 + loss_tolerance)
-        )    
+        return self._is_in_profit_zone(
+            breakeven=breakeven,
+            last_price=last_price,
+            profit_tolerance=profit_tolerance,
+        )
