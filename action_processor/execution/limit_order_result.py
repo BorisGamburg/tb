@@ -11,7 +11,7 @@ class LimitOrderStatus(Enum):
 @dataclass
 class LimitOrderResult:
     order_id: str
-    avg_price: float | None
+    avg_price: float
     filled_qty: float
     fee: float
     status: LimitOrderStatus

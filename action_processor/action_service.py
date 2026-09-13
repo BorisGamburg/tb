@@ -28,6 +28,7 @@ class ActionService:
 
         self.accounting = Accounting(
             state_store=state_store,
+            logger=app_ctx.logger,
         )
 
         self.trade_table_logger = TradeTableLogger(
@@ -61,10 +62,15 @@ class ActionService:
         self.notify_telegram(exec_result)
 
         # Запускаем Accounter
-        accounting_message = self.accounting.apply(process_result)
+        self.accounting.apply(
+            action=exec_result.action_command.action,
+            price=exec_result.price,
+            qty=exec_result.qty,
+            fee=exec_result.fee,
+            levels=exec_result.action_command.levels,
+        )
 
         # Логируем результаты
-        self.logger.info(accounting_message)
         self.trade_table_logger.log_trade_table(exec_result)
 
         return process_result

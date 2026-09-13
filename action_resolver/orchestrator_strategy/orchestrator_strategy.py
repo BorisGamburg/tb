@@ -4,6 +4,7 @@ from action_processor.bootstrap import AppContext
 from action_resolver.resolve_result import ResolveResult
 from orchestrator.orchestrator import Orchestrator
 from common.trading_info import TradingInfo
+from action_processor.action import Action, ActionCommand
 
 
 class OrchestratorStrategy(BaseStrategy):
@@ -85,9 +86,12 @@ class OrchestratorStrategy(BaseStrategy):
     ) -> ResolveResult:
         if not self._is_close_allowed():
             return ResolveResult(
-                action_command=None,
+                action_command=ActionCommand(
+                    action=Action.NO_ACTION,
+                    symbol=self.symbol,
+                ),
                 status="WAIT CLOSE",
-                skip_sleep=False,
+                executed=False,
             )
 
         self.app_ctx.logger.info(
@@ -99,7 +103,10 @@ class OrchestratorStrategy(BaseStrategy):
         # self._close_positions()
 
         return ResolveResult(
-            action_command=None,
+            action_command=ActionCommand(
+                action=Action.NO_ACTION,
+                symbol=self.symbol,
+            ),
             status="CLOSE CONDITIONS MET",
-            skip_sleep=False,
-        )                   
+            executed=False,
+        )

@@ -5,6 +5,7 @@ from action_processor.action_source import ActionSource
 
 
 class Action(Enum):
+    NO_ACTION = "no_action"
     OPEN = "open"
     CLOSE = "close"
     CLOSE_POSITION = "close_position"

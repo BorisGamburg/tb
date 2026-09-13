@@ -74,7 +74,10 @@ class Hedge2Strategy(BaseStrategy):
 
     def _check_recovery(self) -> tuple[bool, ResolveResult]:
         empty_result = ResolveResult(
-            action_command=None,
+            action_command=ActionCommand(
+                action=Action.NO_ACTION,
+                symbol=self.symbol,
+            ),
             status="",
             executed=False,
         )
@@ -146,18 +149,49 @@ class Hedge2Strategy(BaseStrategy):
         # Формируем статусную строку
         status_line = self._build_status_line(status=status)
 
-        if action_command is None:
+        if action_command.action == Action.NO_ACTION:
             process_result.status = status_line
             return process_result
 
         # Выполняем действие
-        process_result = self.action_service.process_action(
+        exec_result = self.action_service.execution.execute(
             action_command,
-            process_result,
         )
-        process_result.status = status_line
+        self.get_process_result(process_result, exec_result)
 
-        return process_result    
+        # Если действие не выполнено -> выходим
+        if not exec_result.executed:
+            process_result.status = status_line
+            return process_result
+
+        # Post-execution проверка CLOSE
+        if action_command.action == Action.CLOSE:
+            timing = (
+                self.hedge_mode_mng.optimization_manager.should_close_pair(
+                    pair=exec_result.action_command.levels,
+                    last_price=exec_result.price,
+                    profit_tolerance=self.hedge_mode_mng.profit_tolerance_ratio,
+                )
+            )
+
+        # Accounting
+        self.action_service.accounting.apply(
+            action=exec_result.action_command.action,
+            price=exec_result.price,
+            qty=exec_result.qty,
+            fee=exec_result.fee,
+            levels=exec_result.action_command.levels,
+        )
+
+        process_result.status = status_line
+        return process_result
+
+    def get_process_result(self, process_result, exec_result):
+        process_result.action_command = exec_result.action_command
+        process_result.price = exec_result.price
+        process_result.qty = exec_result.qty
+        process_result.fee = exec_result.fee
+        process_result.executed = exec_result.executed
 
     def resolve(
         self,

@@ -31,13 +31,9 @@ def check_level_completion(
     # Работаем только с клоном стека.
     stack_copy = stack_mng.clone()
 
-    # Сортировка необходима для корректной работы
-    # _find_nearest_profitable_level().
-    stack_copy.sort_stack(side)
-
     # Находим ближайший прибыльный уровень.
-    nearest_profit_level = _find_nearest_profitable_level(
-        stack_mng=stack_copy,
+    nearest_profit_level = find_nearest_profitable_level(
+        entries=stack_copy.data.entries,
         side=side,
         last_price=last_price,
     )
@@ -103,40 +99,6 @@ def check_level_completion(
         add_qty=add_qty,
     )
 
-def _find_nearest_profitable_level(
-    stack_mng: StackMng,
-    side: str,
-    last_price: float,
-) -> StackElem | None:
-    """
-    Находит ближайший прибыльный уровень.
-
-    Предполагается, что стек уже отсортирован:
-
-    - для Buy — по убыванию цены;
-    - для Sell — по возрастанию цены.
-
-    Поэтому первый найденный прибыльный уровень является ближайшим
-    к текущей цене.
-
-    Настоящий стек эта функция не сортирует.
-    """
-
-    if side == "Buy":
-        for level in stack_mng.data.entries:
-            if level.price < last_price:
-                return level
-
-    elif side == "Sell":
-        for level in stack_mng.data.entries:
-            if level.price > last_price:
-                return level
-
-    else:
-        raise ValueError(f"Unknown side: {side}")
-
-    return None
-
 def _find_neighbors(
     stack_mng: StackMng,
     level: StackElem,
@@ -197,3 +159,60 @@ def _check_level_spacing(
 
     return True
 
+def find_nearest_profitable_level(
+    entries,
+    side: str,
+    last_price: float,
+) -> StackElem | None:
+    if side == "Buy":
+        sorted_entries = sorted(
+            entries,
+            key=lambda level: level.price,
+            reverse=True,
+        )
+        for level in sorted_entries:
+            if level.price < last_price:
+                return level
+
+    elif side == "Sell":
+        sorted_entries = sorted(
+            entries,
+            key=lambda level: level.price,
+        )
+        for level in sorted_entries:
+            if level.price > last_price:
+                return level
+
+    else:
+        raise ValueError(f"Unknown side: {side}")
+
+    return None
+
+def find_nearest_loss_level(
+    entries,
+    side: str,
+    last_price: float,
+) -> StackElem | None:
+    if side == "Buy":
+        sorted_entries = sorted(
+            entries,
+            key=lambda level: level.price,
+        )
+        for level in sorted_entries:
+            if level.price > last_price:
+                return level
+
+    elif side == "Sell":
+        sorted_entries = sorted(
+            entries,
+            key=lambda level: level.price,
+            reverse=True,
+        )
+        for level in sorted_entries:
+            if level.price < last_price:
+                return level
+
+    else:
+        raise ValueError(f"Unknown side: {side}")
+
+    return None

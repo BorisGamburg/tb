@@ -332,7 +332,7 @@ class ClosePassiveLimitMng:
         avg_price = (
             float(avg_price_raw)
             if avg_price_raw
-            else None
+            else 0.0
         )
 
         fee_detail = order_data.get("cumFeeDetail") or {}

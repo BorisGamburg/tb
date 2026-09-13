@@ -111,7 +111,16 @@ class ActionProcessor:
             ) as self.live:
                 while not self.shutdown_event.is_set():
                     # Логика цикла
-                    process_result = ProcessResult()
+                    process_result = ProcessResult(
+                        external_command=None,
+                        action_command=None,
+                        status="",
+                        executed=False,
+                        signal=False,
+                        price=0.0,
+                        qty=0.0,
+                        fee=0.0,
+                    )
                     self._process_cycle(process_result)
 
                     # Обновляем строку статуса 

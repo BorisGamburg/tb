@@ -68,10 +68,10 @@ class Execution:
             price, qty, fee, executed, status = self._exec_close(act_cmd)
 
         elif action == Action.CLOSE_POSITION:
-            price, qty, fee = self._exec_close_position(act_cmd)
-            executed = True
-            status = None
-
+            price, qty, fee, executed, status = self._exec_close_position(
+                act_cmd,
+            )
+            
         else:
             raise ValueError(f"Unknown Action: {action}")
 
@@ -87,15 +87,26 @@ class Execution:
         return exec_result
 
     def _exec_close_position(self, result):
+        # Получаем размер позиции
         position = self.proxy_driver.get_position(
             symbol=result.symbol,
             side=result.side,
         )
-
         position_qty = float(position["size"])
 
-        if position_qty <= 0:
-            return None, 0.0, 0.0
+        # Размер позиции < 0? Нонсенс -> исключение
+        if position_qty < 0:
+            raise RuntimeError(
+                f"Invalid position quantity "
+                f"| symbol={result.symbol} "
+                f"| side={result.side} "
+                f"| qty={position_qty}"
+            )
+
+        # Размер позиции = 0 -> позиции нет.
+        # Выходим, executed=False
+        if position_qty == 0:
+            return 0.0, 0.0, 0.0, False, None
 
         order_side = get_inverse_side(result.side)
 
@@ -119,7 +130,7 @@ class Execution:
                 f"| executed_qty={real_qty}"
             )
 
-        return avg_price, real_qty, fee
+        return avg_price, real_qty, fee, True, None
 
     def _exec_open(self, result):
         order_result = self.open_active_limit_mng.wait_limit_order(

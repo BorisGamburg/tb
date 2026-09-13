@@ -148,7 +148,7 @@ class OptimizationMng:
             )      
 
         # Проверяем, пора ли закрывать пару
-        timing = self._should_close_pair(
+        timing = self.should_close_pair(
             pair=pair,
             last_price=work_price,
             profit_tolerance=profit_tolerance_ratio,
@@ -217,7 +217,7 @@ class OptimizationMng:
         return CloseTiming.TIMELY
 
     
-    def _should_close_pair(
+    def should_close_pair(
         self,
         pair,
         last_price: float,

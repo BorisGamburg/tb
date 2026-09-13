@@ -32,7 +32,10 @@ def _transform_build(
     symbol: str
 ):
     if not result.allowed:
-        return None
+        return ActionCommand(
+            action=Action.NO_ACTION,
+            symbol=symbol,
+        )
 
     return ActionCommand(
         action=Action.OPEN,
@@ -44,11 +47,14 @@ def _transform_build(
 
 def _transform_optimization(
     result: OptimizationResult,
-    symbol: str, 
+    symbol: str,
     side: str
 ):
     if not result.allowed:
-        return None
+        return ActionCommand(
+            action=Action.NO_ACTION,
+            symbol=symbol,
+        )
 
     return ActionCommand(
         action=Action.CLOSE,

@@ -16,13 +16,12 @@ class State:
         # 1. Загружаем и валидируем данные 
         self.data = config_data
 
-        # 2. Инициализируем StackManager только для стратегий со stack
-        stack = getattr(self.data, "stack", None)
-        if stack is not None:
-            self.stack_mng = StackMng(self.data.stack, self.logger) 
-            self.stack_mng.sort_stack(self.data.side)
-        else:
-            self.stack_mng = None
+        # 2. Инициализируем StackManager
+        self.stack_mng: StackMng = StackMng(
+            self.data.stack,
+            self.logger,
+        )
+        self.stack_mng.sort_stack(self.data.side)
 
         self.map_mng = None
 

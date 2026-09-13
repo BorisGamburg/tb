@@ -180,7 +180,7 @@ class OpenActiveLimitMng:
         
         return LimitOrderResult(
             order_id=order_id,
-            avg_price=None,
+            avg_price=0.0,
             filled_qty=0.0,
             fee=0.0,
             filled=False,
