@@ -5,8 +5,8 @@ import logging
 from action_processor.execution.execution_result import ExecutionResult
 from utils.utils import get_inverse_side
 from action_processor.execution.open_active_limit_mng import OpenActiveLimitMng
-from action_processor.execution.close_passive_limit_mng import ClosePassiveLimitMng
 from action_processor.execution.limit_order_result import LimitOrderStatus
+from action_processor.execution.close_limit_mng import CloseLimitMng, ExitType
 
 
 class Execution:
@@ -23,11 +23,11 @@ class Execution:
             logger=logger,
         )
 
-        self.close_passive_limit_mng = ClosePassiveLimitMng(
+        self.close_limit_mng = CloseLimitMng(
             proxy_driver=proxy_driver,
             market_service=price_service,
             logger=logger,
-        )                
+        )             
 
     def _get_order_details(self, res, symbol):
         order_id = res["result"]["orderId"]
@@ -137,6 +137,7 @@ class Execution:
             symbol=result.symbol,
             side=result.side,
             qty=result.qty,
+            
         )
 
         return (
@@ -148,10 +149,11 @@ class Execution:
         )
 
     def _exec_close(self, result):
-        order_result = self.close_passive_limit_mng.wait_limit_order(
+        order_result = self.close_limit_mng.wait_limit_order(
             symbol=result.symbol,
             side=result.side,
             qty=result.qty,
+            exit_type=ExitType.ACTIVE,
         )
 
         if order_result.status == LimitOrderStatus.PARTIALLY_FILLED:
