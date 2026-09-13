@@ -1,7 +1,6 @@
 from action_processor.state.state import State
 from action_processor.state.stack_mng import StackMng
 from action_processor.action import Action
-from action_processor.action import Action
 
 class Accounting:
     def __init__(self, state_store: State, logger):
@@ -106,3 +105,30 @@ class Accounting:
             f"closed_qty={qty} | "
             f"remaining_qty={level.qty}"
         )
+
+    def update_level_qty(self, level, qty: float):
+        if qty <= 0:
+            raise ValueError(
+                f"Level qty must be positive | qty={qty}"
+            )
+
+        level.qty = qty
+
+        self.logger.info(
+            f"[ACCOUNTING] UPDATE_LEVEL_QTY | "
+            f"price={level.price} | "
+            f"qty={qty}"
+        )
+
+        self.state_store.save()
+
+    def remove_level(self, level):
+        self.stack_mng.remove_entry(level)
+
+        self.logger.info(
+            f"[ACCOUNTING] REMOVE_LEVEL | "
+            f"price={level.price} | "
+            f"qty={level.qty}"
+        )
+
+        self.state_store.save()        

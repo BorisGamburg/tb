@@ -1,4 +1,5 @@
-import time
+from decimal import Decimal
+
 from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
@@ -12,6 +13,7 @@ from signals.ha_reversal_signal import HAReversalSignal
 from action_resolver.hedge_2_strategy.build_mng import calc_hedge_qty
 from action_processor.action_service import ActionService
 from action_processor.process_result import ProcessResult
+from action_processor.execution.limit_order_result import LimitOrderStatus
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -132,60 +134,6 @@ class Hedge2Strategy(BaseStrategy):
             trading_info=self.trading_info,
         )
 
-    def _check_mode_action(
-        self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
-        # Получаем режим
-        mode_result, status = self.hedge_mode_mng.check()
-
-        # Преобразуем режим в команду действия
-        action_command = transform(
-            mode_result,
-            symbol=self.symbol,
-            side=self.state_store.data.side,
-        )
-
-        # Формируем статусную строку
-        status_line = self._build_status_line(status=status)
-
-        if action_command.action == Action.NO_ACTION:
-            process_result.status = status_line
-            return process_result
-
-        # Выполняем действие
-        exec_result = self.action_service.execution.execute(
-            action_command,
-        )
-        self.get_process_result(process_result, exec_result)
-
-        # Если действие не выполнено -> выходим
-        if not exec_result.executed:
-            process_result.status = status_line
-            return process_result
-
-        # Post-execution проверка CLOSE
-        if action_command.action == Action.CLOSE:
-            timing = (
-                self.hedge_mode_mng.optimization_manager.should_close_pair(
-                    pair=exec_result.action_command.levels,
-                    last_price=exec_result.price,
-                    profit_tolerance=self.hedge_mode_mng.profit_tolerance_ratio,
-                )
-            )
-
-        # Accounting
-        self.action_service.accounting.apply(
-            action=exec_result.action_command.action,
-            price=exec_result.price,
-            qty=exec_result.qty,
-            fee=exec_result.fee,
-            levels=exec_result.action_command.levels,
-        )
-
-        process_result.status = status_line
-        return process_result
-
     def get_process_result(self, process_result, exec_result):
         process_result.action_command = exec_result.action_command
         process_result.price = exec_result.price
@@ -207,3 +155,265 @@ class Hedge2Strategy(BaseStrategy):
 
         # Основная стратегия
         return self._check_mode_action(process_result)    
+
+    def _check_mode_action(
+        self,
+        process_result: ProcessResult,
+    ) -> ProcessResult:
+        # Получаем режим
+        mode_result, status = self.hedge_mode_mng.check()
+
+        # Преобразуем режим в команду действия
+        action_command = transform(
+            mode_result,
+            symbol=self.symbol,
+            side=self.state_store.data.side,
+        )
+
+        # Формируем статусную строку
+        status_line = self._build_status_line(status=status)
+
+        if action_command.action == Action.NO_ACTION:
+            process_result.status = status_line
+            return process_result
+
+        if action_command.action == Action.OPEN:
+            process_result = self.action_service.process_action(
+                action_command,
+                process_result,
+            )
+            process_result.status = status_line
+            return process_result
+
+        if action_command.action == Action.CLOSE:
+            return self._execute_close(
+                action_command,
+                process_result,
+                status_line,
+            )
+
+        raise ValueError(
+            f"Unsupported action in Hedge2Strategy: {action_command.action}"
+        )    
+
+    def _execute_close(
+        self,
+        action_command: ActionCommand,
+        process_result: ProcessResult,
+        status_line: str,
+    ) -> ProcessResult:
+        exec_result = self.action_service.execution.execute(
+            action_command,
+        )
+        self.get_process_result(process_result, exec_result)
+
+        # Если действие не выполнено -> выходим
+        if not exec_result.executed:
+            process_result.status = status_line
+            return process_result
+
+        if exec_result.status == LimitOrderStatus.PARTIALLY_FILLED:
+            return self._execute_close_partial(
+                exec_result,
+                process_result,
+                status_line,
+            )
+
+        if exec_result.status == LimitOrderStatus.FILLED:
+            return self._execute_close_filled(
+                exec_result,
+                process_result,
+                status_line,
+            )
+
+        raise ValueError(
+            f"Unexpected CLOSE execution status: {exec_result.status}"
+        )
+
+    def _execute_close_filled(
+        self,
+        exec_result,
+        process_result: ProcessResult,
+        status_line: str,
+    ) -> ProcessResult:
+        self.action_service.accounting.apply(
+            action=exec_result.action_command.action,
+            price=exec_result.price,
+            qty=exec_result.qty,
+            fee=exec_result.fee,
+            levels=exec_result.action_command.levels,
+        )
+
+        process_result.status = status_line
+        return process_result        
+
+    def calc_proportional_reductions(
+        self,
+        levels,
+        executed_qty: float,
+        qty_step: float,
+        side: str,
+    ):
+        # Проверяем количество уровней
+        if len(levels) != 2:
+            raise ValueError(
+                f"Expected exactly two levels, got {len(levels)}"
+            )
+
+        # Распаковываем уровни
+        level_1, level_2 = levels
+
+        # Определяем прибыльный уровень
+        profitable_level = self._get_profitable_level(
+            level_1,
+            level_2,
+            side,
+        )
+
+        # Вычисляем сумму размеров уровней
+        total_qty = level_1.qty + level_2.qty
+
+        # Вычисляем reduction для прибыльного уровня
+        profitable_reduction = self._calc_profitable_reduction(
+            executed_qty=executed_qty,
+            profitable_qty=profitable_level.qty,
+            total_qty=total_qty,
+            qty_step=qty_step,
+        )
+
+        # Вычисляем reduction для убыточного уровня
+        loss_reduction = self._calc_loss_reduction(
+            executed_qty=executed_qty,
+            profitable_reduction=profitable_reduction,
+        )
+
+        # Возвращаем reductions в правильном порядке
+        if profitable_level is level_1:
+            return profitable_reduction, loss_reduction
+
+        return loss_reduction, profitable_reduction
+
+    def _get_profitable_level(
+        self,
+        level_1,
+        level_2,
+        side: str,
+    ):
+        # Определяем прибыльный уровень
+        if side == "Sell":
+            return (
+                level_1
+                if level_1.price < level_2.price
+                else level_2
+            )
+
+        if side == "Buy":
+            return (
+                level_1
+                if level_1.price > level_2.price
+                else level_2
+            )
+
+        raise ValueError(
+            f"Unsupported side: {side}"
+        )
+
+    def _calc_profitable_reduction(
+        self,
+        executed_qty: float,
+        profitable_qty: float,
+        total_qty: float,
+        qty_step: float,
+    ):
+        # Вычисляем математически точный reduction
+        # для прибыльного уровня
+        profitable_reduction_raw = (
+            executed_qty * profitable_qty / total_qty
+        )
+
+        # Вычисляем округленный до шага инструмента reduction
+        return self.ceil_to_step(
+            profitable_reduction_raw,
+            qty_step,
+        )
+
+    def _calc_loss_reduction(
+        self,
+        executed_qty: float,
+        profitable_reduction: float,
+    ):
+        # Вычисляем reduction для убыточного уровня
+        loss_reduction = executed_qty - profitable_reduction
+
+        if loss_reduction < 0:
+            raise ValueError(
+                "Calculated loss reduction is negative: "
+                f"{loss_reduction}"
+            )
+
+        return loss_reduction
+
+
+    def ceil_to_step(self, value: float, step: float) -> float:
+        value_decimal = Decimal(str(value))
+        step_decimal = Decimal(str(step))
+
+        lower = (
+            value_decimal // step_decimal
+        ) * step_decimal
+
+        upper = lower + step_decimal
+
+        if value_decimal == lower:
+            return float(lower)
+
+        return float(upper)    
+
+    def _execute_close_partial(
+        self,
+        exec_result,
+        process_result: ProcessResult,
+        status_line: str,
+    ) -> ProcessResult:
+        levels = exec_result.action_command.levels
+        executed_qty = exec_result.qty
+
+        reductions = self.calc_proportional_reductions(
+            levels=levels,
+            executed_qty=executed_qty,
+            qty_step=self.trading_info.qty_step,
+            side=exec_result.action_command.side,
+        )
+
+        reduction_1, reduction_2 = reductions
+
+        level_1, level_2 = levels
+
+        new_qty_1 = level_1.qty - reduction_1
+        new_qty_2 = level_2.qty - reduction_2
+
+        if new_qty_1 < 0 or new_qty_2 < 0:
+            raise ValueError(
+                f"Partial close produced negative level qty | "
+                f"new_qty_1={new_qty_1} | "
+                f"new_qty_2={new_qty_2}"
+            )        
+
+        if new_qty_1 == 0:
+            self.action_service.accounting.remove_level(level_1)
+        else:
+            self.action_service.accounting.update_level_qty(
+                level_1,
+                new_qty_1,
+            )
+
+        if new_qty_2 == 0:
+            self.action_service.accounting.remove_level(level_2)
+        else:
+            self.action_service.accounting.update_level_qty(
+                level_2,
+                new_qty_2,
+            )
+
+        process_result.status = status_line
+        return process_result    
