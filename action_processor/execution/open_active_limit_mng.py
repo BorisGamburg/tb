@@ -62,7 +62,7 @@ class OpenActiveLimitMng:
 
     def move_order_from_pool(self, symbol, side, qty, sl_ratio=None):
         # Получаем цену для быстрого исполнения лимитного ордера 
-        fast_execution_limit_price = self.price_service.get_market_price(
+        fast_execution_limit_price = self.price_service.get_active_price(
             symbol=symbol,
             side=side,
         )

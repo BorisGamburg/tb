@@ -79,7 +79,7 @@ class MarketService:
             else ticker["ask"]
         )   
 
-    def get_market_price(
+    def get_active_price(
         self,
         symbol: str,
         side: str,

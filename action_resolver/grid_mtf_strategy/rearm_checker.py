@@ -110,7 +110,7 @@ class RearmChecker:
 
         entries = self.state_store.stack_mng.data.entries
 
-        market_price = self.price_service.get_market_price(
+        market_price = self.price_service.get_active_price(
             self.symbol,
             self.side,
         )
