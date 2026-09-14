@@ -12,12 +12,13 @@ from action_resolver.hedge_2_strategy.build_mng import (
     BuildResult,
 )
 from action_resolver.hedge_2_strategy.optimization_mng import (
-    OptimizationMng,
+    OptimizationMng, Band
 )
 from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
 from action_resolver.hedge_2_strategy.position_info import (
     PositionInfo,
 )
+
 
 @dataclass
 class HedgeContext:
@@ -150,6 +151,7 @@ class HedgeModeMng:
             pnl=ctx.main_unrealised_pnl,
             mode=mode,
             pairs=0,
+            band=Band(low=0.0, high=0.0),
         )
 
         # Если защита еще не набрана — проверяем, можно ли добавить следующий уровень
@@ -177,7 +179,10 @@ class HedgeModeMng:
             )
 
             optimization_result.report = report + optimization_result.report
-            return optimization_result, status               
+
+            status.band = optimization_result.band
+
+            return optimization_result, status           
 
         raise Exception(
             f"Unsupported hedge mode: {mode}"

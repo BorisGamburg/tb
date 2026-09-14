@@ -1,5 +1,11 @@
 from dataclasses import dataclass
+from enum import Enum
 
+
+@dataclass
+class Band:
+    low: float
+    high: float    
 
 @dataclass
 class OptimizationResult:
@@ -7,14 +13,12 @@ class OptimizationResult:
     levels: list
     close_qty: float
     report: str
+    band: Band
 
-from enum import Enum
-
-class CloseTiming(Enum):
-    EARLY = "EARLY"
-    TIMELY = "TIMELY"
-    LATE = "LATE"    
-
+class CloseProfitability(Enum):
+    PROFIT = "PROFIT"
+    BREAKEVEN = "BREAKEVEN"
+    LOSS = "LOSS"
 
 class OptimizationMng:
 
@@ -145,20 +149,22 @@ class OptimizationMng:
                 levels=[],
                 report=report,
                 close_qty=0.0,
+                band=Band(low=0.0, high=0.0),            
             )      
 
         # Проверяем, пора ли закрывать пару
-        timing = self.should_close_pair(
+        timing, band = self.should_close_pair(
             pair=pair,
             last_price=work_price,
             profit_tolerance=profit_tolerance_ratio,
         )
-        if timing != CloseTiming.TIMELY:
+        if timing != CloseProfitability.BREAKEVEN:
             return OptimizationResult(
                 allowed=False,
                 levels=[],
                 report=report,
                 close_qty=0.0,
+                band=Band(low=0.0, high=0.0,),            
             )        
 
         # Успешно прошли все проверки — оптимизация разрешена
@@ -167,6 +173,7 @@ class OptimizationMng:
             levels=list(pair),
             close_qty=self._calc_close_qty(pair),
             report=report,
+            band=band,        
         )    
     
     def _calc_close_qty(
@@ -185,44 +192,48 @@ class OptimizationMng:
         breakeven: float,
         last_price: float,
         profit_tolerance: float,
-    ) -> CloseTiming:
+    ) -> tuple[CloseProfitability, Band]:
 
         if self.hedge_side == "Buy":
-            # BUY: ниже зоны — EARLY, выше зоны — LATE
-            band_low = breakeven
-            band_high = breakeven * (
-                1 + profit_tolerance
+            # BUY: ниже зоны — PROFIT, выше зоны — LOSS
+            band = Band(
+                low=breakeven,
+                high=breakeven * (1 + profit_tolerance),
             )
 
-            if last_price < band_low:
-                return CloseTiming.EARLY
+            if last_price < band.low:
+                return CloseProfitability.PROFIT, band
 
-            if last_price > band_high:
-                return CloseTiming.LATE
+            if last_price > band.high:
+                return CloseProfitability.LOSS, band
 
-            return CloseTiming.TIMELY
+            return CloseProfitability.BREAKEVEN, band
 
-        # SELL: выше зоны — EARLY, ниже зоны — LATE
-        band_low = breakeven * (
-            1 - profit_tolerance
+        elif self.hedge_side == "Sell":
+            # SELL: выше зоны — PROFIT, ниже зоны — LOSS
+            band = Band(
+                low=breakeven * (1 - profit_tolerance),
+                high=breakeven,
+            )
+
+            if last_price > band.high:
+                return CloseProfitability.PROFIT, band
+
+            if last_price < band.low:
+                return CloseProfitability.LOSS, band
+
+            return CloseProfitability.BREAKEVEN, band
+
+        raise ValueError(
+            f"Unsupported hedge side: {self.hedge_side}"
         )
-        band_high = breakeven
-
-        if last_price > band_high:
-            return CloseTiming.EARLY
-
-        if last_price < band_low:
-            return CloseTiming.LATE
-
-        return CloseTiming.TIMELY
-
     
     def should_close_pair(
         self,
         pair,
         last_price: float,
         profit_tolerance: float,
-    ):
+    ) -> tuple[CloseProfitability, Band]:
         prev_entry, next_entry = pair
 
         avg_entry = self._calc_avg_entry(
