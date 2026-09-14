@@ -72,10 +72,9 @@ class Hedge2Strategy(BaseStrategy):
             f"req={status.protection_required:.3f} {protection_mark} | "            
             f"PNL: {status.pnl:+.6f} | "
             f"MODE: {status.mode.name} | "
+            f"CLOSE BAND: {status.band.low:.6f} — {status.band.high:.6f} | "
             f"PAIRS: {status.pairs}"
-
         )
-
 
     def _log_parameters(self) -> None:
         self.app_ctx.logger.info(

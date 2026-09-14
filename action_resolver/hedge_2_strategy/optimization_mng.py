@@ -153,18 +153,18 @@ class OptimizationMng:
             )      
 
         # Проверяем, пора ли закрывать пару
-        timing, band = self.should_close_pair(
+        close_profitability, band = self.should_close_pair(
             pair=pair,
             last_price=work_price,
             profit_tolerance=profit_tolerance_ratio,
         )
-        if timing != CloseProfitability.BREAKEVEN:
+        if close_profitability != CloseProfitability.BREAKEVEN:
             return OptimizationResult(
                 allowed=False,
                 levels=[],
                 report=report,
                 close_qty=0.0,
-                band=Band(low=0.0, high=0.0,),            
+                band=band,            
             )        
 
         # Успешно прошли все проверки — оптимизация разрешена
