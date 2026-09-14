@@ -11,10 +11,10 @@ from signals.ha_reversal_signal import HAReversalSignal
 from action_resolver.hedge_2_strategy.build_mng import calc_hedge_qty
 from action_processor.action_service import ActionService
 from action_processor.process_result import ProcessResult
-from action_processor.execution.limit_order_result import LimitOrderStatus
 from action_resolver.hedge_2_strategy.partial_close_calculator import (
     PartialCloseCalculator,
 )
+from action_resolver.hedge_2_strategy.close_processor import CloseProcessor
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -51,6 +51,12 @@ class Hedge2Strategy(BaseStrategy):
         )    
 
         self.partial_close_calculator = PartialCloseCalculator()    
+
+        self.close_processor = CloseProcessor(
+            action_service=self.action_service,
+            partial_close_calculator=self.partial_close_calculator,
+            trading_info=trading_info,
+        )        
 
         self._log_parameters()
 
@@ -189,149 +195,14 @@ class Hedge2Strategy(BaseStrategy):
             return process_result
 
         if action_command.action == Action.CLOSE:
-            return self._execute_close(
+            return self.close_processor.execute(
                 action_command,
                 process_result,
                 status_line,
-                status
+                status,
             )
 
         raise ValueError(
             f"Unsupported action in Hedge2Strategy: {action_command.action}"
         )    
 
-    def _execute_close(
-        self,
-        action_command: ActionCommand,
-        process_result: ProcessResult,
-        status_line: str,
-        status: HedgeStatus,
-    ) -> ProcessResult:
-        exec_result = self.action_service.execution.execute(
-            action_command,
-        )
-        self.get_process_result(process_result, exec_result)
-
-        # Если действие не выполнено -> выходим
-        if not exec_result.executed:
-            process_result.status = status_line
-            return process_result
-
-        if exec_result.status == LimitOrderStatus.PARTIALLY_FILLED:
-            return self._execute_close_partial(
-                exec_result,
-                process_result,
-                status_line,
-                status
-            )
-
-        if exec_result.status == LimitOrderStatus.FILLED:
-            return self._execute_close_filled(
-                exec_result,
-                process_result,
-                status_line,
-                status
-            )
-
-        raise ValueError(
-            f"Unexpected CLOSE execution status: {exec_result.status}"
-        )
-
-    def _execute_close_filled(
-        self,
-        exec_result,
-        process_result: ProcessResult,
-        status_line: str,
-        status: HedgeStatus,
-    ) -> ProcessResult:
-        self._check_close_band(
-            price=exec_result.price,
-            status=status,
-        )        
-
-        self.action_service.accounting.apply(
-            action=exec_result.action_command.action,
-            price=exec_result.price,
-            qty=exec_result.qty,
-            fee=exec_result.fee,
-            levels=exec_result.action_command.levels,
-        )
-
-        process_result.status = status_line
-        return process_result        
-
-    def _execute_close_partial(
-        self,
-        exec_result,
-        process_result: ProcessResult,
-        status_line: str,
-        status: HedgeStatus,
-    ) -> ProcessResult:
-        self._check_close_band(
-            price=exec_result.price,
-            status=status,
-        )
-
-        levels = exec_result.action_command.levels
-        executed_qty = exec_result.qty
-
-        reductions = self.partial_close_calculator.calc_proportional_reductions(
-            levels=levels,
-            executed_qty=executed_qty,
-            qty_step=self.trading_info.qty_step,
-            side=exec_result.action_command.side,
-        )
-
-        reduction_1, reduction_2 = reductions
-
-        level_1, level_2 = levels
-
-        new_qty_1 = level_1.qty - reduction_1
-        new_qty_2 = level_2.qty - reduction_2
-
-        if new_qty_1 < 0 or new_qty_2 < 0:
-            raise ValueError(
-                f"Partial close produced negative level qty | "
-                f"new_qty_1={new_qty_1} | "
-                f"new_qty_2={new_qty_2}"
-            )        
-
-        if new_qty_1 == 0:
-            self.action_service.accounting.remove_level(level_1)
-        else:
-            self.action_service.accounting.update_level_qty(
-                level_1,
-                new_qty_1,
-            )
-
-        if new_qty_2 == 0:
-            self.action_service.accounting.remove_level(level_2)
-        else:
-            self.action_service.accounting.update_level_qty(
-                level_2,
-                new_qty_2,
-            )
-
-        process_result.status = status_line
-        return process_result    
-
-    def _check_close_band(
-        self,
-        price: float,
-        status: HedgeStatus,
-    ) -> None:
-        if price < status.band.low:
-            raise ValueError(
-                f"Close price below band | "
-                f"price={price} | "
-                f"band_low={status.band.low} | "
-                f"band_high={status.band.high}"
-            )
-
-        if price > status.band.high:
-            raise ValueError(
-                f"Close price above band | "
-                f"price={price} | "
-                f"band_low={status.band.low} | "
-                f"band_high={status.band.high}"
-            )    
