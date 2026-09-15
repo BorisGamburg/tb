@@ -73,7 +73,7 @@ class CloseResultCalculator:
         )
 
     def _get_pnl(self, losing_level, profitable_level):
-        if self.side == "Buy":
+        if self.side == "Sell":
             losing_pnl = (
                 self.current_price - losing_level.price
             ) * losing_level.qty
@@ -82,7 +82,7 @@ class CloseResultCalculator:
                 self.current_price - profitable_level.price
             ) * profitable_level.qty
 
-        elif self.side == "Sell":
+        elif self.side == "Buy":
             losing_pnl = (
                 losing_level.price - self.current_price
             ) * losing_level.qty

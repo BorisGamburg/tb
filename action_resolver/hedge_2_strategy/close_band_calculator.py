@@ -34,13 +34,13 @@ class CloseBandCalculator:
             min_profit_buffer,
         )
 
-        if self.side == "Buy":
+        if self.side == "Sell":
             return Band(
                 low=close_price,
                 high=close_price * (1 + self.profit_tolerance),
             )
 
-        if self.side == "Sell":
+        if self.side == "Buy":
             return Band(
                 low=close_price * (1 - self.profit_tolerance),
                 high=close_price,
@@ -67,13 +67,13 @@ class CloseBandCalculator:
             + profitable_level.price * profitable_level.qty
         )
 
-        if self.side == "Buy":
+        if self.side == "Sell":
             return (
                 total_value * (1 + self.fee_taker)
                 / (total_qty * (1 - self.fee_taker))
             )
 
-        if self.side == "Sell":
+        if self.side == "Buy":
             return (
                 total_value * (1 - self.fee_taker)
                 / (total_qty * (1 + self.fee_taker))
@@ -86,10 +86,10 @@ class CloseBandCalculator:
         breakeven_price: float,
         min_profit_buffer: float,
     ) -> float:
-        if self.side == "Buy":
+        if self.side == "Sell":
             return breakeven_price * (1 + min_profit_buffer)
 
-        if self.side == "Sell":
+        if self.side == "Buy":
             return breakeven_price * (1 - min_profit_buffer)
 
         raise ValueError(f"Unsupported side: {self.side}")

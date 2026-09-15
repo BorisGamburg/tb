@@ -115,26 +115,6 @@ class CloseOpportunity:
     ) -> float:
         return losing_level.qty + profitable_level.qty    
 
-    def _find_alternative_profitable_level(
-        self,
-        losing_level: StackElem,
-        sorted_levels: list[StackElem],
-    ) -> StackElem | None:
-        profitable_levels = self._get_profitable_levels(
-            sorted_levels,
-        )
-
-        for profitable_level in profitable_levels:
-            close_result = self._calculate_close_result(
-                losing_level,
-                profitable_level,
-            )
-
-            if self._is_close_result_acceptable(close_result):
-                return profitable_level
-
-        return None
-
     def _get_profitable_levels(
         self,
         levels: list[StackElem],
@@ -193,64 +173,6 @@ class CloseOpportunity:
             qty=0,
         )
 
-    def _process_losing_level(
-        self,
-        losing_level: StackElem,
-        sorted_levels: list[StackElem],
-    ) -> CloseOpportunityResult:
-        next_less_losing_level = self._get_next_less_losing_level(
-            losing_level,
-            sorted_levels,
-        )
-
-        if next_less_losing_level is None:
-            return CloseOpportunityResult(
-                found=False,
-                continue_search=False,
-                losing_level=None,
-                profitable_level=None,
-                qty=0,
-            )
-
-        close_band = self.close_band_calculator.calculate(
-            losing_level,
-            next_less_losing_level,
-        )
-
-        price_position = self._get_price_position(
-            self.current_price,
-            close_band,
-        )
-
-        if price_position == PricePosition.PROFIT:
-            return CloseOpportunityResult(
-                found=False,
-                continue_search=False,
-                losing_level=None,
-                profitable_level=None,
-                qty=0,
-            )
-
-        if price_position == PricePosition.IN_BAND:
-            qty = self._calculate_close_qty(
-                losing_level,
-                next_less_losing_level,
-            )
-            return CloseOpportunityResult(
-                found=True,
-                continue_search=False,
-                losing_level=losing_level,
-                profitable_level=next_less_losing_level,
-                qty=qty,
-            )
-
-        if price_position == PricePosition.LOSS:
-            return self._find_alternative_close(
-                losing_level,
-                sorted_levels,
-            )
-
-        raise ValueError(f"Unsupported price position: {price_position}")    
 
     def _find_alternative_close(
         self,
@@ -285,3 +207,85 @@ class CloseOpportunity:
             profitable_level=alternative_profitable_level,
             qty=qty,
         )    
+
+    def _process_losing_level(
+        self,
+        losing_level: StackElem,
+        sorted_levels: list[StackElem],
+    ) -> CloseOpportunityResult:
+
+        next_less_losing_level = self._get_next_less_losing_level(
+            losing_level,
+            sorted_levels,
+        )
+
+
+        if next_less_losing_level is None:
+            return CloseOpportunityResult(
+                found=False,
+                continue_search=False,
+                losing_level=None,
+                profitable_level=None,
+                qty=0,
+            )
+
+        close_band = self.close_band_calculator.calculate(
+            losing_level,
+            next_less_losing_level,
+        )
+
+        price_position = self._get_price_position(
+            self.current_price,
+            close_band,
+        )
+
+
+        if price_position == PricePosition.PROFIT:
+            return CloseOpportunityResult(
+                found=False,
+                continue_search=False,
+                losing_level=None,
+                profitable_level=None,
+                qty=0,
+            )
+
+        if price_position == PricePosition.IN_BAND:
+            qty = self._calculate_close_qty(
+                losing_level,
+                next_less_losing_level,
+            )
+            return CloseOpportunityResult(
+                found=True,
+                continue_search=False,
+                losing_level=losing_level,
+                profitable_level=next_less_losing_level,
+                qty=qty,
+            )
+
+        if price_position == PricePosition.LOSS:
+            return self._find_alternative_close(
+                losing_level,
+                sorted_levels,
+            )
+
+        raise ValueError(f"Unsupported price position: {price_position}")    
+
+    def _find_alternative_profitable_level(
+        self,
+        losing_level: StackElem,
+        sorted_levels: list[StackElem],
+    ) -> StackElem | None:
+        profitable_levels = self._get_profitable_levels(
+            sorted_levels,
+        )
+
+        for profitable_level in profitable_levels:
+            close_result = self._calculate_close_result(
+                losing_level,
+                profitable_level,
+            )
+
+            if self._is_close_result_acceptable(close_result):
+                return profitable_level
+
+        return None    
