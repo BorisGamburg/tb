@@ -3,11 +3,11 @@ from dataclasses import dataclass
 
 from action_processor.state.stack_mng import StackMng
 from action_processor.state.stack_schema import StackElem
-from action_processor.close_opportunity.close_band_calculator import (
+from action_resolver.hedge_2_strategy.close_band_calculator import (
     Band,
     CloseBandCalculator,
 )
-from action_processor.close_opportunity.close_result_calculator import (
+from action_resolver.hedge_2_strategy.close_result_calculator import (
     CloseResultCalculator,
 )
 
