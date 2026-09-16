@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 
+from action_resolver.hedge_2_strategy.level_distance_checker import (
+    is_level_distance_allowed,
+)
 
 @dataclass
 class BuildResult:
@@ -7,7 +10,6 @@ class BuildResult:
     side: str
     qty: float
     report: str
-
 
 def calc_hedge_qty(
     main_qty: float,
@@ -19,29 +21,6 @@ def calc_hedge_qty(
         hedge_qty_ratio
     )
     return trading_info.get_valid_order_qty(hedge_qty)
-
-
-def _is_level_distance_allowed(
-    work_price: float,
-    entries,
-    hedge_step_ratio: float,
-) -> tuple[bool, str]:
-    for entry in entries:
-        dist = abs(
-            work_price - entry.price
-        ) / work_price
-
-        if dist < hedge_step_ratio:
-            report = (
-                f"Nearest level: {entry.price:.2f}, "
-                f"distance={dist:.4f} "
-                f"< required={hedge_step_ratio:.4f}.\n"
-                "Build: denied "
-            )
-            return False, report
-
-    return True, ""
-
 
 def check_build(
     trend_active: bool,
@@ -87,8 +66,8 @@ def check_build(
         )
 
     # Проверяем дистанцию до существующих уровней
-    distance_allowed, distance_report = _is_level_distance_allowed(
-        work_price=work_price,
+    distance_allowed = is_level_distance_allowed(
+        cur_price=work_price,
         entries=entries,
         hedge_step_ratio=hedge_step_ratio,
     )
@@ -98,7 +77,7 @@ def check_build(
             allowed=False,
             side=hedge_side,
             qty=hedge_qty,
-            report=distance_report,
+            report="",
         )
 
     report += (

@@ -11,11 +11,10 @@ from signals.ha_reversal_signal import HAReversalSignal
 from action_resolver.hedge_2_strategy.build_mng import calc_hedge_qty
 from action_processor.action_service import ActionService
 from action_processor.process_result import ProcessResult
-from action_resolver.hedge_2_strategy.partial_close_calculator import (
-    PartialCloseCalculator,
-)
+from action_resolver.hedge_2_strategy.partial_close_calculator import PartialCloseCalculator
 from action_resolver.hedge_2_strategy.close_processor import CloseProcessor
 from action_processor.action_source import ActionSource
+from action_resolver.hedge_2_strategy.level_distance_checker import is_level_distance_allowed
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -105,6 +104,9 @@ class Hedge2Strategy(BaseStrategy):
         # Читаем параметры нужные для recovery
         rec_tf = self.state_store.data.recovery_timeframe
         side = self.state_store.data.side
+
+        if not self._check_level_distance(side):
+            return False, empty_result     
 
         is_reversal, _ = self.ha_signal.is_entry(tf=rec_tf, side=side)
         if is_reversal:
@@ -203,3 +205,22 @@ class Hedge2Strategy(BaseStrategy):
             f"Unsupported action in Hedge2Strategy: {action_command.action}"
         )    
 
+    def _check_level_distance(
+        self,
+        side: str,
+    ) -> bool:
+        cur_price = self.app_ctx.price_service.get_active_price(
+            symbol=self.symbol,
+            side=side,
+        )
+
+        entries = self.state_store.stack_mng.data.entries
+        hedge_step_ratio = (
+            self.state_store.data.hedge_step_pct / 100
+        )
+
+        return is_level_distance_allowed(
+            cur_price=cur_price,
+            entries=entries,
+            hedge_step_ratio=hedge_step_ratio,
+        )

@@ -136,18 +136,6 @@ class OptimizationMng:
 
         raise ValueError(f"Unsupported side: {self.side}")
 
-    def _calculate_close_result(
-        self,
-        losing_level: StackElem,
-        profitable_level: StackElem,
-        cur_price: float
-    ):
-        return self.close_result_calculator.calculate(
-            losing_level,
-            profitable_level,
-            cur_price
-        )
-
     def _is_close_result_acceptable(
         self,
         close_result: float,
@@ -321,7 +309,7 @@ class OptimizationMng:
         )
 
         for profitable_level in profitable_levels:
-            close_result = self._calculate_close_result(
+            close_result = self.close_result_calculator.calculate(
                 losing_level,
                 profitable_level,
                 cur_price
