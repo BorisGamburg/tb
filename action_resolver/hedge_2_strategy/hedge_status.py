@@ -11,5 +11,4 @@ class HedgeStatus:
     protection_required: float
     pnl: float
     mode: HedgeMode
-    pairs: int
     band: Band | None = None  

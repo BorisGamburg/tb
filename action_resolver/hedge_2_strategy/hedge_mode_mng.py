@@ -151,7 +151,6 @@ class HedgeModeMng:
             protection_required=required_ratio,
             pnl=ctx.main_unrealised_pnl,
             mode=mode,
-            pairs=0,
             band=Band(low=0.0, high=0.0),
         )
 

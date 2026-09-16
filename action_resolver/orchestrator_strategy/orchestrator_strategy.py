@@ -90,7 +90,6 @@ class OrchestratorStrategy(BaseStrategy):
                     action=Action.NO_ACTION,
                     symbol=self.symbol,
                 ),
-                status="WAIT CLOSE",
                 executed=False,
             )
 
@@ -107,6 +106,5 @@ class OrchestratorStrategy(BaseStrategy):
                 action=Action.NO_ACTION,
                 symbol=self.symbol,
             ),
-            status="CLOSE CONDITIONS MET",
             executed=False,
         )

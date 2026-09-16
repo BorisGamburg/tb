@@ -15,6 +15,7 @@ from action_resolver.hedge_2_strategy.partial_close_calculator import (
     PartialCloseCalculator,
 )
 from action_resolver.hedge_2_strategy.close_processor import CloseProcessor
+from action_processor.action_source import ActionSource
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -66,14 +67,20 @@ class Hedge2Strategy(BaseStrategy):
     ) -> str:
         protection_ok = status.protection_current >= status.protection_required
         protection_mark = "✓" if protection_ok else "✗"
+        close_band = (
+            f"{status.band.low:.6f} — {status.band.high:.6f}"
+            if status.band is not None
+            else "NO DATA"
+        )
         return (
             f"BID/ASK: {status.bid:.6f} — {status.ask:.6f} | "
             f"PROTECTION: cur={status.protection_current:.3f} | "
             f"req={status.protection_required:.3f} {protection_mark} | "            
             f"PNL: {status.pnl:+.6f} | "
             f"MODE: {status.mode.name} | "
-            f"CLOSE BAND: {status.band.low:.6f} — {status.band.high:.6f} | "
-            f"PAIRS: {status.pairs}"
+            f"CLOSE BAND: {close_band} | "
+            f"RECOVERY: {'ON' if self.state_store.data.recovery_enabled else 'OFF'}  "
+            f"TF: {self.state_store.data.recovery_timeframe}"            
         )
 
     def _log_parameters(self) -> None:
@@ -88,7 +95,6 @@ class Hedge2Strategy(BaseStrategy):
                 action=Action.NO_ACTION,
                 symbol=self.symbol,
             ),
-            status="",
             executed=False,
         )
 
@@ -118,11 +124,11 @@ class Hedge2Strategy(BaseStrategy):
                 side=side,
                 qty=qty,
                 reason="recovery_reversal",
+                source=ActionSource.HEDGE_RECOVERY
             )
 
             return True, ResolveResult(
                 action_command=action_command,
-                status=f"RECOVERY INITIATED on {rec_tf} | qty={qty}",
                 executed=False
             )
 
@@ -141,13 +147,6 @@ class Hedge2Strategy(BaseStrategy):
             hedge_qty_ratio=hedge_qty_ratio,
             trading_info=self.trading_info,
         )
-
-    def get_process_result(self, process_result, exec_result):
-        process_result.action_command = exec_result.action_command
-        process_result.price = exec_result.price
-        process_result.qty = exec_result.qty
-        process_result.fee = exec_result.fee
-        process_result.executed = exec_result.executed
 
     def resolve(
         self,

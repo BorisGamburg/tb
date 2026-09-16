@@ -7,3 +7,6 @@ class ActionSource(str, Enum):
     PARTIAL_EXIT_CROSS = "partial_exit_cross"
     PARTIAL_EXIT_BBW = "partial_exit_bbw"
     EXTERNAL_COMMAND = "external_command"
+    HEDGE_RECOVERY = "hedge_recovery"
+    HEDGE_OPEN = "hedge_open"
+    HEDGE_CLOSE = "hedge_close"
