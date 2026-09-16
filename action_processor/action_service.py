@@ -21,9 +21,7 @@ class ActionService:
         self.telegram = app_ctx.telegram
         
         self.execution = Execution(
-            proxy_driver=app_ctx.proxy_driver,
-            price_service=app_ctx.price_service,
-            logger=app_ctx.logger,
+            app_ctx=app_ctx,
         )
 
         self.accounting = Accounting(

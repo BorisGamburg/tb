@@ -3,7 +3,6 @@
 from action_processor.execution.limit_order_result import LimitOrderStatus
 from action_processor.process_result import ProcessResult
 from action_processor.action import ActionCommand
-from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
 from action_resolver.hedge_2_strategy.partial_close_calculator import (
     PartialCloseCalculator,
 )
@@ -26,7 +25,6 @@ class CloseProcessor:
         action_command: ActionCommand,
         process_result: ProcessResult,
         status_line: str,
-        status: HedgeStatus,
     ) -> ProcessResult:
         exec_result = self.action_service.execution.execute(
             action_command,
@@ -47,7 +45,6 @@ class CloseProcessor:
                 exec_result,
                 process_result,
                 status_line,
-                status,
             )
 
         if exec_result.status == LimitOrderStatus.FILLED:
@@ -55,7 +52,6 @@ class CloseProcessor:
                 exec_result,
                 process_result,
                 status_line,
-                status,
             )
 
         raise ValueError(
@@ -67,13 +63,7 @@ class CloseProcessor:
         exec_result,
         process_result: ProcessResult,
         status_line: str,
-        status: HedgeStatus,
     ) -> ProcessResult:
-        self._check_close_band(
-            price=exec_result.price,
-            status=status,
-        )
-
         self.action_service.accounting.apply(
             action=exec_result.action_command.action,
             price=exec_result.price,
@@ -90,13 +80,7 @@ class CloseProcessor:
         exec_result,
         process_result: ProcessResult,
         status_line: str,
-        status: HedgeStatus,
     ) -> ProcessResult:
-        self._check_close_band(
-            price=exec_result.price,
-            status=status,
-        )
-
         levels = exec_result.action_command.levels
         executed_qty = exec_result.qty
 
@@ -140,23 +124,3 @@ class CloseProcessor:
         process_result.status = status_line
         return process_result
 
-    def _check_close_band(
-        self,
-        price: float,
-        status: HedgeStatus,
-    ) -> None:
-        if price < status.band.low:
-            raise ValueError(
-                f"Close price below band | "
-                f"price={price} | "
-                f"band_low={status.band.low} | "
-                f"band_high={status.band.high}"
-            )
-
-        if price > status.band.high:
-            raise ValueError(
-                f"Close price above band | "
-                f"price={price} | "
-                f"band_low={status.band.low} | "
-                f"band_high={status.band.high}"
-            )

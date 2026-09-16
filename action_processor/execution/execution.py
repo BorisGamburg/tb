@@ -7,27 +7,29 @@ from utils.utils import get_inverse_side
 from action_processor.execution.open_active_limit_mng import OpenActiveLimitMng
 from action_processor.execution.limit_order_result import LimitOrderStatus
 from action_processor.execution.close_limit_mng import CloseLimitMng, ExitType
+from action_processor.bootstrap import AppContext
 
 
 class Execution:
-    def __init__(self, proxy_driver: ProxyDriver, price_service, logger: logging.Logger):
-        self.proxy_driver = proxy_driver
-        self.price_service = price_service
-        self.logger = logger
+    def __init__(
+        self,
+        app_ctx: AppContext,
+    ):
+        self.app_ctx = app_ctx
+        self.proxy_driver = app_ctx.proxy_driver
+        self.price_service = app_ctx.price_service
+        self.logger = app_ctx.logger
 
-        self.execution_waiter = ExecutionWaiter(proxy_driver)
-
+        self.execution_waiter = ExecutionWaiter(self.proxy_driver)
         self.open_active_limit_mng = OpenActiveLimitMng(
-            proxy_driver=proxy_driver,
-            price_service=price_service,
-            logger=logger,
+            app_ctx=app_ctx,
         )
 
         self.close_limit_mng = CloseLimitMng(
-            proxy_driver=proxy_driver,
-            market_service=price_service,
-            logger=logger,
-        )             
+            proxy_driver=self.proxy_driver,
+            market_service=self.price_service,
+            logger=self.logger,
+        )   
 
     def _get_order_details(self, res, symbol):
         order_id = res["result"]["orderId"]

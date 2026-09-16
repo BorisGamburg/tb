@@ -12,4 +12,4 @@ class HedgeStatus:
     pnl: float
     mode: HedgeMode
     pairs: int
-    band: Band
+    band: Band | None = None  

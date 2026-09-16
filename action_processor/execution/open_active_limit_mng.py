@@ -1,25 +1,31 @@
 import time
+import logging
 
 from managers.scale_pool_mng import ScalePoolMng
 from action_processor.execution.limit_order_result import LimitOrderResult, LimitOrderStatus
 from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
+from action_processor.bootstrap import AppContext
 
 
 class OpenActiveLimitMng:
-    def __init__(self, 
-        proxy_driver: ProxyDriver,
-        price_service: MarketService, 
-        logger
+    proxy_driver: ProxyDriver
+    price_service: MarketService
+    logger: logging.Logger
+
+    def __init__(
+        self,
+        app_ctx: AppContext,
     ):
-        self.proxy_driver = proxy_driver
-        self.price_service = price_service
-        self.logger = logger
+        self.app_ctx = app_ctx
+        self.proxy_driver = app_ctx.proxy_driver
+        self.price_service = app_ctx.price_service
+        self.logger = app_ctx.logger
 
         self.scale_pool_mng = ScalePoolMng(
-            proxy_driver=proxy_driver,
-            price_service=price_service,
-            logger=logger,
+            proxy_driver=self.proxy_driver,
+            price_service=self.price_service,
+            logger=self.logger,
         )
 
     def get_order_status(self, symbol: str, order_id: str):
@@ -144,12 +150,15 @@ class OpenActiveLimitMng:
                 side=side,
                 qty=qty,
                 order_id=order_id,
+                order_price=order_price,
                 order_data=order_data,
             )
 
         if status == "Filled":
             return self._handle_filled_order(
+                side=side,
                 order_id=order_id,
+                order_price=order_price,
                 order_data=order_data,
             )
 
@@ -193,10 +202,16 @@ class OpenActiveLimitMng:
         side,
         qty,
         order_id,
+        order_price,
         order_data,
     ):
         filled_qty = float(order_data["cumExecQty"])
         avg_price = float(order_data["avgPrice"])
+        self._check_execution_price(
+            side=side,
+            order_price=order_price,
+            avg_price=avg_price,
+        )        
         fee = float(order_data["cumFeeDetail"]["USDT"])
         remaining_qty = qty - filled_qty
 
@@ -224,11 +239,18 @@ class OpenActiveLimitMng:
 
     def _handle_filled_order(
         self,
+        side,
         order_id,
+        order_price,
         order_data,
     ):
         filled_qty = float(order_data["cumExecQty"])
         avg_price = float(order_data["avgPrice"])
+        self._check_execution_price(
+            side=side,
+            order_price=order_price,
+            avg_price=avg_price,
+        )        
         fee = float(order_data["cumFeeDetail"]["USDT"])
 
         return LimitOrderResult(
@@ -239,3 +261,25 @@ class OpenActiveLimitMng:
             filled=True,
             status=LimitOrderStatus.FILLED,
         )    
+
+    def _check_execution_price(
+        self,
+        side,
+        order_price,
+        avg_price,
+    ):
+        if side == "Buy" and avg_price > order_price:
+            message = (
+                f"[LIMIT] anomalous execution price | side={side} "
+                f"| order_price={order_price} | avg_price={avg_price}"
+            )
+            self.logger.error(message)
+            self.app_ctx.telegram.send_telegram_message(message)
+
+        if side == "Sell" and avg_price < order_price:
+            message = (
+                f"[LIMIT] anomalous execution price | side={side} "
+                f"| order_price={order_price} | avg_price={avg_price}"
+            )
+            self.logger.error(message)
+            self.app_ctx.telegram.send_telegram_message(message)    

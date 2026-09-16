@@ -50,16 +50,21 @@ def _transform_optimization(
     symbol: str,
     side: str
 ):
-    if not result.allowed:
+    if not result.found:
         return ActionCommand(
             action=Action.NO_ACTION,
             symbol=symbol,
         )
 
+    levels = [
+        lvl for lvl in (result.losing_level, result.profitable_level)
+        if lvl is not None
+    ]
+
     return ActionCommand(
         action=Action.CLOSE,
         symbol=symbol,
         side=get_inverse_side(side),
-        qty=result.close_qty,
-        levels=result.levels,
+        qty=result.qty,
+        levels=levels,
     )

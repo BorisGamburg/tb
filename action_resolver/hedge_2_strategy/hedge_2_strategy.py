@@ -198,7 +198,6 @@ class Hedge2Strategy(BaseStrategy):
                 action_command,
                 process_result,
                 status_line,
-                status,
             )
 
         raise ValueError(
