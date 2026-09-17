@@ -64,7 +64,7 @@ class HedgeModeMng:
             side=self.hedge_side,
         )        
 
-        self.optimization_manager = OptimizationMng(
+        self.optimization_mng = OptimizationMng(
             state=state_store,
             price_service=app_ctx.price_service,
             fee_taker=trading_info.fee_taker,
@@ -172,7 +172,7 @@ class HedgeModeMng:
 
         # Если защита уже набрана — проверяем, можно ли выполнить оптимизацию
         if mode == HedgeMode.OPTIMIZATION:
-            optimization_result = self.optimization_manager.check()
+            optimization_result = self.optimization_mng.check()
 
             status.band = optimization_result.band
 
