@@ -145,20 +145,8 @@ class OptimizationMng:
         return close_result >= 0
 
     def check(self) -> OptimizationResult:
-        # Получаем тек цену
-        current_price = self.price_service.get_active_price(
-            self.state.data.symbol,
-            self.hedge_side,
-        )
-
-        # Получаем отсортированные по возрастанию прибыли (уменьшению убытка) уровни
-        sorted_levels = self._get_sorted_levels()
-
-        # Получаем отсортированные по уменьшению убытка убыточные уровни
-        losing_levels = self._get_losing_levels(
-            sorted_levels,
-            current_price,
-        )
+        # Подготовка данных
+        current_price, sorted_levels, losing_levels = self._prepare_data()
 
         # Проходим по убыточным уровням и проверяем можно ли их закрыть
         for losing_level in losing_levels:
@@ -187,6 +175,23 @@ class OptimizationMng:
             qty=0,
             band=result.band
         )
+
+    def _prepare_data(self):
+        # Получаем тек цену
+        current_price = self.price_service.get_active_price(
+            self.state.data.symbol,
+            self.hedge_side,
+        )
+
+        # Получаем отсортированные по возрастанию прибыли (уменьшению убытка) уровни
+        sorted_levels = self._get_sorted_levels()
+
+        # Получаем отсортированные по уменьшению убытка убыточные уровни
+        losing_levels = self._get_losing_levels(
+            sorted_levels,
+            current_price,
+        )
+        return current_price,sorted_levels,losing_levels
 
     def _find_alternative_close(
         self,
@@ -350,6 +355,9 @@ class OptimizationMng:
                 next_less_losing_level,
             )
 
+            # Лог
+            self._log_normal_close(losing_level, next_less_losing_level, cur_price, close_band, qty)            
+
             return OptimizationResult(
                 found=True,
                 continue_search=False,
@@ -369,8 +377,37 @@ class OptimizationMng:
 
             res.band = close_band
 
+            # Лог
+            self._log_alternative_close(cur_price, close_band, res)            
+
             return res
 
         raise ValueError(
             f"Unsupported price location: {price_location}"
-        )    
+        ) 
+
+    def _log_alternative_close(self, cur_price, close_band, res):
+        if res.found:
+            self.logger.info(
+                    f"[OPT] CLOSE DECISION | "
+                    f"branch=ALTERNATIVE | "
+                    f"price={cur_price:.8f} | "
+                    f"band=[{close_band.low:.8f}, {close_band.high:.8f}] | "
+                    f"losing={res.losing_level.price:.8f}/"
+                    f"{res.losing_level.qty} | "
+                    f"profitable={res.profitable_level.price:.8f}/"
+                    f"{res.profitable_level.qty} | "
+                    f"qty={res.qty}"
+                )
+
+    def _log_normal_close(self, losing_level, next_less_losing_level, cur_price, close_band, qty):
+        self.logger.info(
+                f"[OPT] CLOSE DECISION | "
+                f"branch=IN_BAND | "
+                f"price={cur_price:.8f} | "
+                f"band=[{close_band.low:.8f}, {close_band.high:.8f}] | "
+                f"losing={losing_level.price:.8f}/{losing_level.qty} | "
+                f"profitable={next_less_losing_level.price:.8f}/"
+                f"{next_less_losing_level.qty} | "
+                f"qty={qty}"
+            )   
