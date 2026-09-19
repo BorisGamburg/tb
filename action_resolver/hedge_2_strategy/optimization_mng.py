@@ -31,11 +31,13 @@ class OptimizationMng:
         state,
         price_service,
         fee_taker: float,
+        logger
     ):
         self.state = state
         self.price_service = price_service
         self.hedge_side = state.data.side
         self.fee_taker = fee_taker
+        self.logger = logger
 
         self.close_band_calculator = CloseBandCalculator(
             hedge_side=self.hedge_side,
@@ -53,13 +55,13 @@ class OptimizationMng:
         levels,
         current_price: float,
     ) -> list[StackElem]:
-        if self.hedge_side == "Buy":
+        if self.hedge_side == "Sell":
             return [
                 level for level in levels
                 if level.price < current_price
             ]
 
-        if self.hedge_side == "Sell":
+        if self.hedge_side == "Buy":
             return [
                 level for level in levels
                 if level.price > current_price
@@ -71,7 +73,7 @@ class OptimizationMng:
         return sorted(
             self.state.stack_mng.data.entries,
             key=lambda entry: entry.price,
-            reverse=self.hedge_side == "Sell",
+            reverse=self.hedge_side == "Buy",
         )    
 
     def _get_next_less_losing_level(
@@ -167,12 +169,12 @@ class OptimizationMng:
                 current_price,
             )
 
-            # Если подходящий прибыльный уровеня найден -> выходим
+            # Если подходящий прибыльный уровень найден -> выходим
             if result.found:
                 return result
 
             # Подходящий прибыльный уровень не найден, 
-            # смотрим надо ли продолжаль поиск
+            # смотрим надо ли продолжать поиск
             if not result.continue_search:
                 return result
 
@@ -183,6 +185,7 @@ class OptimizationMng:
             losing_level=None,
             profitable_level=None,
             qty=0,
+            band=result.band
         )
 
     def _find_alternative_close(
@@ -257,19 +260,20 @@ class OptimizationMng:
         # Подходящий прибыльный уровень не найден -> выходим
         return None    
 
+
     def _process_losing_level(
         self,
         losing_level: StackElem,
         sorted_levels: list[StackElem],
         cur_price: float,
     ) -> OptimizationResult:
+
         # Получаем следующий по уменьшению убытка уровень
         next_less_losing_level = self._get_next_less_losing_level(
             losing_level,
             sorted_levels,
         )
 
-        # Если следующего уровня нет -> ничего не найдено, выходим
         if next_less_losing_level is None:
             return OptimizationResult(
                 found=False,
@@ -293,7 +297,7 @@ class OptimizationMng:
         )
 
         # Анализируем price_location и предпринимаем соответствующие действия
-        return self._process_price_location(
+        result = self._process_price_location(
             price_location,
             losing_level,
             next_less_losing_level,
@@ -301,6 +305,21 @@ class OptimizationMng:
             cur_price,
             close_band,
         )
+
+        if result.losing_level is not None:
+            self.logger.info(
+                f"[OPT] PROCESS RESULT | "
+                f"losing={result.losing_level.price:.8f}/{result.losing_level.qty}"
+            )
+
+        if result.profitable_level is not None:
+            self.logger.info(
+                f"[OPT] PROCESS RESULT | "
+                f"profitable={result.profitable_level.price:.8f}/"
+                f"{result.profitable_level.qty}"
+            )
+
+        return result    
 
     def _process_price_location(
         self,
@@ -311,6 +330,7 @@ class OptimizationMng:
         cur_price: float,
         close_band: Band,
     ) -> OptimizationResult:
+
         # Если цена в прибыли, то значит прибыльный уровень не найден и
         # можно прекращать поиск
         if price_location == PriceLocation.PROFIT:
@@ -329,6 +349,7 @@ class OptimizationMng:
                 losing_level,
                 next_less_losing_level,
             )
+
             return OptimizationResult(
                 found=True,
                 continue_search=False,
@@ -345,7 +366,9 @@ class OptimizationMng:
                 sorted_levels,
                 cur_price,
             )
+
             res.band = close_band
+
             return res
 
         raise ValueError(

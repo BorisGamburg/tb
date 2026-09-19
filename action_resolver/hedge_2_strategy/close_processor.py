@@ -6,13 +6,14 @@ from action_processor.action import ActionCommand
 from action_resolver.hedge_2_strategy.partial_close_calculator import (
     PartialCloseCalculator,
 )
+from action_processor.action_service import ActionService
 
 
 class CloseProcessor:
 
     def __init__(
         self,
-        action_service,
+        action_service: ActionService,
         partial_close_calculator: PartialCloseCalculator,
         trading_info,
     ):

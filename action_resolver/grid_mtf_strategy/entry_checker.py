@@ -2,6 +2,7 @@ from action_processor.state.state import State
 from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from rich.text import Text
+from services.bb_service import BBService
 
 
 class EntryChecker:
@@ -28,6 +29,11 @@ class EntryChecker:
             symbol=self.symbol,
         )
 
+        self.bb_service = BBService(
+            proxy_driver=self.proxy_driver,
+            symbol=self.symbol,
+        )        
+
     def _get_rsi_last_closed(self, tf):
 
         data = self.proxy_driver.get_rsi(
@@ -51,7 +57,7 @@ class EntryChecker:
 
         return rsi <= threshold
 
-    def _is_rsi_entry_ok(self) -> bool:
+    def _check_rsi(self) -> bool:
         entries = self.state_store.stack_mng.data.entries
         level = len(entries)
         tpl = self.map_mng.get_template_by_level(level)
@@ -125,14 +131,15 @@ class EntryChecker:
         return rsi_tf_entry_ok and rsi_htf_entry_ok    
 
     def check(self):
-        entries = self.state_store.stack_mng.data.entries
-        level = len(entries)
-        tf = self.map_mng.get_tf_for_level(level)
 
-        # Проверяем все фильтры независимо
-        ha_ok, ha_message = self.ha_signal.is_entry(tf, self.side)
-        rsi_ok = self._is_rsi_entry_ok()
-        distance_ok = self._is_distance_ok(entries)
+        # Проверяем разворот ha
+        ha_ok, ha_message = self._check_ha_revers()
+
+        # Проверяем rsi
+        rsi_ok = self._check_rsi()
+
+        # Проверяем дистанцию
+        distance_ok = self._check_distance()
 
         # Все статусы уже сформированы к этому моменту
         self.runtime.ha_entry_status = ha_message
@@ -144,32 +151,57 @@ class EntryChecker:
         # Сигнал есть
         return True
 
+    def _check_distance(self):
+        # Получаем уровни
+        entries = self.state_store.stack_mng.data.entries
+
+        # Проверяем дистанцию
+        distance_ok = self._is_distance_ok(entries)
+
+        return distance_ok
+
+    def _check_ha_revers(self):
+        # Получаем уровни
+        entries = self.state_store.stack_mng.data.entries
+
+        # Получаем тф для входа
+        level = len(entries)
+        tf = self.map_mng.get_tf_for_level(level)
+
+        # Проверяем разворот по ha
+        ha_ok, ha_message = self.ha_signal.is_entry(tf, self.side)
+        return ha_ok,ha_message
+
     def _is_distance_ok(
         self,
         entries,
     ) -> bool:
-
+        # Если уровней нет -> выходим
         if not entries:
             self.runtime.distance_entry_status = "PASS"
             return True
 
+        # Получаем текущую цену
         price = self.proxy_driver.get_last_price(
             self.symbol
         )
 
+        # Берем наименее убыточный уровень
         last_entry = entries[-1]
 
+        # Получаем тф из текущего map
         level = len(entries) 
         current_tf = self.map_mng.get_tf_for_level(level)
         
+        # 
+        bb = self.bb_service.get_live(current_tf)
+        bbw = bb["width_abs"]
 
-        atr = self._get_last_atr(current_tf)
-
-        k = 1.0
+        k = 0.25
         min_distance_ratio = 0.0035
 
         required_move = max(
-            k * atr,
+            k * bbw,
             min_distance_ratio * price
         )
 

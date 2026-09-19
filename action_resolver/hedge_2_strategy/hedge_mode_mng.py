@@ -18,6 +18,8 @@ from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
 from action_resolver.hedge_2_strategy.position_info import (
     PositionInfo,
 )
+from action_processor.bootstrap import AppContext
+
 
 
 @dataclass
@@ -39,7 +41,7 @@ class HedgeContext:
 class HedgeModeMng:
     def __init__(
         self,
-        app_ctx,
+        app_ctx: AppContext,
         state_store,
         trading_info,
     ):
@@ -68,6 +70,7 @@ class HedgeModeMng:
             state=state_store,
             price_service=app_ctx.price_service,
             fee_taker=trading_info.fee_taker,
+            logger=app_ctx.logger
         )
 
         self.mode_selector = HedgeModeSelector(

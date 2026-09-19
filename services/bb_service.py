@@ -8,9 +8,10 @@ class BBService:
         self.proxy_driver = proxy_driver
         self.symbol = symbol
 
-    def get_last_closed(
+    def get_bb(
         self,
         tf: str,
+        candle_index: int
     ):
 
         data = self.proxy_driver.get_bb_ohlc(
@@ -24,17 +25,11 @@ class BBService:
                 f"BB data empty tf={tf}"
             )
 
-        if len(bb) < 2:
-            raise RuntimeError(
-                f"Not enough BB history tf={tf}"
-            )
+        bb_item = bb[candle_index]
 
-        # closed candle
-        last = bb[-2]
-
-        upper = last.get("high")
-        lower = last.get("low")
-        mid = last.get("mid")
+        upper = bb_item.get("high")
+        lower = bb_item.get("low")
+        mid = bb_item.get("mid")
 
         if (
             upper is None
@@ -68,3 +63,21 @@ class BBService:
             "width_abs": width_abs,
             "width_ratio": width_ratio,
         }
+
+    def get_last_closed(
+        self,
+        tf: str,
+    ):
+        return self.get_bb(
+            tf=tf,
+            candle_index=-2,
+        )
+
+    def get_live(
+        self,
+        tf: str,
+    ):
+        return self.get_bb(
+            tf=tf,
+            candle_index=-1,
+        )        
