@@ -260,8 +260,13 @@ class GridMTFStrategy(BaseStrategy):
 
         return qty
 
-    def _build_rearm_action(self) -> ActionCommand:
-        qty = self._get_rearm_qty()
+    def _build_rearm_action(self, initial_qty: float) -> ActionCommand:
+        qty = self.trading_info.get_valid_order_qty(initial_qty)
+
+        if qty <= 0:
+            raise RuntimeError(
+                f"Invalid REARM qty: {qty} (initial_qty={initial_qty})"
+            )
 
         return ActionCommand(
             action=Action.OPEN,
@@ -275,8 +280,9 @@ class GridMTFStrategy(BaseStrategy):
     def _execute_rearm(
         self,
         process_result: ProcessResult,
+        initial_qty: float
     ) -> ProcessResult:
-        action = self._build_rearm_action()
+        action = self._build_rearm_action(initial_qty=initial_qty)
 
         process_result = self.action_service.process_action(
             action,
@@ -288,6 +294,7 @@ class GridMTFStrategy(BaseStrategy):
     def _resolve_rearm(
         self,
         process_result: ProcessResult,
+        initial_qty: float
     ) -> ProcessResult:
         while True:
             # Проверяем, нужно ли выполнять REARM
@@ -299,7 +306,8 @@ class GridMTFStrategy(BaseStrategy):
             else:
                 # REARM нужен -> выполняем его
                 process_result = self._execute_rearm(
-                    process_result,
+                    process_result=process_result,
+                    initial_qty=initial_qty
                 )
 
                 # Проверяем, выполнен ли REARM
@@ -332,6 +340,7 @@ class GridMTFStrategy(BaseStrategy):
                 # CLOSE выполнен -> запускаем REARM
                 return self._resolve_rearm(
                     process_result,
+                    initial_qty=entry.initial_qty
                 )
             else:
                 # CLOSE не выполнен -> выходим
@@ -348,7 +357,7 @@ class GridMTFStrategy(BaseStrategy):
         source: ActionSource,
     ) -> ProcessResult:
         # Сигнал есть -> запускаем CLOSE
-        action = ActionCommand(
+        action_command = ActionCommand(
                 action=Action.CLOSE,
                 symbol=self.symbol,
                 levels=[entry],
@@ -358,7 +367,7 @@ class GridMTFStrategy(BaseStrategy):
                 source=source
             )
         process_result = self.action_service.process_action(
-                action,
+                action_command,
                 process_result,
             )
         return process_result

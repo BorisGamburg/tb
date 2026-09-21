@@ -191,10 +191,10 @@ class EntryChecker:
 
         # Получаем тф из текущего map
         level = len(entries) 
-        current_tf = self.map_mng.get_tf_for_level(level)
+        cur_htf = self.map_mng.get_htf_for_level(level)
         
         # 
-        bb = self.bb_service.get_live(current_tf)
+        bb = self.bb_service.get_live(cur_htf)
         bbw = bb["width_abs"]
 
         k = 0.25

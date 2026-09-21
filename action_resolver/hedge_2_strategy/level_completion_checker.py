@@ -58,6 +58,7 @@ def check_level_completion(
     virtual_level = stack_copy.push(
         price=last_price,
         qty=add_qty,
+        initial_qty=add_qty
     )
 
     # Выполняем виртуальное объединение прибыльного уровня

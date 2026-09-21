@@ -57,7 +57,12 @@ class Accounting:
         )  
 
     def _apply_open(self, price: float, qty: float, fee: float):
-        self.stack_mng.push(price, qty, fee)
+        self.stack_mng.push(
+            price=price, 
+            qty=qty, 
+            fee=fee, 
+            initial_qty=qty
+        )
 
         self.logger.info(
             f"[ACCOUNTING] OPEN | qty={qty} "

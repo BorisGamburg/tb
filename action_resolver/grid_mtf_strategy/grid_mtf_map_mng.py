@@ -45,6 +45,10 @@ class GridMTFMapMng:
         tpl = self.get_template_by_level(level)
         return tpl.tf_filter 
 
+    def get_htf_for_level(self, level: int) -> str:
+        tpl = self.get_template_by_level(level)
+        return tpl.htf_filter 
+
     def get_cur_map_elem(self):
 
         entries = self.stack.entries

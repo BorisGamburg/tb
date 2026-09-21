@@ -1,4 +1,3 @@
-from enum import Enum
 from dataclasses import dataclass
 
 from action_processor.state.stack_schema import StackElem
@@ -9,6 +8,9 @@ from action_resolver.hedge_2_strategy.close_band_calculator import (
 from action_resolver.hedge_2_strategy.close_result_calculator import (
     CloseResultCalculator,
 )
+from action_resolver.hedge_2_strategy.alternative_search import AlternativeSearchService
+from action_resolver.hedge_2_strategy.level_selector import LevelSelector
+from action_resolver.hedge_2_strategy.losing_level_processor import LosingLevelProcessor
 
 
 @dataclass
@@ -18,12 +20,8 @@ class OptimizationResult:
     losing_level: StackElem | None
     profitable_level: StackElem | None
     qty: float
-    band: Band | None = None  # <--- Добавили поле
+    band: Band | None = None
 
-class PriceLocation(Enum):
-    PROFIT = "PROFIT"
-    IN_BAND = "IN_BAND"
-    LOSS = "LOSS"    
 
 class OptimizationMng:
     def __init__(
@@ -31,7 +29,7 @@ class OptimizationMng:
         state,
         price_service,
         fee_taker: float,
-        logger
+        logger,
     ):
         self.state = state
         self.price_service = price_service
@@ -39,375 +37,72 @@ class OptimizationMng:
         self.fee_taker = fee_taker
         self.logger = logger
 
+        self.level_selector = LevelSelector(hedge_side=self.hedge_side)
+
         self.close_band_calculator = CloseBandCalculator(
             hedge_side=self.hedge_side,
             fee_taker=self.fee_taker,
             profit_tolerance=state.data.profit_tolerance_pct / 100,
-        )   
+        )
 
         self.close_result_calculator = CloseResultCalculator(
             hedge_side=self.hedge_side,
             fee_taker=self.fee_taker,
-        )         
+        )
 
-    def _get_losing_levels(
-        self,
-        levels,
-        current_price: float,
-    ) -> list[StackElem]:
-        if self.hedge_side == "Sell":
-            return [
-                level for level in levels
-                if level.price < current_price
-            ]
+        self.alternative_search_service = AlternativeSearchService(
+            close_result_calculator=self.close_result_calculator,
+            hedge_side=self.hedge_side,
+            logger=logger
+        )
 
-        if self.hedge_side == "Buy":
-            return [
-                level for level in levels
-                if level.price > current_price
-            ]
-
-        raise ValueError(f"Unsupported side: {self.hedge_side}")
-
-    def _get_sorted_levels(self) -> list[StackElem]:
-        return sorted(
-            self.state.stack_mng.data.entries,
-            key=lambda entry: entry.price,
-            reverse=self.hedge_side == "Buy",
-        )    
-
-    def _get_next_less_losing_level(
-        self,
-        losing_level: StackElem,
-        sorted_levels: list[StackElem],
-    ) -> StackElem | None:
-        index = sorted_levels.index(losing_level)
-
-        if index + 1 >= len(sorted_levels):
-            return None
-
-        return sorted_levels[index + 1]
-
-    def _get_price_location(
-        self,
-        cur_price: float,
-        close_band: Band,
-    ) -> PriceLocation:
-        if self.hedge_side == "Sell":
-            if cur_price < close_band.low:
-                return PriceLocation.PROFIT
-
-            if cur_price > close_band.high:
-                return PriceLocation.LOSS
-
-        elif self.hedge_side == "Buy":
-            if cur_price > close_band.high:
-                return PriceLocation.PROFIT
-
-            if cur_price < close_band.low:
-                return PriceLocation.LOSS
-
-        else:
-            raise ValueError(f"Unsupported side: {self.hedge_side}")
-
-        return PriceLocation.IN_BAND    
-
-    def _calculate_close_qty(
-        self,
-        losing_level: StackElem,
-        profitable_level: StackElem,
-    ) -> float:
-        return losing_level.qty + profitable_level.qty    
-
-    def _get_profitable_levels(
-        self,
-        levels: list[StackElem],
-        current_price: float,
-    ) -> list[StackElem]:
-        if self.hedge_side == "Sell":
-            return [
-                level for level in levels
-                if level.price > current_price
-            ]
-
-        if self.hedge_side == "Buy":
-            return [
-                level for level in levels
-                if level.price < current_price
-            ]
-
-        raise ValueError(f"Unsupported side: {self.hedge_side}")
-
-    def _is_close_result_acceptable(
-        self,
-        close_result: float,
-    ) -> bool:
-        return close_result >= 0
+        self.losing_level_processor = LosingLevelProcessor(
+            hedge_side=self.hedge_side,
+            close_band_calculator=self.close_band_calculator,
+            level_selector=self.level_selector,
+            alternative_search_service=self.alternative_search_service,
+            logger=self.logger,
+        )
 
     def check(self) -> OptimizationResult:
-        # Подготовка данных
         current_price, sorted_levels, losing_levels = self._prepare_data()
 
-        # Проходим по убыточным уровням и проверяем можно ли их закрыть
+        last_band = None
         for losing_level in losing_levels:
-            # Проверяем можно ли закрыть этот конкретный убыточный уровень
-            result = self._process_losing_level(
-                losing_level,
-                sorted_levels,
-                current_price,
+            result = self.losing_level_processor.process(
+                losing_level=losing_level,
+                sorted_levels=sorted_levels,
+                cur_price=current_price,
+                optimization_result_cls=OptimizationResult,
             )
 
-            # Если подходящий прибыльный уровень найден -> выходим
-            if result.found:
+            if result.band:
+                last_band = result.band
+
+            if result.found or not result.continue_search:
                 return result
 
-            # Подходящий прибыльный уровень не найден, 
-            # смотрим надо ли продолжать поиск
-            if not result.continue_search:
-                return result
-
-        # Ничего не найдено -> выходим
         return OptimizationResult(
             found=False,
             continue_search=False,
             losing_level=None,
             profitable_level=None,
             qty=0,
-            band=result.band
+            band=last_band,
         )
 
     def _prepare_data(self):
-        # Получаем тек цену
         current_price = self.price_service.get_active_price(
             self.state.data.symbol,
             self.hedge_side,
         )
 
-        # Получаем отсортированные по возрастанию прибыли (уменьшению убытка) уровни
-        sorted_levels = self._get_sorted_levels()
+        sorted_levels = self.level_selector.get_sorted_levels(
+            self.state.stack_mng.data.entries
+        )
 
-        # Получаем отсортированные по уменьшению убытка убыточные уровни
-        losing_levels = self._get_losing_levels(
+        losing_levels = self.level_selector.get_losing_levels(
             sorted_levels,
             current_price,
         )
-        return current_price,sorted_levels,losing_levels
-
-    def _find_alternative_close(
-        self,
-        losing_level: StackElem,
-        sorted_levels: list[StackElem],
-        current_price: float,
-    ) -> OptimizationResult:
-        # Ищем альтернативный прибыльный уровень
-        alternative_profitable_level = (
-            self._find_alternative_profitable_level(
-                losing_level,
-                sorted_levels,
-                current_price,
-            )
-        )
-
-        # Если альтернативный прибыльный уровень не найден -> выходим и сообщаем 
-        # что прибыльный уровень не найден и надо продолжать поиск для следующего убыточного уровня
-        if alternative_profitable_level is None:
-            return OptimizationResult(
-                found=False,
-                continue_search=True,
-                losing_level=None,
-                profitable_level=None,
-                qty=0,
-                band=None, 
-            )
-
-        # Альтернативный прибыльный уровень найден
-        # Вычисляем размер ордера для закрытия
-        qty = self._calculate_close_qty(
-            losing_level,
-            alternative_profitable_level,
-        )
-
-        # Возвращаем результат
-        return OptimizationResult(
-            found=True,
-            continue_search=False,
-            losing_level=losing_level,
-            profitable_level=alternative_profitable_level,
-            qty=qty,
-            band=None,  
-        )    
-
-    def _find_alternative_profitable_level(
-        self,
-        losing_level: StackElem,
-        sorted_levels: list[StackElem],
-        cur_price: float,
-    ) -> StackElem | None:
-        # Получаем прибыльные уровни
-        profitable_levels = self._get_profitable_levels(
-            sorted_levels,
-            cur_price,
-        )
-
-        # Проходим по прибыльным уровням и ищем тот который закроет losing_level в прибыль
-        for profit_level in profitable_levels:
-            # Вычисляем netto pnl при закрытии пары
-            close_pair_netto_pnl = self.close_result_calculator.calc_netto_pnl(
-                losing_level,
-                profit_level,
-                cur_price
-            )
-
-            # Если результат закрытия устраивает -> выходим и возвращаем найденный прибыльный уровень
-            if self._is_close_result_acceptable(close_pair_netto_pnl):
-                return profit_level
-
-        # Подходящий прибыльный уровень не найден -> выходим
-        return None    
-
-
-    def _process_losing_level(
-        self,
-        losing_level: StackElem,
-        sorted_levels: list[StackElem],
-        cur_price: float,
-    ) -> OptimizationResult:
-
-        # Получаем следующий по уменьшению убытка уровень
-        next_less_losing_level = self._get_next_less_losing_level(
-            losing_level,
-            sorted_levels,
-        )
-
-        if next_less_losing_level is None:
-            return OptimizationResult(
-                found=False,
-                continue_search=False,
-                losing_level=None,
-                profitable_level=None,
-                qty=0,
-                band=None,
-            )
-
-        # Вычисляем close_band
-        close_band = self.close_band_calculator.calculate(
-            losing_level,
-            next_less_losing_level,
-        )
-
-        # Получаем положение цены относительно close_band
-        price_location = self._get_price_location(
-            cur_price,
-            close_band,
-        )
-
-        # Анализируем price_location и предпринимаем соответствующие действия
-        result = self._process_price_location(
-            price_location,
-            losing_level,
-            next_less_losing_level,
-            sorted_levels,
-            cur_price,
-            close_band,
-        )
-
-        if result.losing_level is not None:
-            self.logger.info(
-                f"[OPT] PROCESS RESULT | "
-                f"losing={result.losing_level.price:.8f}/{result.losing_level.qty}"
-            )
-
-        if result.profitable_level is not None:
-            self.logger.info(
-                f"[OPT] PROCESS RESULT | "
-                f"profitable={result.profitable_level.price:.8f}/"
-                f"{result.profitable_level.qty}"
-            )
-
-        return result    
-
-    def _process_price_location(
-        self,
-        price_location: PriceLocation,
-        losing_level: StackElem,
-        next_less_losing_level: StackElem,
-        sorted_levels: list[StackElem],
-        cur_price: float,
-        close_band: Band,
-    ) -> OptimizationResult:
-
-        # Если цена в прибыли, то значит прибыльный уровень не найден и
-        # можно прекращать поиск
-        if price_location == PriceLocation.PROFIT:
-            return OptimizationResult(
-                found=False,
-                continue_search=False,
-                losing_level=None,
-                profitable_level=None,
-                qty=0,
-                band=close_band,
-            )
-
-        # Если цена внутри close_band -> закрываемся и выходим
-        if price_location == PriceLocation.IN_BAND:
-            qty = self._calculate_close_qty(
-                losing_level,
-                next_less_losing_level,
-            )
-
-            # Лог
-            self._log_normal_close(losing_level, next_less_losing_level, cur_price, close_band, qty)            
-
-            return OptimizationResult(
-                found=True,
-                continue_search=False,
-                losing_level=losing_level,
-                profitable_level=next_less_losing_level,
-                qty=qty,
-                band=close_band,
-            )
-
-        # Если цена в убытке -> ищем альтернативное закрытие
-        if price_location == PriceLocation.LOSS:
-            res = self._find_alternative_close(
-                losing_level,
-                sorted_levels,
-                cur_price,
-            )
-
-            res.band = close_band
-
-            # Лог
-            self._log_alternative_close(cur_price, close_band, res)            
-
-            return res
-
-        raise ValueError(
-            f"Unsupported price location: {price_location}"
-        ) 
-
-    def _log_alternative_close(self, cur_price, close_band, res):
-        if res.found:
-            self.logger.info(
-                    f"[OPT] CLOSE DECISION | "
-                    f"branch=ALTERNATIVE | "
-                    f"price={cur_price:.8f} | "
-                    f"band=[{close_band.low:.8f}, {close_band.high:.8f}] | "
-                    f"losing={res.losing_level.price:.8f}/"
-                    f"{res.losing_level.qty} | "
-                    f"profitable={res.profitable_level.price:.8f}/"
-                    f"{res.profitable_level.qty} | "
-                    f"qty={res.qty}"
-                )
-
-    def _log_normal_close(self, losing_level, next_less_losing_level, cur_price, close_band, qty):
-        self.logger.info(
-                f"[OPT] CLOSE DECISION | "
-                f"branch=IN_BAND | "
-                f"price={cur_price:.8f} | "
-                f"band=[{close_band.low:.8f}, {close_band.high:.8f}] | "
-                f"losing={losing_level.price:.8f}/{losing_level.qty} | "
-                f"profitable={next_less_losing_level.price:.8f}/"
-                f"{next_less_losing_level.qty} | "
-                f"qty={qty}"
-            )   
+        return current_price, sorted_levels, losing_levels

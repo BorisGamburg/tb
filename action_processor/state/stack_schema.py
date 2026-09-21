@@ -8,6 +8,7 @@ class StackElem(BaseModel):
     stop_price: float = Field(default=0.0)
     stop_active: bool = Field(default=False)
     fee: float = Field(default=0.0)
+    initial_qty: float = Field(default=0.0)  # добавлено
     
 class StackData(BaseModel):
 

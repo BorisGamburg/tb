@@ -19,12 +19,14 @@ class StackMng:
         self,
         price: float,
         qty: float,
+        initial_qty: float,
         fee: float = 0.0,
     ) -> StackElem:
         entry = StackElem(
             price=price,
             qty=qty,
             fee=fee,
+            initial_qty=initial_qty
         )
 
         self.data.entries.append(entry)
@@ -100,11 +102,14 @@ class StackMng:
 
         merged_fee = getattr(level1, 'fee', 0.0) + getattr(level2, 'fee', 0.0)
 
+        merged_initial_qty = level1.initial_qty + level2.initial_qty
+
         # Создание merge-уровня
         merged = StackElem(
             price=merged_price,
             qty=total_qty,
             fee=merged_fee,
+            initial_qty=merged_initial_qty
         )
         self.data.entries.append(merged)
 
