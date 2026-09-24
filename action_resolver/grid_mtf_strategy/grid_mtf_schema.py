@@ -13,7 +13,6 @@ class GridMTFTemplate(BaseModel):
     tf_filter: AllowedTimeframes              
     tf_rsi_entry_threshold: float
     htf_filter: AllowedTimeframes
-    htf_rsi_entry_threshold: float
     htf_rsi_rearm_threshold: float
     distance_bbw_tf: AllowedTimeframes
     distance_bbw_multiplier: float    

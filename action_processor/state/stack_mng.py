@@ -161,4 +161,65 @@ class StackMng:
             stack_data=data_copy,
             logger=self.logger,
         )
+    def build_merged_level(self, levels: list[StackElem]) -> StackElem:
+        total_qty = sum(level.qty for level in levels)
+
+        if total_qty <= 0:
+            raise ValueError("Merged level has zero quantity")
+
+        merged_price = sum(
+            level.price * level.qty
+            for level in levels
+        ) / total_qty
+
+        merged_fee = sum(
+            getattr(level, "fee", 0.0)
+            for level in levels
+        )
+
+        merged_initial_qty = sum(
+            level.initial_qty
+            for level in levels
+        )
+
+        return StackElem(
+            price=merged_price,
+            qty=total_qty,
+            fee=merged_fee,
+            initial_qty=merged_initial_qty,
+        )
+
+    def merge_multiple_levels(
+        self,
+        levels: list[StackElem],
+    ) -> StackElem:
+        # Проверка данных в levels
+        if len(levels) < 2:
+            raise ValueError("At least two levels are required")
+        for level in levels:
+            if level not in self.data.entries:
+                raise ValueError("Level is not in stack")
+
+            if level.qty <= 0:
+                raise ValueError(
+                    f"Invalid level qty: {level.qty}"
+                )
+        
+        # Получаем merge level
+        merged = self.build_merged_level(levels)
+
+        # Удаляем соединяемые уровни
+        for level in levels:
+            self.data.entries.remove(level)
+
+        # Добаваляем merge level
+        self.data.entries.append(merged)
+
+        # Лог
+        self.logger.info(
+            f"Merged {len(levels)} levels -> "
+            f"({merged.price:.6f}, {merged.qty:.4f})"
+        )
+
+        return merged    
     

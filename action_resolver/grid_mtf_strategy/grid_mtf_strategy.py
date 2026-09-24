@@ -8,7 +8,7 @@ from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW
 from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
 from dataclasses import dataclass, field
-from action_resolver.grid_mtf_strategy.rearm_checker import RearmChecker
+from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng
 from rich.text import Text
 from common.trading_info import TradingInfo
 from action_processor.action_guard import ActionGuard
@@ -17,6 +17,7 @@ from action_processor.process_result import ProcessResult
 from action_processor.action import Action, ActionCommand
 from utils.utils import get_inverse_side
 from action_processor.action_source import ActionSource
+from action_resolver.grid_mtf_strategy.merge_levels import MergeLevels
 
 
 @dataclass(slots=True)
@@ -40,6 +41,9 @@ class GridMTFRuntime:
         default_factory=lambda: Text("N/A", style="dim")
     )
     guard_status: Text | None = None
+    bb_entry_status: Text = field(
+        default_factory=lambda: Text("N/A", style="dim")
+    )    
 
 class GridMTFStrategy(BaseStrategy):
 
@@ -67,8 +71,12 @@ class GridMTFStrategy(BaseStrategy):
             state_store=state_store,
         )        
 
-        # sleep (можешь заменить на свою политику)
-        self.sleep_interval = 5.0
+        self.merge_levels = MergeLevels(
+            state_store=self.state_store,
+            proxy_driver=self.proxy_driver,
+            symbol=self.symbol,
+            side=self.side,
+        )        
 
         self._started = False
 
@@ -108,7 +116,7 @@ class GridMTFStrategy(BaseStrategy):
             symbol=self.symbol,
         )             
 
-        self.rearm_checker = RearmChecker(
+        self.rearm_manager = RearmMng(
             runtime=self.runtime,
             state_store=self.state_store,
             map_mng=self.map_mng,
@@ -117,7 +125,8 @@ class GridMTFStrategy(BaseStrategy):
             logger=self.logger,
             symbol=self.symbol,
             side=self.side,
-            trading_info=self.trading_info
+            trading_info=self.trading_info,
+            action_service=self.action_service,
         )                
 
         self.action_guard = ActionGuard(
@@ -158,6 +167,9 @@ class GridMTFStrategy(BaseStrategy):
         text.append(" | RSI: ", style="cyan")
         text.append(self.runtime.rsi_entry_status)
 
+        text.append(" | BB: ", style="cyan")
+        text.append(self.runtime.bb_entry_status)        
+
         text.append(" | DIST_THRES: ", style="cyan")
         text.append(self.runtime.distance_status)
 
@@ -182,6 +194,7 @@ class GridMTFStrategy(BaseStrategy):
             f"Min rearm distance: {data.min_rearm_distance_pct}\n"
             f"Min profit: {data.min_profit_pct}\n"
             f"Max profit: {data.max_profit_pct}\n"
+            f"Merge threshold: {data.merge_threshold_pct}%\n"            
             f"Sleep interval: {data.sleep_interval}\n"
         )
         self.app_ctx.logger.info(params)
@@ -200,9 +213,9 @@ class GridMTFStrategy(BaseStrategy):
         self,
         process_result: ProcessResult,
     ) -> ProcessResult:
-            # Проверяем есть маленькие уровни для merge.
-            # Если есть -> merge пары
-            self._merge_small_levels()   
+            # Проверяем есть ли группа маленьких уровней для merge.
+            # Если есть -> объединяем все уровни группы
+            self.merge_levels.merge_multiple_levels()
 
             is_allowed = self.is_exit_allowed()
             status_line = self._get_status_line()
@@ -244,88 +257,6 @@ class GridMTFStrategy(BaseStrategy):
 
         return process_result
 
-    def _get_rearm_qty(self) -> float:
-        level = len(self.state_store.stack_mng.data.entries)
-
-        cur_map_elem = self.map_mng.get_template_by_level(level)
-        qty_factor = cur_map_elem.qty_pct / 100
-
-        balance = self.proxy_driver.get_balance()
-        price = self.proxy_driver.get_last_price(self.symbol)
-
-        qty_in_usd = qty_factor * balance
-        qty = qty_in_usd / price
-
-        qty = self.trading_info.get_valid_order_qty(qty)
-
-        if qty <= 0:
-            raise RuntimeError(
-                f"Invalid REARM qty: {qty} "
-                f"(level={level}, qty_factor={qty_factor})"
-            )
-
-        return qty
-
-    def _build_rearm_action(self, initial_qty: float) -> ActionCommand:
-        qty = self.trading_info.get_valid_order_qty(initial_qty)
-
-        if qty <= 0:
-            raise RuntimeError(
-                f"Invalid REARM qty: {qty} (initial_qty={initial_qty})"
-            )
-
-        return ActionCommand(
-            action=Action.OPEN,
-            symbol=self.symbol,
-            side=self.side,
-            qty=qty,
-            reason="REARM",
-            source=ActionSource.REARM_CHECKER
-        )
-
-    def _execute_rearm(
-        self,
-        process_result: ProcessResult,
-        initial_qty: float
-    ) -> ProcessResult:
-        action = self._build_rearm_action(initial_qty=initial_qty)
-
-        process_result = self.action_service.process_action(
-            action,
-            process_result,
-        )
-
-        return process_result
-
-    def _resolve_rearm(
-        self,
-        process_result: ProcessResult,
-        initial_qty: float
-    ) -> ProcessResult:
-        while True:
-            # Проверяем, нужно ли выполнять REARM
-            rearm_needed = self.rearm_checker.check()
-
-            if not rearm_needed:
-                # REARM не нужен -> выходим из цикла
-                return process_result
-            else:
-                # REARM нужен -> выполняем его
-                process_result = self._execute_rearm(
-                    process_result=process_result,
-                    initial_qty=initial_qty
-                )
-
-                # Проверяем, выполнен ли REARM
-                if process_result.executed:
-                    # REARM выполнен -> выходим из цикла
-                    return process_result
-                else:
-                    # REARM не выполнен -> повторно проверяем условия
-                    self.logger.warning(
-                        "REARM не выполнен, повторная попытка..."
-                    )    
-
     def _resolve_bbw_exit(
         self,
         process_result: ProcessResult,
@@ -344,7 +275,7 @@ class GridMTFStrategy(BaseStrategy):
             # Выполнен ли CLOSE?
             if process_result.executed:
                 # CLOSE выполнен -> запускаем REARM
-                return self._resolve_rearm(
+                return self.rearm_manager._resolve_rearm(
                     process_result,
                     initial_qty=entry.initial_qty
                 )
@@ -441,7 +372,7 @@ class GridMTFStrategy(BaseStrategy):
         self,
         process_result: ProcessResult,
     ) -> ProcessResult:
-        entry_allowed, ha_ok, rsi_ok, distance_ok = self.entry_checker.check()
+        entry_allowed, ha_ok, rsi_ok, bb_ok, distance_ok = self.entry_checker.check()
 
         notifier = self.app_ctx.notifier
 
@@ -463,49 +394,3 @@ class GridMTFStrategy(BaseStrategy):
 
         return process_result
 
-    def _merge_small_levels(self) -> None:
-        # Получаем размер основной позиции
-        main_position_qty = self.get_main_pos_qty()
-
-        # Если размер позиции 0 -> выходим
-        if main_position_qty <= 0:
-            return        
-
-        # Получаем порог размера уровня
-        merge_threshold = self.get_merge_threshold(main_position_qty)
-
-        # Проходим по уровням и если находим 2 маленьких соседних,
-        # то соединяем их
-        self.__merge_small_levels(merge_threshold) 
-
-    def __merge_small_levels(self, merge_threshold):
-        self.state_store.stack_mng.sort_stack(self.side)
-        levels = self.state_store.stack_mng.data.entries
-        for index in range(len(levels) - 1):
-            level1 = levels[index]
-            level2 = levels[index + 1]
-
-            if (
-                level1.qty < merge_threshold
-                and level2.qty < merge_threshold
-            ):
-                self.state_store.stack_mng.merge_levels(
-                    level1,
-                    level2,
-                )
-                return
-
-    def get_merge_threshold(self, main_position_qty):
-        merge_threshold_pct = self.state_store.data.merge_threshold_pct
-        merge_threshold = (
-            main_position_qty * float(merge_threshold_pct) / 100
-        )
-        return merge_threshold
-
-    def get_main_pos_qty(self):
-        main_position = self.proxy_driver.get_position(
-            self.symbol,
-            self.side,
-        )
-        main_position_qty = float(main_position["size"])
-        return main_position_qty   

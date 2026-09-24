@@ -57,90 +57,6 @@ class EntryChecker:
 
         return rsi <= threshold
 
-    def _check_rsi(self) -> bool:
-        entries = self.state_store.stack_mng.data.entries
-        level = len(entries)
-        tpl = self.map_mng.get_template_by_level(level)
-
-        # --- TF RSI ---
-        rsi_tf = self._get_rsi_last_closed(
-            tpl.tf_filter
-        )
-        tf_threshold = tpl.tf_rsi_entry_threshold
-        rsi_tf_entry_ok = self._is_rsi_entry_threshold_ok(
-            rsi_tf,
-            tf_threshold
-        )
-
-        # --- HTF RSI ---
-        rsi_htf = self._get_rsi_last_closed(
-            tpl.htf_filter
-        )
-        htf_threshold = tpl.htf_rsi_entry_threshold
-        rsi_htf_entry_ok = self._is_rsi_entry_threshold_ok(
-            rsi_htf,
-            htf_threshold
-        )
-
-        overall = "PASS" if rsi_tf_entry_ok and rsi_htf_entry_ok else "BLOCK"
-
-        tf_th = (
-            f"{tf_threshold:.0f}"
-            if tf_threshold is not None
-            else "N/A"
-        )
-        htf_th = (
-            f"{htf_threshold:.0f}"
-            if htf_threshold is not None
-            else "N/A"
-        )
-
-        tf_v = (
-            f"{rsi_tf:.1f}"
-            if rsi_tf is not None
-            else "N/A"
-        )
-        htf_v = (
-            f"{rsi_htf:.1f}"
-            if rsi_htf is not None
-            else "N/A"
-        )
-
-        tf_s = "PASS" if rsi_tf_entry_ok else "BLOCK"
-        htf_s = "PASS" if rsi_htf_entry_ok else "BLOCK"
-
-        status = Text()
-        status.append(
-            overall,
-            style="black on green" if overall == "PASS" else "white on red",
-        )
-        status.append(f" [{tpl.tf_filter}m:")
-        status.append(
-            tf_s,
-            style="black on green" if tf_s == "PASS" else "white on red",
-        )
-        status.append(f"({tf_v}/{tf_th}) | {tpl.htf_filter}m:")
-        status.append(
-            htf_s,
-            style="black on green" if htf_s == "PASS" else "white on red",
-        )
-        status.append(f"({htf_v}/{htf_th})]")
-
-        self.runtime.rsi_entry_status = status
-
-        return rsi_tf_entry_ok and rsi_htf_entry_ok    
-
-    def check(self):
-        ha_ok, ha_message = self._check_ha_revers()
-        rsi_ok = self._check_rsi()
-        distance_ok = self._check_distance()
-
-        self.runtime.ha_entry_status = ha_message
-
-        entry_allowed = ha_ok and rsi_ok and distance_ok
-
-        return entry_allowed, ha_ok, rsi_ok, distance_ok
-
     def _check_distance(self):
         # Получаем уровни
         entries = self.state_store.stack_mng.data.entries
@@ -242,3 +158,114 @@ class EntryChecker:
             )
 
         return atr
+
+    def _check_bb(self) -> bool:
+        # Получаем среднюю Боллингера
+        bb_mid, bb_tf = self.get_bb_mid()
+
+        # Получаем тек цену
+        cur_price = self.proxy_driver.get_last_price(
+            self.symbol
+        )
+
+        # Сравниваем тек цену со средней Боллингера
+        bb_entry_ok = self.get_bb_entry_ok(bb_mid, cur_price)
+
+        # Формируем инфо для статусной строки
+        status = Text()
+        status.append(
+            "PASS" if bb_entry_ok else "BLOCK",
+            style=(
+                "black on green"
+                if bb_entry_ok
+                else "white on red"
+            ),
+        )
+        status.append(
+            f"({cur_price:.6f}/{bb_mid:.6f})"
+            f" TF:{bb_tf}"
+        )        
+        self.runtime.bb_entry_status = status
+
+        return bb_entry_ok 
+
+    def get_bb_entry_ok(self, bb_mid, cur_price):
+        if self.side == "Sell":
+            bb_entry_ok = cur_price > bb_mid
+        else:
+            bb_entry_ok = cur_price < bb_mid
+        return bb_entry_ok
+
+    def get_bb_mid(self):
+        entries = self.state_store.stack_mng.data.entries
+        level = len(entries)
+        tpl = self.map_mng.get_template_by_level(level)
+        bb = self.bb_service.get_live(tpl.htf_filter)
+        bb_mid = bb["mid"]
+        return bb_mid, tpl.htf_filter
+    
+    def _check_rsi(self) -> bool:
+        entries = self.state_store.stack_mng.data.entries
+        level = len(entries)
+        tpl = self.map_mng.get_template_by_level(level)
+
+        rsi_tf = self._get_rsi_last_closed(
+            tpl.tf_filter
+        )
+        tf_threshold = tpl.tf_rsi_entry_threshold
+        rsi_tf_entry_ok = self._is_rsi_entry_threshold_ok(
+            rsi_tf,
+            tf_threshold
+        )
+
+        tf_th = (
+            f"{tf_threshold:.0f}"
+            if tf_threshold is not None
+            else "N/A"
+        )
+
+        tf_v = (
+            f"{rsi_tf:.1f}"
+            if rsi_tf is not None
+            else "N/A"
+        )
+
+        status = Text()
+        status.append(
+            "PASS" if rsi_tf_entry_ok else "BLOCK",
+            style=(
+                "black on green"
+                if rsi_tf_entry_ok
+                else "white on red"
+            ),
+        )
+        status.append(
+            f"({tf_v}/{tf_th})"
+        )
+
+        self.runtime.rsi_entry_status = status
+
+        return rsi_tf_entry_ok    
+
+    def check(self):
+        ha_ok, ha_message = self._check_ha_revers()
+        rsi_ok = self._check_rsi()
+        bb_ok = self._check_bb()
+        distance_ok = self._check_distance()
+
+        self.runtime.ha_entry_status = ha_message
+
+        entry_allowed = (
+            ha_ok
+            and rsi_ok
+            and bb_ok
+            and distance_ok
+        )
+
+        return (
+            entry_allowed,
+            ha_ok,
+            rsi_ok,
+            bb_ok,
+            distance_ok,
+        )    

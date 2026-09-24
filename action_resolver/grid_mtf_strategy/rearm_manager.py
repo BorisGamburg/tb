@@ -4,9 +4,13 @@ from services.distance_service import (
 from common.trading_info import TradingInfo
 from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
+from action_processor.action_service import ActionService
+from action_processor.action import Action, ActionCommand
+from action_processor.action_source import ActionSource
+from action_processor.process_result import ProcessResult
 
 
-class RearmChecker:
+class RearmMng:
 
     def __init__(
         self,
@@ -19,6 +23,7 @@ class RearmChecker:
         symbol,
         side,
         trading_info: TradingInfo,
+        action_service: ActionService,
     ):
         self.state_store = state_store
         self.map_mng = map_mng
@@ -29,6 +34,7 @@ class RearmChecker:
         self.side = side
         self.runtime = runtime
         self.trading_info = trading_info
+        self.action_service = action_service
         
 
     def _get_rsi_last_closed(
@@ -170,3 +176,63 @@ class RearmChecker:
             return rsi >= threshold
 
         return rsi <= threshold    
+
+    def _build_rearm_action(self, initial_qty: float) -> ActionCommand:
+        qty = self.trading_info.get_valid_order_qty(initial_qty)
+
+        if qty <= 0:
+            raise RuntimeError(
+                f"Invalid REARM qty: {qty} (initial_qty={initial_qty})"
+            )
+
+        return ActionCommand(
+            action=Action.OPEN,
+            symbol=self.symbol,
+            side=self.side,
+            qty=qty,
+            reason="REARM",
+            source=ActionSource.REARM_CHECKER
+        )
+
+    def _execute_rearm(
+        self,
+        process_result: ProcessResult,
+        initial_qty: float
+    ) -> ProcessResult:
+        action = self._build_rearm_action(initial_qty=initial_qty)
+
+        process_result = self.action_service.process_action(
+            action,
+            process_result,
+        )
+
+        return process_result
+
+    def _resolve_rearm(
+        self,
+        process_result: ProcessResult,
+        initial_qty: float
+    ) -> ProcessResult:
+        while True:
+            # Проверяем, нужно ли выполнять REARM
+            rearm_needed = self.check()
+
+            if not rearm_needed:
+                # REARM не нужен -> выходим из цикла
+                return process_result
+            else:
+                # REARM нужен -> выполняем его
+                process_result = self._execute_rearm(
+                    process_result=process_result,
+                    initial_qty=initial_qty
+                )
+
+                # Проверяем, выполнен ли REARM
+                if process_result.executed:
+                    # REARM выполнен -> выходим из цикла
+                    return process_result
+                else:
+                    # REARM не выполнен -> повторно проверяем условия
+                    self.logger.warning(
+                        "REARM не выполнен, повторная попытка..."
+                    )    
