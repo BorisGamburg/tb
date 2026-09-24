@@ -200,6 +200,10 @@ class GridMTFStrategy(BaseStrategy):
         self,
         process_result: ProcessResult,
     ) -> ProcessResult:
+            # Проверяем есть маленькие уровни для merge.
+            # Если есть -> merge пары
+            self._merge_small_levels()   
+
             is_allowed = self.is_exit_allowed()
             status_line = self._get_status_line()
             process_result.status = status_line
@@ -458,3 +462,50 @@ class GridMTFStrategy(BaseStrategy):
         process_result.executed = False
 
         return process_result
+
+    def _merge_small_levels(self) -> None:
+        # Получаем размер основной позиции
+        main_position_qty = self.get_main_pos_qty()
+
+        # Если размер позиции 0 -> выходим
+        if main_position_qty <= 0:
+            return        
+
+        # Получаем порог размера уровня
+        merge_threshold = self.get_merge_threshold(main_position_qty)
+
+        # Проходим по уровням и если находим 2 маленьких соседних,
+        # то соединяем их
+        self.__merge_small_levels(merge_threshold) 
+
+    def __merge_small_levels(self, merge_threshold):
+        self.state_store.stack_mng.sort_stack(self.side)
+        levels = self.state_store.stack_mng.data.entries
+        for index in range(len(levels) - 1):
+            level1 = levels[index]
+            level2 = levels[index + 1]
+
+            if (
+                level1.qty < merge_threshold
+                and level2.qty < merge_threshold
+            ):
+                self.state_store.stack_mng.merge_levels(
+                    level1,
+                    level2,
+                )
+                return
+
+    def get_merge_threshold(self, main_position_qty):
+        merge_threshold_pct = self.state_store.data.merge_threshold_pct
+        merge_threshold = (
+            main_position_qty * float(merge_threshold_pct) / 100
+        )
+        return merge_threshold
+
+    def get_main_pos_qty(self):
+        main_position = self.proxy_driver.get_position(
+            self.symbol,
+            self.side,
+        )
+        main_position_qty = float(main_position["size"])
+        return main_position_qty   

@@ -34,6 +34,7 @@ class GridMTFSchema(BaseModel):
     max_profit_pct: Pct
     sleep_interval: int  # Интервал сна в секундах
     exit_guard_enabled: bool
+    merge_threshold_pct: Pct
 
     # --- TP ---
     tp_price: float = 0.0
