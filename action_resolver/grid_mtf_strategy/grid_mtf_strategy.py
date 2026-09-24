@@ -39,7 +39,6 @@ class GridMTFRuntime:
     distance_status: Text = field(
         default_factory=lambda: Text("N/A", style="dim")
     )
-    distance_entry_status: str = "N/A"
     guard_status: Text | None = None
 
 class GridMTFStrategy(BaseStrategy):
@@ -158,6 +157,9 @@ class GridMTFStrategy(BaseStrategy):
 
         text.append(" | RSI: ", style="cyan")
         text.append(self.runtime.rsi_entry_status)
+
+        text.append(" | DIST_THRES: ", style="cyan")
+        text.append(self.runtime.distance_status)
 
         text.append("\nEXIT  | RSI: ", style="cyan")
         text.append(self.runtime.rsi_exit_status)
@@ -431,13 +433,22 @@ class GridMTFStrategy(BaseStrategy):
 
         return process_result    
 
-
     def _resolve_entry(
         self,
         process_result: ProcessResult,
     ) -> ProcessResult:
-        entry_allowed = self.entry_checker.check()
-        self.app_ctx.notifier.log_distance_blocked(self.runtime)
+        entry_allowed, ha_ok, rsi_ok, distance_ok = self.entry_checker.check()
+
+        notifier = self.app_ctx.notifier
+
+        if notifier is None:
+            raise RuntimeError("Notifier is not initialized")
+
+        notifier.log_distance_blocked(
+            ha_ok,
+            rsi_ok,
+            distance_ok,
+        )
 
         if entry_allowed:
             return self._execute_open(
@@ -446,4 +457,4 @@ class GridMTFStrategy(BaseStrategy):
 
         process_result.executed = False
 
-        return process_result    
+        return process_result

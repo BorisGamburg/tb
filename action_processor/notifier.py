@@ -111,34 +111,33 @@ class Notifier:
     def log(self, message: str):
         self.logger.info(message)       
 
-    def log_distance_blocked(self, runtime) -> None:
+    def log_distance_blocked(
+        self,
+        ha_ok: bool,
+        rsi_ok: bool,
+        distance_ok: bool,
+    ) -> None:
         """
-        Логирует событие, когда сигналы HA и RSI готовы к входу, но дистанция блокирует ордер.
+        Логирует событие, когда сигналы HA и RSI готовы к входу,
+        но дистанция блокирует ордер.
         Пишет в лог строго один раз при наступлении события.
-        Состояние флага хранится внутри самой функции.
         """
         fn = Notifier.log_distance_blocked
         is_logged = getattr(fn, "_logged", False)
 
-        ha_status = getattr(runtime, 'ha_entry_status', '')
-        rsi_status = getattr(runtime, 'rsi_entry_status', '')
-        dist_status = getattr(runtime, 'distance_entry_status', '')
-
-        ha_plain = getattr(ha_status, 'plain', str(ha_status))
-        rsi_plain = getattr(rsi_status, 'plain', str(rsi_status))
-
-        ha_ok = 'PASS' in ha_plain
-        rsi_ok = 'PASS' in rsi_plain
-        dist_blocked = 'BLOCK' in str(dist_status)
+        dist_blocked = not distance_ok
 
         if ha_ok and rsi_ok and dist_blocked:
             if not is_logged:
                 symbol = self.state_store.data.symbol
                 side = self.state_store.data.side
+
                 self.logger.info(
-                    f"[ENTRY BLOCKED BY DISTANCE] Symbol: {symbol} | Side: {side} | "
-                    f"HA: PASS | RSI: PASS | DIST: {dist_status}"
+                    f"[ENTRY BLOCKED BY DISTANCE] "
+                    f"Symbol: {symbol} | Side: {side} | "
+                    f"HA: PASS | RSI: PASS"
                 )
+
                 fn._logged = True
         else:
             fn._logged = False

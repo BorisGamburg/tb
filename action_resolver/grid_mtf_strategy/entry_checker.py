@@ -131,25 +131,15 @@ class EntryChecker:
         return rsi_tf_entry_ok and rsi_htf_entry_ok    
 
     def check(self):
-
-        # Проверяем разворот ha
         ha_ok, ha_message = self._check_ha_revers()
-
-        # Проверяем rsi
         rsi_ok = self._check_rsi()
-
-        # Проверяем дистанцию
         distance_ok = self._check_distance()
 
-        # Все статусы уже сформированы к этому моменту
         self.runtime.ha_entry_status = ha_message
 
-        # Принимаем решение только после проверки всех фильтров
-        if not ha_ok or not rsi_ok or not distance_ok:
-            return False
+        entry_allowed = ha_ok and rsi_ok and distance_ok
 
-        # Сигнал есть
-        return True
+        return entry_allowed, ha_ok, rsi_ok, distance_ok
 
     def _check_distance(self):
         # Получаем уровни
@@ -178,7 +168,6 @@ class EntryChecker:
     ) -> bool:
         # Если уровней нет -> выходим
         if not entries:
-            self.runtime.distance_entry_status = "PASS"
             return True
 
         # Получаем текущую цену
@@ -190,33 +179,38 @@ class EntryChecker:
         last_entry = entries[-1]
 
         # Получаем тф из текущего map
-        level = len(entries) 
-        cur_htf = self.map_mng.get_htf_for_level(level)
-        
-        # 
-        bb = self.bb_service.get_live(cur_htf)
+        # Получаем параметры из текущего template
+        level = len(entries)
+        tpl = self.map_mng.get_template_by_level(level)
+
+        distance_bbw_tf = tpl.distance_bbw_tf
+        distance_bbw_multiplier = tpl.distance_bbw_multiplier
+
+        bb = self.bb_service.get_live(distance_bbw_tf)
         bbw = bb["width_abs"]
 
-        k = 0.25
+
         min_distance_ratio = 0.0035
 
         required_move = max(
-            k * bbw,
+            distance_bbw_multiplier * bbw,
             min_distance_ratio * price
         )
 
         if self.side == "Sell":
-            dist_ok = (
-                price >
-                last_entry.price + required_move
-            )
+            distance_threshold = last_entry.price + required_move
+            dist_ok = price > distance_threshold
         else:
-            dist_ok = (
-                price <
-                last_entry.price - required_move
-            )
+            distance_threshold = last_entry.price - required_move
+            dist_ok = price < distance_threshold
 
-        self.runtime.distance_entry_status = "PASS" if dist_ok else "BLOCK"
+        self.runtime.distance_status = Text(
+            f"{distance_threshold:.6f} "
+        )
+        self.runtime.distance_status.append(
+            "●",
+            style="bold green" if dist_ok else "bold red",
+        )
 
         return dist_ok
 

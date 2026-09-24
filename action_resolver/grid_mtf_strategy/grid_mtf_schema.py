@@ -15,6 +15,8 @@ class GridMTFTemplate(BaseModel):
     htf_filter: AllowedTimeframes
     htf_rsi_entry_threshold: float
     htf_rsi_rearm_threshold: float
+    distance_bbw_tf: AllowedTimeframes
+    distance_bbw_multiplier: float    
 
     qty_pct: Pct            # Обычно нужно для расчета объема
 
