@@ -5,8 +5,7 @@ import pandas as pd
 import logging
 from pathlib import Path
 from time import sleep
-#import signal
-#import sys
+from prog.managers.account_loader import load_account
 
 # Logging Setup
 logger = logging.getLogger()
@@ -16,18 +15,24 @@ ch = logging.StreamHandler()
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
+# Account
+ACCOUNT_NAME = "bybit_live"
+account = load_account(ACCOUNT_NAME)
+
 # Telegram Setup
-PROJECT_ROOT = Path(__file__).resolve().parent 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = PROJECT_ROOT / "data" / "config"
 TELEGRAM_CONFIG_PATH = CONFIG_DIR / "telegram_config.txt"
-# Передаем этот полный путь в конструктор
 telegram = Telegram(logger=logger, config_file=TELEGRAM_CONFIG_PATH)
 
 # Create an instance of the BybitDriver
-# Ключи
-api_key="beERCRcFrsJl19mupg"
-api_secret="e9kHWxgBwhWjVWC5U7CheH0sAWDawUVtpXUY"
-bybit_driver = BybitDriver(api_key=api_key, api_secret=api_secret, logger=logger, telegram=telegram)
+bybit_driver = BybitDriver(
+    demo=account.demo,
+    api_key=account.api_key,
+    api_secret=account.api_secret,
+    logger=logger,
+    telegram=telegram,
+)
 
 # Инициализация клиента Bybit
 session = HTTP(

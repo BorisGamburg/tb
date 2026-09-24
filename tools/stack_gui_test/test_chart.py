@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 from chart import create_chart
 from chart_view import ChartView
 from market_data import get_candles
+from PySide6.QtWidgets import QGraphicsView
+
 
 
 def load_config(config_path):
@@ -127,6 +129,7 @@ def get_configdata():
 def save_config(config_path, config):
     with open(config_path, "w") as f:
         yaml.safe_dump(config, f, sort_keys=False)
+
 
 
 def main():
