@@ -35,7 +35,6 @@ class EntryCheckResult:
 class EntryChecker:
     def __init__(
         self,
-        runtime,
         state_store: State,
         map_mng: GridMTFMapMng,
         proxy_driver,
@@ -43,7 +42,6 @@ class EntryChecker:
         symbol: str,
         side: str,
     ):
-        self.runtime = runtime
         self.state_store = state_store
         self.map_mng = map_mng
         self.proxy_driver = proxy_driver

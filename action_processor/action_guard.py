@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from rich.text import Text
 
 from action_processor.action import Action, ActionCommand
 from utils.utils import get_inverse_side
@@ -19,7 +18,6 @@ class ActionGuard:
         side,
         logger,
         telegram,
-        runtime,
         state_store,
     ):
         self.proxy_driver = proxy_driver
@@ -27,18 +25,16 @@ class ActionGuard:
         self.side = side
         self.logger = logger
         self.telegram = telegram
-        self.runtime = runtime
         self.state_store = state_store
 
         self._last_state: tuple | None = None
 
-    def is_allowed(self) -> bool:
+    def is_allowed(self) -> GuardResult:
         result = self._check()
 
-        self._update_status(result)
         self._handle_state_change(result)
 
-        return result.allowed
+        return result
 
     def _check(self) -> GuardResult:
 
@@ -105,38 +101,6 @@ class ActionGuard:
         new_main_qty = main_qty - close_qty
 
         return new_main_qty >= hedge_qty * 2
-
-    def _update_status(
-        self,
-        result: GuardResult | None = None,
-    ) -> None:
-        if self.runtime is None:
-            return
-
-        if result is None:
-            self.runtime.guard_status = None
-            return
-
-        if result.allowed:
-            status = Text()
-            status.append(
-                "CLOSE",
-                style="white on green",
-            )
-            status.append(" ALLOWED")
-            self.runtime.guard_status = status
-            return
-
-        status = Text()
-        status.append(
-            "CLOSE",
-            style="white on red",
-        )
-        status.append(
-            f" BLOCK({result.reason})"
-        )
-
-        self.runtime.guard_status = status
 
     def _handle_state_change(
         self,

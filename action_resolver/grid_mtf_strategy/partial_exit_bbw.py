@@ -1,10 +1,16 @@
+from dataclasses import dataclass
+
 from services.bb_service import BBService
 
+
+@dataclass
+class BBWCheckResult:
+    has_position: bool
+    take_profit: float | None
 
 class PartialExitBBW:
     def __init__(
         self,
-        runtime,
         state_store,
         proxy_driver,
         price_service,
@@ -18,7 +24,6 @@ class PartialExitBBW:
         self.map_mng = map_mng
         self.side = side
         self.symbol = symbol
-        self.runtime = runtime
 
         self.bb_service = BBService(
             proxy_driver=self.proxy_driver,
@@ -94,7 +99,6 @@ class PartialExitBBW:
         # Получаем entries 
         entries = self.state_store.stack_mng.data.entries
         if not entries:
-            self.runtime.bbw_exit_status = "NO_POS"
             return None
 
         # Получаем текущую цену
@@ -117,7 +121,7 @@ class PartialExitBBW:
     def _check_exit(self, exit_context):
         # Если контекст выхода не получен, то выходим без действий
         if exit_context is None:
-            return False, None
+            return False, None, None
 
         # Распаковываем контекст выхода
         prof_level, cur_price, cur_dist, min_dist, max_dist = exit_context
@@ -125,33 +129,51 @@ class PartialExitBBW:
         # Проверяем, превысила ли текущая дистанция минимальную 
         # Если нет, то выходим без действий
         if cur_dist < min_dist:
-            return False, None
+            return False, None, None
 
         # Проверяем, превысила ли текущая дистанция максимальную
         # Если да, то даем команду на закрытие 
         if cur_dist >= max_dist:
-            return True, prof_level
+            return True, prof_level, None
         # Проверяем, достигнут ли tp по BB
-        if not self._is_bb_tp_reached(cur_price):
-            return False, None
+        reached, tp = self._is_bb_tp_reached(cur_price)
+        if not reached:
+            return False, None, tp
 
-        return True, prof_level
+        return True, prof_level, tp
 
     def check(self):
         # Получаем данные для проверки выхода
         exit_context = self._get_exit_context()
 
-        # Проверка выхода 
-        return self._check_exit(exit_context)
+        if exit_context is None:
+            return (
+                False,
+                None,
+                BBWCheckResult(
+                    has_position=False,
+                    take_profit=None,
+                ),
+            )
 
-    def _update_exit_status(self, take_profit):
-        self.runtime.bbw_exit_status = f"[tp={take_profit:.6f}]"    
+        # Проверка выхода
+        signal, entry, tp = self._check_exit(exit_context)
+
+        return (
+            signal,
+            entry,
+            BBWCheckResult(
+                has_position=True,
+                take_profit=tp,
+            ),
+        )
 
     def _is_bb_tp_reached(self, cur_price):
         tp = self.get_bb_tp()
-        self._update_exit_status(tp)
 
         if self.side == "Sell":
-            return cur_price <= tp
+            reached = cur_price <= tp
+        else:
+            reached = cur_price >= tp
 
-        return cur_price >= tp        
+        return reached, tp 

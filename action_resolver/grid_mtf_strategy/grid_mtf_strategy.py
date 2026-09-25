@@ -4,13 +4,11 @@ from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from action_processor.bootstrap import AppContext
 from action_resolver.grid_mtf_strategy.partial_exit_cross import PartialExitCross
 from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
-from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW
+from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW, BBWCheckResult
 from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
-from dataclasses import dataclass, field
 from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng, RearmCheckResult
 from rich.text import Text
 from common.trading_info import TradingInfo
-from action_processor.action_guard import ActionGuard
 from action_processor.action_service import ActionService
 from action_processor.process_result import ProcessResult
 from action_processor.action import Action, ActionCommand
@@ -19,23 +17,8 @@ from action_processor.action_source import ActionSource
 from action_resolver.grid_mtf_strategy.merge_levels import MergeLevels
 from action_resolver.grid_mtf_strategy.entry_manager import EntryMng
 from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
+from action_processor.action_guard import ActionGuard, GuardResult
 
-
-@dataclass(slots=True)
-class GridMTFRuntime:
-    rsi_entry_status: Text = field(
-        default_factory=lambda: Text("N/A", style="dim")
-    )
-    bbw_exit_status: Text = field(
-        default_factory=lambda: Text("N/A", style="dim")
-    )
-    ha_entry_status: Text = field(
-        default_factory=lambda: Text("N/A", style="dim")
-    )
-    guard_status: Text | None = None
-    bb_entry_status: Text = field(
-        default_factory=lambda: Text("N/A", style="dim")
-    )    
 
 class GridMTFStrategy(BaseStrategy):
 
@@ -73,8 +56,6 @@ class GridMTFStrategy(BaseStrategy):
 
         self._started = False
 
-        self.runtime = GridMTFRuntime()
-
         # Инициализируем модуль проверки выхода на безубыток
         self.breakeven_checker = BreakevenChecker(
             fee_taker=self.trading_info.fee_taker,
@@ -90,7 +71,6 @@ class GridMTFStrategy(BaseStrategy):
         )    
 
         self.entry_manager = EntryMng(
-            runtime=self.runtime,
             state_store=self.state_store,
             map_mng=self.map_mng,
             app_ctx=app_ctx,
@@ -99,7 +79,6 @@ class GridMTFStrategy(BaseStrategy):
         )
 
         self.partial_exit_bbw = PartialExitBBW(
-            runtime=self.runtime,
             state_store=self.state_store,
             proxy_driver=self.proxy_driver,
             price_service=self.price_service,
@@ -126,7 +105,6 @@ class GridMTFStrategy(BaseStrategy):
             side=self.side,
             logger=self.logger,
             telegram=app_ctx.telegram,
-            runtime=self.runtime,
             state_store=self.state_store,
         )
 
@@ -139,24 +117,13 @@ class GridMTFStrategy(BaseStrategy):
 
         self._log_parameters()
 
-    def _get_status_line(
-        self,
-        check_result: EntryCheckResult | None = None,
-        rearm_check_result: RearmCheckResult | None = None,
-    ):
-        last_price = self.proxy_driver.get_last_price(self.symbol)
-        status_line = self._build_status_line(
-            last_price,
-            check_result,
-            rearm_check_result,
-        )
-        return status_line
-
     def _build_status_line(
         self,
         price: float,
         check_result: EntryCheckResult | None = None,
         rearm_check_result: RearmCheckResult | None = None,
+        bbw_check_result: BBWCheckResult | None = None,
+        guard_result: GuardResult | None = None,
     ) -> Text:
 
         text = Text()
@@ -266,11 +233,44 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         text.append(" | BBW: ", style="cyan")
-        text.append(self.runtime.bbw_exit_status)
+        if bbw_check_result is not None:
+            if not bbw_check_result.has_position:
+                text.append(
+                    "NO_POS",
+                    style="dim",
+                )
+            elif bbw_check_result.take_profit is not None:
+                text.append(
+                    f"[tp={bbw_check_result.take_profit:.6f}]"
+                )
+            else:
+                text.append(
+                    "N/A",
+                    style="dim",
+                )
+        else:
+            text.append(
+                "N/A",
+                style="dim",
+            )
 
-        if self.runtime.guard_status is not None:
+        if guard_result is not None:
             text.append("\nGUARD | ", style="cyan")
-            text.append(self.runtime.guard_status)
+
+            if guard_result.allowed:
+                text.append(
+                    "CLOSE",
+                    style="white on green",
+                )
+                text.append(" ALLOWED")
+            else:
+                text.append(
+                    "CLOSE",
+                    style="white on red",
+                )
+                text.append(
+                    f" BLOCK({guard_result.reason})"
+                )
 
         return text
 
@@ -288,16 +288,6 @@ class GridMTFStrategy(BaseStrategy):
         )
         self.app_ctx.logger.info(params)
 
-    def is_exit_allowed(self) -> bool:
-        """
-        Проверяет, можно ли закрывать уровни сейчас.
-        """
-        if not self.state_store.data.exit_guard_enabled:
-            self.runtime.guard_status = None
-            return True
-
-        return self.action_guard.is_allowed()
-
     def resolve(
         self,
         process_result: ProcessResult,
@@ -306,83 +296,29 @@ class GridMTFStrategy(BaseStrategy):
         # Если есть -> объединяем все уровни группы
         self.merge_levels.merge_multiple_levels()
 
-        is_allowed = self.is_exit_allowed()
+        guard_result = self.is_exit_allowed()
 
-        if not is_allowed:
+        if not guard_result.allowed:
             process_result.executed = False
-            process_result.status = self._get_status_line()
+            process_result.status = self._get_status_line(
+                guard_result=guard_result,
+            )
             return process_result
 
-        process_result, check_result, rearm_check_result = self._resolve_action(
-            process_result,
+        process_result, check_result, rearm_check_result, bbw_check_result = (
+            self._resolve_action(
+                process_result,
+            )
         )
         process_result.status = self._get_status_line(
             check_result,
             rearm_check_result,
+            bbw_check_result,
+            guard_result,
         )
 
         return process_result
     
-    def _resolve_action(
-        self,
-        process_result: ProcessResult,
-    ) -> tuple[
-        ProcessResult,
-        EntryCheckResult | None,
-        RearmCheckResult | None,
-    ]:
-        # Выход по пересечению предыдущего уровня
-        process_result = self._resolve_exit_cross(
-            process_result,
-        )
-        if process_result.signal:
-            return process_result, None, None
-
-                
-        # Выход по BBW
-        process_result, rearm_check_result = self._resolve_bbw_exit(
-            process_result,
-        )
-        if process_result.signal:
-            return process_result, None, rearm_check_result
-
-
-        # Проверка на вход
-        process_result, check_result = self._resolve_entry(
-            process_result,
-        )
-
-        return process_result, check_result, None
-
-    def _resolve_bbw_exit(
-        self,
-        process_result: ProcessResult,
-    ) -> tuple[ProcessResult, RearmCheckResult | None]:
-        # Есть сигнал на выход?
-        process_result.signal, entry = self.partial_exit_bbw.check()
-        if process_result.signal:
-            # Сигнал на выход есть
-            process_result = self._execute_close(
-                entry,
-                process_result,
-                reason="bbw",
-                source=ActionSource.PARTIAL_EXIT_BBW
-            )
-
-            # Выполнен ли CLOSE?
-            if process_result.executed:
-                # CLOSE выполнен -> запускаем REARM
-                return self.rearm_manager._resolve_rearm(
-                    process_result,
-                    initial_qty=entry.initial_qty
-                )
-            else:
-                # CLOSE не выполнен -> выходим
-                return process_result, None
-        else:
-            # Сигнала на выход нет
-            return process_result, None
-
     def _execute_close(
         self,
         entry,
@@ -429,3 +365,121 @@ class GridMTFStrategy(BaseStrategy):
         return self.entry_manager.resolve(
             process_result,
         )
+
+    def _resolve_bbw_exit(
+        self,
+        process_result: ProcessResult,
+    ) -> tuple[
+        ProcessResult,
+        RearmCheckResult | None,
+        BBWCheckResult,
+    ]:
+        # Есть сигнал на выход?
+        process_result.signal, entry, bbw_check_result = (
+            self.partial_exit_bbw.check()
+        )
+
+        if process_result.signal:
+            # Сигнал на выход есть
+            process_result = self._execute_close(
+                entry,
+                process_result,
+                reason="bbw",
+                source=ActionSource.PARTIAL_EXIT_BBW
+            )
+
+            # Выполнен ли CLOSE?
+            if process_result.executed:
+                # CLOSE выполнен -> запускаем REARM
+                process_result, rearm_check_result = (
+                    self.rearm_manager._resolve_rearm(
+                        process_result,
+                        initial_qty=entry.initial_qty
+                    )
+                )
+                return (
+                    process_result,
+                    rearm_check_result,
+                    bbw_check_result,
+                )
+            else:
+                # CLOSE не выполнен -> выходим
+                return process_result, None, bbw_check_result
+
+        # Сигнала на выход нет
+        return process_result, None, bbw_check_result
+
+    def _resolve_action(
+        self,
+        process_result: ProcessResult,
+    ) -> tuple[
+        ProcessResult,
+        EntryCheckResult | None,
+        RearmCheckResult | None,
+        BBWCheckResult,
+    ]:
+        # Выход по пересечению предыдущего уровня
+        process_result = self._resolve_exit_cross(
+            process_result,
+        )
+        if process_result.signal:
+            return process_result, None, None, BBWCheckResult(
+                has_position=False,
+                take_profit=None,
+            )
+
+                
+        # Выход по BBW
+        process_result, rearm_check_result, bbw_check_result = (
+            self._resolve_bbw_exit(
+                process_result,
+            )
+        )
+        if process_result.signal:
+            return (
+                process_result,
+                None,
+                rearm_check_result,
+                bbw_check_result,
+            )
+
+
+        # Проверка на вход
+        process_result, check_result = self._resolve_entry(
+            process_result,
+        )
+
+        return (
+            process_result,
+            check_result,
+            None,
+            bbw_check_result,
+        )    
+
+    def _get_status_line(
+        self,
+        check_result: EntryCheckResult | None = None,
+        rearm_check_result: RearmCheckResult | None = None,
+        bbw_check_result: BBWCheckResult | None = None,
+        guard_result: GuardResult | None = None,
+    ):
+        last_price = self.proxy_driver.get_last_price(self.symbol)
+        status_line = self._build_status_line(
+            price=last_price,
+            check_result=check_result,
+            rearm_check_result=rearm_check_result,
+            bbw_check_result=bbw_check_result,
+            guard_result=guard_result
+        )
+        return status_line    
+
+    def is_exit_allowed(self) -> GuardResult:
+        """
+        Проверяет, можно ли закрывать уровни сейчас.
+        """
+        if not self.state_store.data.exit_guard_enabled:
+            return GuardResult(
+                allowed=True,
+            )
+
+        return self.action_guard.is_allowed()    

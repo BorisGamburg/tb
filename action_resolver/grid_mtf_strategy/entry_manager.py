@@ -13,7 +13,6 @@ class EntryMng:
 
     def __init__(
         self,
-        runtime,
         state_store: State,
         map_mng: GridMTFMapMng,
         app_ctx: AppContext,
@@ -23,12 +22,10 @@ class EntryMng:
         self.state_store = state_store
         self.map_mng = map_mng
         self.app_ctx = app_ctx
-        self.runtime = runtime
         self.trading_info = trading_info
         self.action_service = action_service
 
         self.entry_checker = EntryChecker(
-            runtime=self.runtime,
             state_store=self.state_store,
             map_mng=self.map_mng,
             proxy_driver=self.app_ctx.proxy_driver,
