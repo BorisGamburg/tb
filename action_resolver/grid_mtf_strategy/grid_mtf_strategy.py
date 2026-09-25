@@ -23,12 +23,6 @@ from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 
 @dataclass(slots=True)
 class GridMTFRuntime:
-    rearm_status: Text = field(
-        default_factory=lambda: Text("OFF", style="dim")
-    )
-    rsi_exit_status: Text = field(
-        default_factory=lambda: Text("N/A", style="dim")
-    )
     rsi_entry_status: Text = field(
         default_factory=lambda: Text("N/A", style="dim")
     )
@@ -36,9 +30,6 @@ class GridMTFRuntime:
         default_factory=lambda: Text("N/A", style="dim")
     )
     ha_entry_status: Text = field(
-        default_factory=lambda: Text("N/A", style="dim")
-    )
-    distance_status: Text = field(
         default_factory=lambda: Text("N/A", style="dim")
     )
     guard_status: Text | None = None
@@ -264,7 +255,15 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         text.append("\nEXIT  | RSI: ", style="cyan")
-        text.append(self.runtime.rsi_exit_status)
+        if rearm_check_result is not None:
+            text.append(
+                "OK" if rearm_check_result.rsi_ok else "BLOCK"
+            )
+        else:
+            text.append(
+                "N/A",
+                style="dim",
+            )
 
         text.append(" | BBW: ", style="cyan")
         text.append(self.runtime.bbw_exit_status)
