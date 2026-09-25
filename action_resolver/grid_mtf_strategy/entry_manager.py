@@ -88,7 +88,7 @@ class EntryMng:
 
         entry_allowed = check_result.entry_allowed
         ha_ok = check_result.ha.signal
-        rsi_ok = check_result.rsi_ok
+        rsi_ok = check_result.rsi.ok
         bb_ok = check_result.bb_ok
         distance_ok = check_result.distance_ok
 

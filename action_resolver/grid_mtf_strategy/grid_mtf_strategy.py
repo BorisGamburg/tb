@@ -186,7 +186,34 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         text.append(" | RSI: ", style="cyan")
-        text.append(self.runtime.rsi_entry_status)
+        if check_result is not None:
+            rsi = check_result.rsi
+
+            tf_th = (
+                f"{rsi.threshold:.0f}"
+                if rsi.threshold is not None
+                else "N/A"
+            )
+
+            tf_v = (
+                f"{rsi.value:.1f}"
+                if rsi.value is not None
+                else "N/A"
+            )
+
+            text.append(
+                f"({tf_v}/{tf_th})"
+                f" TF:{rsi.tf}"
+            )
+            text.append(
+                " ●",
+                style="bold green" if rsi.ok else "bold red",
+            )
+        else:
+            text.append(
+                "N/A",
+                style="dim",
+            )
 
         text.append(" | BB: ", style="cyan")
         text.append(self.runtime.bb_entry_status)        

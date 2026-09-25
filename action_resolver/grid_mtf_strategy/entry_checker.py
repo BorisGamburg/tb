@@ -6,14 +6,21 @@ from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from rich.text import Text
 from services.bb_service import BBService
 
+
+@dataclass
+class RsiCheckResult:
+    ok: bool
+    value: float | None
+    threshold: float | None
+    tf: str    
+
 @dataclass
 class EntryCheckResult:
     entry_allowed: bool
     ha: HAReversalResult
-    rsi_ok: bool
+    rsi: RsiCheckResult
     bb_ok: bool
     distance_ok: bool
-
 
 class EntryChecker:
     def __init__(
@@ -214,7 +221,7 @@ class EntryChecker:
         bb_mid = bb["mid"]
         return bb_mid, tpl.htf_filter
     
-    def _check_rsi(self) -> bool:
+    def _check_rsi(self) -> RsiCheckResult:
         entries = self.state_store.stack_mng.data.entries
         level = len(entries)
         tpl = self.map_mng.get_template_by_level(level)
@@ -228,44 +235,22 @@ class EntryChecker:
             tf_threshold
         )
 
-        tf_th = (
-            f"{tf_threshold:.0f}"
-            if tf_threshold is not None
-            else "N/A"
+        return RsiCheckResult(
+            ok=rsi_tf_entry_ok,
+            value=rsi_tf,
+            threshold=tf_threshold,
+            tf=tpl.tf_filter,
         )
-
-        tf_v = (
-            f"{rsi_tf:.1f}"
-            if rsi_tf is not None
-            else "N/A"
-        )
-
-        status = Text()
-        status.append(
-            "PASS" if rsi_tf_entry_ok else "BLOCK",
-            style=(
-                "black on green"
-                if rsi_tf_entry_ok
-                else "white on red"
-            ),
-        )
-        status.append(
-            f"({tf_v}/{tf_th})"
-        )
-
-        self.runtime.rsi_entry_status = status
-
-        return rsi_tf_entry_ok    
-
+        
     def check(self) -> EntryCheckResult:
         ha_result = self._check_ha_revers()
-        rsi_ok = self._check_rsi()
+        rsi_result = self._check_rsi()
         bb_ok = self._check_bb()
         distance_ok = self._check_distance()
 
         entry_allowed = (
             ha_result.signal
-            and rsi_ok
+            and rsi_result.ok
             and bb_ok
             and distance_ok
         )
@@ -273,7 +258,7 @@ class EntryChecker:
         return EntryCheckResult(
             entry_allowed=entry_allowed,
             ha=ha_result,
-            rsi_ok=rsi_ok,
+            rsi=rsi_result,
             bb_ok=bb_ok,
             distance_ok=distance_ok,
         )
