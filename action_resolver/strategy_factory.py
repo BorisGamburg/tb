@@ -95,7 +95,7 @@ class StrategyFactory:
                 trading_info=trading_info,
             )
 
-            return state_store, strategy
+            return state_store, strategy, trading_info
 
         # =========================================================
         # --- СТРАТЕГИЯ 2: hedge_2 ---
@@ -122,7 +122,7 @@ class StrategyFactory:
                 trading_info=trading_info,
             )
 
-            return state_store, strategy
+            return state_store, strategy, trading_info
 
         # =========================================================
         # --- СТРАТЕГИЯ 3: orchestrator ---
@@ -150,7 +150,7 @@ class StrategyFactory:
                 trading_info=trading_info,
             )
 
-            return state_store, strategy
+            return state_store, strategy, trading_info
 
         raise ValueError(f"Неизвестная стратегия: {strategy_name}")
 

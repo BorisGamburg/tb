@@ -32,7 +32,7 @@ class ActionProcessor:
         self.telegram = app_ctx.telegram
 
         # 2. Инициализация стратегии и состояния
-        self.state_store, self.strategy = StrategyFactory.initialize(
+        self.state_store, self.strategy, self.trading_info = StrategyFactory.initialize(
             config_file=self.config_file_path,
             app_ctx=self.app_ctx,
         )        
@@ -41,7 +41,8 @@ class ActionProcessor:
         self.action_service = ActionService(
             app_ctx=self.app_ctx,
             state_store=self.state_store,
-        )        
+            trading_info=self.trading_info,
+        )
 
         # Инициализация модуля для обработки внешних команд
         self.external_command_processor = ExternalCommandProcessor(

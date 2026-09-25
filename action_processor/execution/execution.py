@@ -8,12 +8,14 @@ from action_processor.execution.open_active_limit_mng import OpenActiveLimitMng
 from action_processor.execution.limit_order_result import LimitOrderStatus
 from action_processor.execution.close_limit_mng import CloseLimitMng, ExitType
 from action_processor.bootstrap import AppContext
+from common.trading_info import TradingInfo
 
 
 class Execution:
     def __init__(
         self,
         app_ctx: AppContext,
+        trading_info: TradingInfo,
     ):
         self.app_ctx = app_ctx
         self.proxy_driver = app_ctx.proxy_driver
@@ -23,14 +25,15 @@ class Execution:
         self.execution_waiter = ExecutionWaiter(self.proxy_driver)
         self.open_active_limit_mng = OpenActiveLimitMng(
             app_ctx=app_ctx,
+            trading_info=trading_info,
         )
 
         self.close_limit_mng = CloseLimitMng(
             proxy_driver=self.proxy_driver,
             market_service=self.price_service,
             logger=self.logger,
-        )   
-
+        )
+        
     def _get_order_details(self, res, symbol):
         order_id = res["result"]["orderId"]
 

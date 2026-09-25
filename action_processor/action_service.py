@@ -7,6 +7,7 @@ from action_processor.execution.execution_result import ExecutionResult
 from action_processor.trade_table_logger import TradeTableLogger
 from action_processor.action import Action, ActionCommand
 from action_processor.execution.limit_order_result import LimitOrderStatus
+from common.trading_info import TradingInfo
 
 
 class ActionService:
@@ -15,6 +16,7 @@ class ActionService:
         self,
         app_ctx: AppContext,
         state_store: State,
+        trading_info: TradingInfo,
     ):
         self.logger = app_ctx.logger
         self.state_store = state_store
@@ -22,6 +24,7 @@ class ActionService:
         
         self.execution = Execution(
             app_ctx=app_ctx,
+            trading_info=trading_info,
         )
 
         self.accounting = Accounting(

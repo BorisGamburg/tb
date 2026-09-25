@@ -69,6 +69,7 @@ class GridMTFStrategy(BaseStrategy):
         self.action_service = ActionService(
             app_ctx=app_ctx,
             state_store=state_store,
+            trading_info=trading_info,
         )        
 
         self.merge_levels = MergeLevels(
@@ -100,13 +101,9 @@ class GridMTFStrategy(BaseStrategy):
             runtime=self.runtime,
             state_store=self.state_store,
             map_mng=self.map_mng,
-            proxy_driver=self.proxy_driver,
-            price_service=self.price_service,
-            symbol=self.symbol,
-            side=self.side,
+            app_ctx=app_ctx,
             trading_info=self.trading_info,
             action_service=self.action_service,
-            notifier=app_ctx.notifier,
         )
 
         self.partial_exit_bbw = PartialExitBBW(
@@ -256,7 +253,6 @@ class GridMTFStrategy(BaseStrategy):
         process_result = self._resolve_entry(
             process_result,
         )
-
 
         return process_result
 

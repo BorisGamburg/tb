@@ -6,6 +6,7 @@ from action_processor.execution.limit_order_result import LimitOrderResult, Limi
 from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
 from action_processor.bootstrap import AppContext
+from common.trading_info import TradingInfo
 
 
 class OpenActiveLimitMng:
@@ -16,11 +17,13 @@ class OpenActiveLimitMng:
     def __init__(
         self,
         app_ctx: AppContext,
+        trading_info: TradingInfo,
     ):
         self.app_ctx = app_ctx
         self.proxy_driver = app_ctx.proxy_driver
         self.price_service = app_ctx.price_service
         self.logger = app_ctx.logger
+        self.trading_info = trading_info
 
         self.scale_pool_mng = ScalePoolMng(
             proxy_driver=self.proxy_driver,
@@ -179,7 +182,7 @@ class OpenActiveLimitMng:
             symbol=symbol,
             side=side,
             order_id=order_id,
-            new_qty=qty,
+            new_qty=self.trading_info.min_qty,
         )
 
         self.logger.info(
@@ -213,18 +216,15 @@ class OpenActiveLimitMng:
             avg_price=avg_price,
         )        
         fee = float(order_data["cumFeeDetail"]["USDT"])
-        remaining_qty = qty - filled_qty
 
-        self.scale_pool_mng.move_order_to_pool(
+        self._cancel_order_checked(
             symbol=symbol,
-            side=side,
             order_id=order_id,
-            new_qty=remaining_qty,
         )
 
         self.logger.info(
             f"[LIMIT] order partially filled | order_id={order_id} "
-            f"| filled_qty={filled_qty} | remaining_qty={remaining_qty}"
+            f"| filled_qty={filled_qty} "
         )
 
         return LimitOrderResult(
@@ -235,7 +235,6 @@ class OpenActiveLimitMng:
             filled=True,
             status=LimitOrderStatus.PARTIALLY_FILLED,
         )
-
 
     def _handle_filled_order(
         self,
@@ -283,3 +282,32 @@ class OpenActiveLimitMng:
             )
             self.logger.error(message)
             self.app_ctx.telegram.send_telegram_message(message)    
+
+    def _cancel_order(
+        self,
+        symbol: str,
+        order_id: str,
+    ):
+        return self.proxy_driver.execute(
+            "cancel_lim_order",
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+    def _cancel_order_checked(
+        self,
+        symbol: str,
+        order_id: str,
+    ):
+        cancel_result = self._cancel_order(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        if cancel_result not in (0, 110001):
+            raise RuntimeError(
+                f"Failed to cancel open limit order | "
+                f"symbol={symbol} | "
+                f"order_id={order_id} | "
+                f"cancel_result={cancel_result}"
+            )            
