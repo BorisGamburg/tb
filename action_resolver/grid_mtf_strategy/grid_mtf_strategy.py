@@ -216,10 +216,50 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         text.append(" | BB: ", style="cyan")
-        text.append(self.runtime.bb_entry_status)        
+        if check_result is not None:
+            bb = check_result.bb
+
+            text.append(
+                f"({bb.value:.6f}/{bb.mid:.6f})"
+                f" TF:{bb.tf}"
+            )
+            text.append(
+                " ●",
+                style="bold green" if bb.ok else "bold red",
+            )
+        else:
+            text.append(
+                "N/A",
+                style="dim",
+            )    
 
         text.append(" | DIST_THRES: ", style="cyan")
-        text.append(self.runtime.distance_status)
+        if check_result is not None:
+            distance = check_result.distance
+
+            if distance.threshold is not None:
+                text.append(
+                    f"{distance.threshold:.6f}"
+                )
+
+                text.append(
+                    " ●",
+                    style=(
+                        "bold green"
+                        if distance.ok
+                        else "bold red"
+                    ),
+                )
+            else:
+                text.append(
+                    "N/A",
+                    style="dim",
+                )
+        else:
+            text.append(
+                "N/A",
+                style="dim",
+            )
 
         text.append("\nEXIT  | RSI: ", style="cyan")
         text.append(self.runtime.rsi_exit_status)
