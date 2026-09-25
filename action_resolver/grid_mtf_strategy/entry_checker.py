@@ -1,8 +1,18 @@
+from dataclasses import dataclass
+
 from action_processor.state.state import State
-from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal
+from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal, HAReversalResult
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from rich.text import Text
 from services.bb_service import BBService
+
+@dataclass
+class EntryCheckResult:
+    entry_allowed: bool
+    ha: HAReversalResult
+    rsi_ok: bool
+    bb_ok: bool
+    distance_ok: bool
 
 
 class EntryChecker:
@@ -75,8 +85,8 @@ class EntryChecker:
         tf = self.map_mng.get_tf_for_level(level)
 
         # Проверяем разворот по ha
-        ha_ok, ha_message = self.ha_signal.is_entry(tf, self.side)
-        return ha_ok,ha_message
+        result = self.ha_signal.is_entry(tf, self.side)
+        return result
 
     def _is_distance_ok(
         self,
@@ -247,25 +257,23 @@ class EntryChecker:
 
         return rsi_tf_entry_ok    
 
-    def check(self):
-        ha_ok, ha_message = self._check_ha_revers()
+    def check(self) -> EntryCheckResult:
+        ha_result = self._check_ha_revers()
         rsi_ok = self._check_rsi()
         bb_ok = self._check_bb()
         distance_ok = self._check_distance()
 
-        self.runtime.ha_entry_status = ha_message
-
         entry_allowed = (
-            ha_ok
+            ha_result.signal
             and rsi_ok
             and bb_ok
             and distance_ok
         )
 
-        return (
-            entry_allowed,
-            ha_ok,
-            rsi_ok,
-            bb_ok,
-            distance_ok,
-        )    
+        return EntryCheckResult(
+            entry_allowed=entry_allowed,
+            ha=ha_result,
+            rsi_ok=rsi_ok,
+            bb_ok=bb_ok,
+            distance_ok=distance_ok,
+        )

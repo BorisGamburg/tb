@@ -1,4 +1,13 @@
 from rich.text import Text
+from dataclasses import dataclass
+
+
+@dataclass
+class HAReversalResult:
+    signal: bool
+    tf: str
+    prev: str
+    curr: str
 
 
 class HAReversalSignal:
@@ -6,7 +15,7 @@ class HAReversalSignal:
         self.proxy_driver = proxy_driver
         self.symbol = symbol
 
-    def is_entry(self, tf: str, side: str) -> tuple[bool, Text]:
+    def is_entry(self, tf: str, side: str) -> HAReversalResult:
         prev, curr, live = self._get_prev_curr_live(tf)
 
         if side == "Sell":
@@ -24,11 +33,11 @@ class HAReversalSignal:
         else:
             raise RuntimeError(f"Invalid side: {side}")
 
-        return signal, self._build_message(
-            signal,
-            tf,
-            prev,
-            curr,
+        return HAReversalResult(
+            signal=signal,
+            tf=tf,
+            prev=prev,
+            curr=curr,
         )
 
     def is_exit(self, tf: str, side: str) -> tuple[bool, Text]:

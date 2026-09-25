@@ -4,7 +4,7 @@ from action_processor.action import Action, ActionCommand
 from action_processor.action_source import ActionSource
 from action_processor.process_result import ProcessResult
 from common.trading_info import TradingInfo
-from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker
+from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker, EntryCheckResult
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from action_processor.bootstrap import AppContext
 
@@ -83,14 +83,14 @@ class EntryMng:
     def resolve(
         self,
         process_result: ProcessResult,
-    ) -> ProcessResult:
-        (
-            entry_allowed,
-            ha_ok,
-            rsi_ok,
-            bb_ok,
-            distance_ok,
-        ) = self.entry_checker.check()
+    ) -> tuple[ProcessResult, EntryCheckResult]:
+        check_result = self.entry_checker.check()
+
+        entry_allowed = check_result.entry_allowed
+        ha_ok = check_result.ha.signal
+        rsi_ok = check_result.rsi_ok
+        bb_ok = check_result.bb_ok
+        distance_ok = check_result.distance_ok
 
         if self.app_ctx.notifier is None:
             raise RuntimeError("Notifier is not initialized")
@@ -100,12 +100,12 @@ class EntryMng:
             rsi_ok,
             distance_ok,
         )
-        
+
         if entry_allowed:
-            return self._execute_open(
+            process_result = self._execute_open(
                 process_result,
             )
+        else:
+            process_result.executed = False
 
-        process_result.executed = False
-
-        return process_result
+        return process_result, check_result

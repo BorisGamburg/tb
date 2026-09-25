@@ -18,6 +18,7 @@ from utils.utils import get_inverse_side
 from action_processor.action_source import ActionSource
 from action_resolver.grid_mtf_strategy.merge_levels import MergeLevels
 from action_resolver.grid_mtf_strategy.entry_manager import EntryMng
+from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 
 
 @dataclass(slots=True)
@@ -148,21 +149,41 @@ class GridMTFStrategy(BaseStrategy):
 
         self._log_parameters()
 
-    def _get_status_line(self):
+    def _get_status_line(
+        self,
+        check_result: EntryCheckResult | None = None,
+    ):
         last_price = self.proxy_driver.get_last_price(self.symbol)
-        status_line = self._build_status_line(last_price)
+        status_line = self._build_status_line(
+            last_price,
+            check_result,
+        )
         return status_line
 
     def _build_status_line(
         self,
         price: float,
+        check_result: EntryCheckResult | None = None,
     ) -> Text:
 
         text = Text()
         text.append(f"PRICE: {price:.6f}  ", style="cyan")
 
         text.append("\nENTRY | HA: ", style="cyan")
-        text.append(self.runtime.ha_entry_status)
+        if check_result is not None:
+            ha = check_result.ha
+            text.append(
+                f"({ha.tf}m) [{ha.prev}→{ha.curr}]"
+            )
+            text.append(
+                " ●",
+                style="bold green" if ha.signal else "bold red",
+            )
+        else:
+            text.append(
+                "N/A",
+                style="dim",
+            )
 
         text.append(" | RSI: ", style="cyan")
         text.append(self.runtime.rsi_entry_status)
@@ -213,48 +234,52 @@ class GridMTFStrategy(BaseStrategy):
         self,
         process_result: ProcessResult,
     ) -> ProcessResult:
-            # Проверяем есть ли группа маленьких уровней для merge.
-            # Если есть -> объединяем все уровни группы
-            self.merge_levels.merge_multiple_levels()
+        # Проверяем есть ли группа маленьких уровней для merge.
+        # Если есть -> объединяем все уровни группы
+        self.merge_levels.merge_multiple_levels()
 
-            is_allowed = self.is_exit_allowed()
-            status_line = self._get_status_line()
-            process_result.status = status_line
+        is_allowed = self.is_exit_allowed()
 
-            if not is_allowed:
-                process_result.executed = False
-                return process_result
+        if not is_allowed:
+            process_result.executed = False
+            process_result.status = self._get_status_line()
+            return process_result
 
-            return self._resolve_action(
-                process_result,
-            )
+        process_result, check_result = self._resolve_action(
+            process_result,
+        )
+        process_result.status = self._get_status_line(
+            check_result,
+        )
 
+        return process_result
+    
     def _resolve_action(
         self,
         process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> tuple[ProcessResult, EntryCheckResult | None]:
         # Выход по пересечению предыдущего уровня
         process_result = self._resolve_exit_cross(
             process_result,
         )
         if process_result.signal:
-            return process_result
-        
+            return process_result, None
+
                 
         # Выход по BBW
         process_result = self._resolve_bbw_exit(
             process_result,
         )
         if process_result.signal:
-            return process_result
+            return process_result, None
 
 
         # Проверка на вход
-        process_result = self._resolve_entry(
+        process_result, check_result = self._resolve_entry(
             process_result,
         )
 
-        return process_result
+        return process_result, check_result
 
     def _resolve_bbw_exit(
         self,
@@ -327,8 +352,7 @@ class GridMTFStrategy(BaseStrategy):
     def _resolve_entry(
         self,
         process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> tuple[ProcessResult, EntryCheckResult]:
         return self.entry_manager.resolve(
             process_result,
         )
-
