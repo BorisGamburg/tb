@@ -16,8 +16,7 @@ class GridMTFTemplate(BaseModel):
     htf_rsi_rearm_threshold: float
     distance_bbw_tf: AllowedTimeframes
     distance_bbw_multiplier: float    
-
-    qty_pct: Pct            # Обычно нужно для расчета объема
+    qty_pct: Pct            
 
 
 class GridMTFSchema(BaseModel):
@@ -30,7 +29,7 @@ class GridMTFSchema(BaseModel):
     strategy: str
     min_rearm_distance_pct: Pct
     min_profit_pct: Pct
-    max_profit_pct: Pct
+    max_profit_bb_pct: Pct
     sleep_interval: int  # Интервал сна в секундах
     exit_guard_enabled: bool
     merge_threshold_pct: Pct

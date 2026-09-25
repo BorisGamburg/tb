@@ -65,14 +65,22 @@ class PartialExitBBW:
         return tf   
 
     def get_min_max_dist(self, entry):
+        # Получаем мин дистанцию
         min_distance = (
             entry.price *
             self.state_store.data.min_profit_pct / 100
         )
+
+        # Получаем макс дистанцию
+        bb = self.bb_service.get_last_closed(self.get_tf())
         max_distance = (
-            entry.price *
-            self.state_store.data.max_profit_pct / 100
+            bb["width_abs"] *
+            self.state_store.data.max_profit_bb_pct / 100
         )
+
+        # Макс дистанция не должна быть меньше минимальной
+        max_distance = max(min_distance, max_distance)
+        
         return min_distance,max_distance
 
     def get_most_profitable_level(self, entries):

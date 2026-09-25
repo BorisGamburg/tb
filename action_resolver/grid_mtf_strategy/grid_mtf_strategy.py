@@ -193,7 +193,7 @@ class GridMTFStrategy(BaseStrategy):
             f"Strategy: {data.strategy}\n"
             f"Min rearm distance: {data.min_rearm_distance_pct}\n"
             f"Min profit: {data.min_profit_pct}\n"
-            f"Max profit: {data.max_profit_pct}\n"
+            f"Max profit BB: {data.max_profit_bb_pct}%\n"
             f"Merge threshold: {data.merge_threshold_pct}%\n"            
             f"Sleep interval: {data.sleep_interval}\n"
         )
