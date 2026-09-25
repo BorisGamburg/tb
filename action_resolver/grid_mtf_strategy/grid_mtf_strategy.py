@@ -7,7 +7,7 @@ from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW
 from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
 from dataclasses import dataclass, field
-from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng
+from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng, RearmCheckResult
 from rich.text import Text
 from common.trading_info import TradingInfo
 from action_processor.action_guard import ActionGuard
@@ -118,7 +118,6 @@ class GridMTFStrategy(BaseStrategy):
         )             
 
         self.rearm_manager = RearmMng(
-            runtime=self.runtime,
             state_store=self.state_store,
             map_mng=self.map_mng,
             proxy_driver=self.proxy_driver,
@@ -152,11 +151,13 @@ class GridMTFStrategy(BaseStrategy):
     def _get_status_line(
         self,
         check_result: EntryCheckResult | None = None,
+        rearm_check_result: RearmCheckResult | None = None,
     ):
         last_price = self.proxy_driver.get_last_price(self.symbol)
         status_line = self._build_status_line(
             last_price,
             check_result,
+            rearm_check_result,
         )
         return status_line
 
@@ -164,6 +165,7 @@ class GridMTFStrategy(BaseStrategy):
         self,
         price: float,
         check_result: EntryCheckResult | None = None,
+        rearm_check_result: RearmCheckResult | None = None,
     ) -> Text:
 
         text = Text()
@@ -312,11 +314,12 @@ class GridMTFStrategy(BaseStrategy):
             process_result.status = self._get_status_line()
             return process_result
 
-        process_result, check_result = self._resolve_action(
+        process_result, check_result, rearm_check_result = self._resolve_action(
             process_result,
         )
         process_result.status = self._get_status_line(
             check_result,
+            rearm_check_result,
         )
 
         return process_result
@@ -324,21 +327,25 @@ class GridMTFStrategy(BaseStrategy):
     def _resolve_action(
         self,
         process_result: ProcessResult,
-    ) -> tuple[ProcessResult, EntryCheckResult | None]:
+    ) -> tuple[
+        ProcessResult,
+        EntryCheckResult | None,
+        RearmCheckResult | None,
+    ]:
         # Выход по пересечению предыдущего уровня
         process_result = self._resolve_exit_cross(
             process_result,
         )
         if process_result.signal:
-            return process_result, None
+            return process_result, None, None
 
                 
         # Выход по BBW
-        process_result = self._resolve_bbw_exit(
+        process_result, rearm_check_result = self._resolve_bbw_exit(
             process_result,
         )
         if process_result.signal:
-            return process_result, None
+            return process_result, None, rearm_check_result
 
 
         # Проверка на вход
@@ -346,12 +353,12 @@ class GridMTFStrategy(BaseStrategy):
             process_result,
         )
 
-        return process_result, check_result
+        return process_result, check_result, None
 
     def _resolve_bbw_exit(
         self,
         process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> tuple[ProcessResult, RearmCheckResult | None]:
         # Есть сигнал на выход?
         process_result.signal, entry = self.partial_exit_bbw.check()
         if process_result.signal:
@@ -372,10 +379,10 @@ class GridMTFStrategy(BaseStrategy):
                 )
             else:
                 # CLOSE не выполнен -> выходим
-                return process_result
+                return process_result, None
         else:
             # Сигнала на выход нет
-            return process_result
+            return process_result, None
 
     def _execute_close(
         self,

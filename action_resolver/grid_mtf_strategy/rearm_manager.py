@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from services.distance_service import (
     is_distance_ok,
 )
@@ -10,11 +12,15 @@ from action_processor.action_source import ActionSource
 from action_processor.process_result import ProcessResult
 
 
+@dataclass
+class RearmCheckResult:
+    distance_ok: bool
+    rsi_ok: bool
+
 class RearmMng:
 
     def __init__(
         self,
-        runtime,
         state_store,
         map_mng,
         proxy_driver: ProxyDriver,
@@ -32,7 +38,6 @@ class RearmMng:
         self.logger = logger
         self.symbol = symbol
         self.side = side
-        self.runtime = runtime
         self.trading_info = trading_info
         self.action_service = action_service
         
@@ -51,17 +56,9 @@ class RearmMng:
             "rsi_last_closed"
         )
 
-    def check(self) -> bool:
-        rearm_ready = self._is_rearm_ready()
-
-        if not rearm_ready:
-            self.logger.info(
-                f"[REARM] {self.runtime.rearm_status}"
-            )
-            return False
-
-        return True
-    
+    def check(self) -> RearmCheckResult:
+        return self._is_rearm_ready()
+        
     def _is_rearm_distance_ok(
         self,
         chase_price,
@@ -80,8 +77,6 @@ class RearmMng:
             entries=entries,
             required_distance=required_distance,
         )
-
-        self.runtime.distance_status = "OK" if distance_ok else "BLOCK"
 
         return distance_ok    
 
@@ -106,10 +101,6 @@ class RearmMng:
             threshold,
         )
 
-        self.runtime.rsi_exit_status = (
-            "OK" if rsi_ok else "BLOCK"
-        )        
-
         return rsi_ok    
     
     def _is_rearm_ready(self):
@@ -128,16 +119,10 @@ class RearmMng:
 
         rsi_ok = self.is_rearm_rsi_ok(entries)
 
-        if distance_ok and rsi_ok:
-            self.runtime.rearm_status = "READY"
-        elif not distance_ok and not rsi_ok:
-            self.runtime.rearm_status = "BLOCK: DISTANCE + RSI"
-        elif not distance_ok:
-            self.runtime.rearm_status = "BLOCK: DISTANCE"
-        else:
-            self.runtime.rearm_status = "BLOCK: RSI"        
-
-        return distance_ok and rsi_ok
+        return RearmCheckResult(
+            distance_ok=distance_ok,
+            rsi_ok=rsi_ok,
+        )
 
     def _get_qty(self):
         level = len(self.state_store.stack_mng.data.entries)
@@ -212,14 +197,14 @@ class RearmMng:
         self,
         process_result: ProcessResult,
         initial_qty: float
-    ) -> ProcessResult:
+    ) -> tuple[ProcessResult, RearmCheckResult]:
         while True:
             # Проверяем, нужно ли выполнять REARM
-            rearm_needed = self.check()
+            check_result = self.check()
 
-            if not rearm_needed:
+            if not check_result.distance_ok or not check_result.rsi_ok:
                 # REARM не нужен -> выходим из цикла
-                return process_result
+                return process_result, check_result
             else:
                 # REARM нужен -> выполняем его
                 process_result = self._execute_rearm(
@@ -230,7 +215,7 @@ class RearmMng:
                 # Проверяем, выполнен ли REARM
                 if process_result.executed:
                     # REARM выполнен -> выходим из цикла
-                    return process_result
+                    return process_result, check_result
                 else:
                     # REARM не выполнен -> повторно проверяем условия
                     self.logger.warning(
