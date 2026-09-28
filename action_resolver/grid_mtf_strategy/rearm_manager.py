@@ -16,6 +16,8 @@ from action_processor.process_result import ProcessResult
 class RearmCheckResult:
     distance_ok: bool
     rsi_ok: bool
+    rsi: float
+    rsi_threshold: float
 
 class RearmMng:
 
@@ -56,9 +58,6 @@ class RearmMng:
             "rsi_last_closed"
         )
 
-    def check(self) -> RearmCheckResult:
-        return self._is_rearm_ready()
-        
     def _is_rearm_distance_ok(
         self,
         chase_price,
@@ -80,8 +79,6 @@ class RearmMng:
 
         return distance_ok    
 
-        
-    
     def is_rearm_rsi_ok(self, entries):
 
         level = len(entries) - 1
@@ -101,9 +98,9 @@ class RearmMng:
             threshold,
         )
 
-        return rsi_ok    
+        return rsi_ok, rsi, threshold
     
-    def _is_rearm_ready(self):
+    def check(self):
 
         entries = self.state_store.stack_mng.data.entries
 
@@ -117,11 +114,13 @@ class RearmMng:
             entries,
         )
 
-        rsi_ok = self.is_rearm_rsi_ok(entries)
+        rsi_ok, rsi, rsi_threshold = self.is_rearm_rsi_ok(entries)
 
         return RearmCheckResult(
             distance_ok=distance_ok,
             rsi_ok=rsi_ok,
+            rsi=rsi,
+            rsi_threshold=rsi_threshold,
         )
 
     def _get_qty(self):

@@ -61,7 +61,7 @@ class MergeLevels:
         # Подходящая группа не найдена -> выходим
         return []
 
-    def merge_multiple_levels(self) -> None:
+    def merge_multiple_levels(self) -> bool:
         # Получаем порог размера уровня
         merge_threshold = self.get_merge_threshold()
 
@@ -71,9 +71,11 @@ class MergeLevels:
         )
 
         if not levels_to_merge:
-            return
+            return False
 
         # Объединяем найденные уровни
         self.state_store.stack_mng.merge_multiple_levels(
             levels_to_merge,
         )
+
+        return True

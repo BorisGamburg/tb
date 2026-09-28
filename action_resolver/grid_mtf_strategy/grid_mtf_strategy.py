@@ -224,7 +224,16 @@ class GridMTFStrategy(BaseStrategy):
         text.append("\nEXIT  | RSI: ", style="cyan")
         if rearm_check_result is not None:
             text.append(
-                "OK" if rearm_check_result.rsi_ok else "BLOCK"
+                f"({rearm_check_result.rsi:.1f}/"
+                f"{rearm_check_result.rsi_threshold:.0f})"
+            )
+            text.append(
+                " ●",
+                style=(
+                    "bold green"
+                    if rearm_check_result.rsi_ok
+                    else "bold red"
+                ),
             )
         else:
             text.append(
@@ -255,22 +264,16 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         if guard_result is not None:
-            text.append("\nGUARD | ", style="cyan")
+            text.append("\nGUARD: ", style="cyan")
 
-            if guard_result.allowed:
-                text.append(
-                    "CLOSE",
-                    style="white on green",
-                )
-                text.append(" ALLOWED")
-            else:
-                text.append(
-                    "CLOSE",
-                    style="white on red",
-                )
-                text.append(
-                    f" BLOCK({guard_result.reason})"
-                )
+            text.append(
+                "●",
+                style=(
+                    "bold green"
+                    if guard_result.allowed
+                    else "bold red"
+                ),
+            )
 
         return text
 
@@ -292,10 +295,15 @@ class GridMTFStrategy(BaseStrategy):
         self,
         process_result: ProcessResult,
     ) -> ProcessResult:
-        # Проверяем есть ли группа маленьких уровней для merge.
+         # Проверяем есть ли группа маленьких уровней для merge.
         # Если есть -> объединяем все уровни группы
-        self.merge_levels.merge_multiple_levels()
+        merged = self.merge_levels.merge_multiple_levels()
 
+        if merged:
+            process_result.executed = True
+            process_result.status = self._get_status_line()
+            return process_result
+        
         guard_result = self.is_exit_allowed()
 
         if not guard_result.allowed:
