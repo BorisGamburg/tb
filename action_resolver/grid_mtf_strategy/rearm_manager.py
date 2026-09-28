@@ -181,22 +181,13 @@ class RearmMng:
 
     def _execute_rearm(
         self,
-        process_result: ProcessResult,
         initial_qty: float
-    ) -> ProcessResult:
+    ) -> ExecutionResult:
         action = self._build_rearm_action(initial_qty=initial_qty)
 
-        exec_result = self.action_service.process_action(
+        return self.action_service.process_action(
             action,
         )
-
-        process_result.action_command = exec_result.action_command
-        process_result.price = exec_result.price
-        process_result.qty = exec_result.qty
-        process_result.fee = exec_result.fee
-        process_result.executed = exec_result.executed
-
-        return process_result
 
     def _resolve_rearm(
         self,
@@ -212,10 +203,15 @@ class RearmMng:
                 return process_result, check_result
             else:
                 # REARM нужен -> выполняем его
-                process_result = self._execute_rearm(
-                    process_result=process_result,
+                exec_result = self._execute_rearm(
                     initial_qty=initial_qty
                 )
+
+                process_result.action_command = exec_result.action_command
+                process_result.price = exec_result.price
+                process_result.qty = exec_result.qty
+                process_result.fee = exec_result.fee
+                process_result.executed = exec_result.executed
 
                 # Проверяем, выполнен ли REARM
                 if process_result.executed:
