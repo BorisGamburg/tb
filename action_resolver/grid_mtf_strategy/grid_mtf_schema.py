@@ -15,7 +15,8 @@ class GridMTFTemplate(BaseModel):
     htf_filter: AllowedTimeframes
     htf_rsi_rearm_threshold: float
     distance_bbw_tf: AllowedTimeframes
-    distance_bbw_multiplier: float    
+    distance_bbw_multiplier: float   
+    bbw_exit_tf: AllowedTimeframes 
     qty_pct: Pct            
 
 

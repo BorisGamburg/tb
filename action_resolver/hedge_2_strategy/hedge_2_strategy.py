@@ -48,7 +48,8 @@ class Hedge2Strategy(BaseStrategy):
         self.action_service = ActionService(
             app_ctx=app_ctx,
             state_store=state_store,
-        )    
+            trading_info=trading_info,
+        )  
 
         self.partial_close_calculator = PartialCloseCalculator()    
 

@@ -2,10 +2,17 @@ import pandas as pd
 from pybit.unified_trading import HTTP
 import time
 from pprint import pprint
-from ks.keys import API_KEY, DB_PASSWORD
+from prog.managers.account_loader import load_account
 import sys
 
-session = HTTP(api_key=API_KEY, api_secret=DB_PASSWORD)
+ACCOUNT_NAME = "bybit_live"
+account = load_account(ACCOUNT_NAME)
+
+session = HTTP(
+    testnet=account.demo,
+    api_key=account.api_key,
+    api_secret=account.api_secret,
+)
 
 def get_full_history_by_weeks(symbol, period_days):
     all_trades = []

@@ -67,8 +67,8 @@ class PartialExitBBW:
     def get_tf(self):
         entries = self.state_store.stack_mng.data.entries
         level_nr = len(entries) - 1
-        tf = self.map_mng.get_tf_for_level(level_nr)
-        return tf   
+        tpl = self.map_mng.get_template_by_level(level_nr)
+        return tpl.bbw_exit_tf 
 
     def get_min_max_dist(self, entry):
         # Получаем мин дистанцию

@@ -28,6 +28,12 @@ class StatusLine:
 
         return text
 
+    def _append_status_circle(self, text: Text, ok: bool) -> None:
+        text.append(
+            " ⬤ ",
+            style="bold green" if ok else "bold red",
+        )
+
     def _build_entry_status(
         self,
         check_result: EntryCheckResult | None = None,
@@ -35,22 +41,63 @@ class StatusLine:
 
         text = Text()
 
-        text.append("\nENTRY | HA: ", style="cyan")
+        text.append("\nENTRY")
+
+        self.append_ha_part(check_result, text)
+
+        self.append_rsi_part(check_result, text)
+
+        self.append_bb_part(check_result, text)
+
+        return self.append_dist_part(check_result, text)
+
+    def append_dist_part(self, check_result, text):
+        text.append(" | DIST: ", style="cyan")
         if check_result is not None:
-            ha = check_result.ha
-            text.append(
-                f"({ha.tf}m) [{ha.prev}→{ha.curr}]"
-            )
-            text.append(
-                " ●",
-                style="bold green" if ha.signal else "bold red",
-            )
+            distance = check_result.distance
+
+            if distance.threshold is not None:
+                text.append(
+                    f"{distance.threshold:.6f}"
+                )
+                self._append_status_circle(text, distance.ok)
+            else:
+                text.append(
+                    "N/A",
+                    style="dim",
+                )
         else:
             text.append(
                 "N/A",
                 style="dim",
             )
 
+        return text
+
+    def append_bb_part(self, check_result, text):
+        text.append(" | BB: ", style="cyan")
+        if check_result is not None:
+            bb = check_result.bb
+
+            relation = (
+                ">"
+                if bb.value > bb.mid
+                else "<"
+                if bb.value < bb.mid
+                else "="
+            )
+            text.append(
+                f"({bb.tf}m) "
+                f"(price:{bb.value:.6f} {relation} mid:{bb.mid:.6f})"
+            )
+            self._append_status_circle(text, bb.ok)
+        else:
+            text.append(
+                "N/A",
+                style="dim",
+            )
+
+    def append_rsi_part(self, check_result, text):
         text.append(" | RSI: ", style="cyan")
         if check_result is not None:
             rsi = check_result.rsi
@@ -67,66 +114,32 @@ class StatusLine:
                 else "N/A"
             )
 
+            operator = ">" if rsi.value > rsi.threshold else "<"
+
             text.append(
-                f"({tf_v}/{tf_th})"
-                f" TF:{rsi.tf}"
+                f"({rsi.tf}m) "
+                f"cur:{tf_v} {operator} thres:{tf_th}"
             )
-            text.append(
-                " ●",
-                style="bold green" if rsi.ok else "bold red",
-            )
+            self._append_status_circle(text, rsi.ok)
         else:
             text.append(
                 "N/A",
                 style="dim",
             )
 
-        text.append(" | BB: ", style="cyan")
+    def append_ha_part(self, check_result, text):
+        text.append(" | HA: ", style="cyan")
         if check_result is not None:
-            bb = check_result.bb
-
+            ha = check_result.ha
             text.append(
-                f"({bb.value:.6f}/{bb.mid:.6f})"
-                f" TF:{bb.tf}"
+                f"({ha.tf}m) [{ha.prev}→{ha.curr}]"
             )
-            text.append(
-                " ●",
-                style="bold green" if bb.ok else "bold red",
-            )
+            self._append_status_circle(text, ha.signal)
         else:
             text.append(
                 "N/A",
                 style="dim",
             )
-
-        text.append(" | DIST_THRES: ", style="cyan")
-        if check_result is not None:
-            distance = check_result.distance
-
-            if distance.threshold is not None:
-                text.append(
-                    f"{distance.threshold:.6f}"
-                )
-                text.append(
-                    " ●",
-                    style=(
-                        "bold green"
-                        if distance.ok
-                        else "bold red"
-                    ),
-                )
-            else:
-                text.append(
-                    "N/A",
-                    style="dim",
-                )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
-
-        return text
 
     def _build_exit_status(
         self,
@@ -142,13 +155,9 @@ class StatusLine:
                 f"({rearm_check_result.rsi:.1f}/"
                 f"{rearm_check_result.rsi_threshold:.0f})"
             )
-            text.append(
-                " ●",
-                style=(
-                    "bold green"
-                    if rearm_check_result.rsi_ok
-                    else "bold red"
-                ),
+            self._append_status_circle(
+                text,
+                rearm_check_result.rsi_ok,
             )
         else:
             text.append(
@@ -193,13 +202,6 @@ class StatusLine:
 
         if guard_result is not None:
             text.append("\nGUARD: ", style="cyan")
-            text.append(
-                "●",
-                style=(
-                    "bold green"
-                    if guard_result.allowed
-                    else "bold red"
-                ),
-            )
+            self._append_status_circle(text, guard_result.allowed)
 
         return text
