@@ -6,7 +6,8 @@ from services.bb_service import BBService
 @dataclass
 class BBWCheckResult:
     has_position: bool
-    take_profit: float | None
+    bb_cross_tp: float | None
+    bb_width_tp: float | None
 
 class PartialExitBBW:
     def __init__(
@@ -152,19 +153,33 @@ class PartialExitBBW:
                 None,
                 BBWCheckResult(
                     has_position=False,
-                    take_profit=None,
+                    bb_cross_tp=None,
+                    bb_width_tp=None,
                 ),
             )
 
+        # Распаковываем контекст выхода
+        prof_level, cur_price, cur_dist, min_dist, max_dist = exit_context
+
+        # TP по пересечению Bollinger
+        bb_cross_tp = self.get_bb_tp()
+
+        # TP по максимальной дистанции
+        if self.side == "Sell":
+            bb_width_tp = prof_level.price - max_dist
+        else:
+            bb_width_tp = prof_level.price + max_dist
+
         # Проверка выхода
-        signal, entry, tp = self._check_exit(exit_context)
+        signal, entry, _ = self._check_exit(exit_context)
 
         return (
             signal,
             entry,
             BBWCheckResult(
                 has_position=True,
-                take_profit=tp,
+                bb_cross_tp=bb_cross_tp,
+                bb_width_tp=bb_width_tp,
             ),
         )
 

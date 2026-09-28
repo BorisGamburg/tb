@@ -7,7 +7,6 @@ from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW, BBWCheckResult
 from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
 from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng, RearmCheckResult
-from rich.text import Text
 from common.trading_info import TradingInfo
 from action_processor.action_service import ActionService
 from action_processor.process_result import ProcessResult
@@ -18,6 +17,7 @@ from action_resolver.grid_mtf_strategy.merge_levels import MergeLevels
 from action_resolver.grid_mtf_strategy.entry_manager import EntryMng
 from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 from action_processor.action_guard import ActionGuard, GuardResult
+from action_resolver.grid_mtf_strategy.status_line import StatusLine
 
 
 class GridMTFStrategy(BaseStrategy):
@@ -115,167 +115,9 @@ class GridMTFStrategy(BaseStrategy):
             fee_taker=self.trading_info.fee_taker,
         )
 
+        self.status_line = StatusLine()
+
         self._log_parameters()
-
-    def _build_status_line(
-        self,
-        price: float,
-        check_result: EntryCheckResult | None = None,
-        rearm_check_result: RearmCheckResult | None = None,
-        bbw_check_result: BBWCheckResult | None = None,
-        guard_result: GuardResult | None = None,
-    ) -> Text:
-
-        text = Text()
-        text.append(f"PRICE: {price:.6f}  ", style="cyan")
-
-        text.append("\nENTRY | HA: ", style="cyan")
-        if check_result is not None:
-            ha = check_result.ha
-            text.append(
-                f"({ha.tf}m) [{ha.prev}→{ha.curr}]"
-            )
-            text.append(
-                " ●",
-                style="bold green" if ha.signal else "bold red",
-            )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
-
-        text.append(" | RSI: ", style="cyan")
-        if check_result is not None:
-            rsi = check_result.rsi
-
-            tf_th = (
-                f"{rsi.threshold:.0f}"
-                if rsi.threshold is not None
-                else "N/A"
-            )
-
-            tf_v = (
-                f"{rsi.value:.1f}"
-                if rsi.value is not None
-                else "N/A"
-            )
-
-            text.append(
-                f"({tf_v}/{tf_th})"
-                f" TF:{rsi.tf}"
-            )
-            text.append(
-                " ●",
-                style="bold green" if rsi.ok else "bold red",
-            )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
-
-        text.append(" | BB: ", style="cyan")
-        if check_result is not None:
-            bb = check_result.bb
-
-            text.append(
-                f"({bb.value:.6f}/{bb.mid:.6f})"
-                f" TF:{bb.tf}"
-            )
-            text.append(
-                " ●",
-                style="bold green" if bb.ok else "bold red",
-            )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )    
-
-        text.append(" | DIST_THRES: ", style="cyan")
-        if check_result is not None:
-            distance = check_result.distance
-
-            if distance.threshold is not None:
-                text.append(
-                    f"{distance.threshold:.6f}"
-                )
-
-                text.append(
-                    " ●",
-                    style=(
-                        "bold green"
-                        if distance.ok
-                        else "bold red"
-                    ),
-                )
-            else:
-                text.append(
-                    "N/A",
-                    style="dim",
-                )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
-
-        text.append("\nEXIT  | RSI: ", style="cyan")
-        if rearm_check_result is not None:
-            text.append(
-                f"({rearm_check_result.rsi:.1f}/"
-                f"{rearm_check_result.rsi_threshold:.0f})"
-            )
-            text.append(
-                " ●",
-                style=(
-                    "bold green"
-                    if rearm_check_result.rsi_ok
-                    else "bold red"
-                ),
-            )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
-
-        text.append(" | BBW: ", style="cyan")
-        if bbw_check_result is not None:
-            if not bbw_check_result.has_position:
-                text.append(
-                    "NO_POS",
-                    style="dim",
-                )
-            elif bbw_check_result.take_profit is not None:
-                text.append(
-                    f"[tp={bbw_check_result.take_profit:.6f}]"
-                )
-            else:
-                text.append(
-                    "N/A",
-                    style="dim",
-                )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
-
-        if guard_result is not None:
-            text.append("\nGUARD: ", style="cyan")
-
-            text.append(
-                "●",
-                style=(
-                    "bold green"
-                    if guard_result.allowed
-                    else "bold red"
-                ),
-            )
-
-        return text
 
     def _log_parameters(self) -> None:
         data = self.state_store.data
@@ -433,9 +275,9 @@ class GridMTFStrategy(BaseStrategy):
         if process_result.signal:
             return process_result, None, None, BBWCheckResult(
                 has_position=False,
-                take_profit=None,
+                bb_cross_tp=None,
+                bb_width_tp=None,
             )
-
                 
         # Выход по BBW
         process_result, rearm_check_result, bbw_check_result = (
@@ -472,15 +314,15 @@ class GridMTFStrategy(BaseStrategy):
         guard_result: GuardResult | None = None,
     ):
         last_price = self.proxy_driver.get_last_price(self.symbol)
-        status_line = self._build_status_line(
+        status_line = self.status_line.build(
             price=last_price,
             check_result=check_result,
             rearm_check_result=rearm_check_result,
             bbw_check_result=bbw_check_result,
-            guard_result=guard_result
+            guard_result=guard_result,
         )
-        return status_line    
-
+        return status_line
+        
     def is_exit_allowed(self) -> GuardResult:
         """
         Проверяет, можно ли закрывать уровни сейчас.
@@ -491,3 +333,4 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         return self.action_guard.is_allowed()    
+
