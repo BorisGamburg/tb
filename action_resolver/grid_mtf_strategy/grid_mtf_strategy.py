@@ -18,6 +18,7 @@ from action_resolver.grid_mtf_strategy.entry_manager import EntryMng
 from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 from action_processor.action_guard import ActionGuard, GuardResult
 from action_resolver.grid_mtf_strategy.status_line import StatusLine
+from action_processor.execution.execution_result import ExecutionResult
 
 
 class GridMTFStrategy(BaseStrategy):
@@ -172,10 +173,9 @@ class GridMTFStrategy(BaseStrategy):
     def _execute_close(
         self,
         entry,
-        process_result: ProcessResult,
         reason: str,
         source: ActionSource,
-    ) -> ProcessResult:
+    ) -> ExecutionResult:
         # Сигнал есть -> запускаем CLOSE
         action_command = ActionCommand(
                 action=Action.CLOSE,
@@ -187,17 +187,9 @@ class GridMTFStrategy(BaseStrategy):
                 source=source
             )
 
-        exec_result = self.action_service.process_action(
+        return self.action_service.process_action(
                 action_command,
             )
-
-        process_result.action_command = exec_result.action_command
-        process_result.price = exec_result.price
-        process_result.qty = exec_result.qty
-        process_result.fee = exec_result.fee
-        process_result.executed = exec_result.executed
-
-        return process_result
 
     def _resolve_exit_cross(
         self,
@@ -206,14 +198,19 @@ class GridMTFStrategy(BaseStrategy):
         should_exit, entry = self.partial_exit_cross.check()
 
         if should_exit:
-            return self._execute_close(
+            exec_result = self._execute_close(
                 entry,
-                process_result,
                 reason="cross",
                 source=ActionSource.PARTIAL_EXIT_CROSS
             )
 
-        return process_result    
+            process_result.action_command = exec_result.action_command
+            process_result.price = exec_result.price
+            process_result.qty = exec_result.qty
+            process_result.fee = exec_result.fee
+            process_result.executed = exec_result.executed
+
+        return process_result
 
     def _resolve_entry(
         self,
@@ -238,12 +235,17 @@ class GridMTFStrategy(BaseStrategy):
 
         if process_result.signal:
             # Сигнал на выход есть
-            process_result = self._execute_close(
+            exec_result = self._execute_close(
                 entry,
-                process_result,
                 reason="bbw",
                 source=ActionSource.PARTIAL_EXIT_BBW
             )
+
+            process_result.action_command = exec_result.action_command
+            process_result.price = exec_result.price
+            process_result.qty = exec_result.qty
+            process_result.fee = exec_result.fee
+            process_result.executed = exec_result.executed
 
             # Выполнен ли CLOSE?
             if process_result.executed:
