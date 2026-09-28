@@ -37,11 +37,18 @@ class ExternalCommandProcessor:
 
             process_result.action_command = action_command            
 
-            return self.action_service.process_action(
+            exec_result = self.action_service.process_action(
                 action_command=action_command,
-                process_result=process_result
             )
 
+            process_result.action_command = exec_result.action_command
+            process_result.price = exec_result.price
+            process_result.qty = exec_result.qty
+            process_result.fee = exec_result.fee
+            process_result.executed = exec_result.executed
+
+            return process_result
+        
         self.logger.error(
             f"Неизвестная внешняя команда: {command}"
         )

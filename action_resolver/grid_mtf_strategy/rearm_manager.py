@@ -10,6 +10,7 @@ from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand
 from action_processor.action_source import ActionSource
 from action_processor.process_result import ProcessResult
+from action_processor.execution.execution_result import ExecutionResult
 
 
 @dataclass
@@ -185,10 +186,15 @@ class RearmMng:
     ) -> ProcessResult:
         action = self._build_rearm_action(initial_qty=initial_qty)
 
-        process_result = self.action_service.process_action(
+        exec_result = self.action_service.process_action(
             action,
-            process_result,
         )
+
+        process_result.action_command = exec_result.action_command
+        process_result.price = exec_result.price
+        process_result.qty = exec_result.qty
+        process_result.fee = exec_result.fee
+        process_result.executed = exec_result.executed
 
         return process_result
 

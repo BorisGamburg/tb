@@ -158,10 +158,17 @@ class Hedge2Strategy(BaseStrategy):
         # 1. Проверяем одноразовый триггер Recovery
         recovery_triggered, recovery_result = self._check_recovery()
         if recovery_triggered:
-            return self.action_service.process_action(
+            exec_result = self.action_service.process_action(
                 recovery_result.action_command,
-                process_result,
             )
+
+            process_result.action_command = exec_result.action_command
+            process_result.price = exec_result.price
+            process_result.qty = exec_result.qty
+            process_result.fee = exec_result.fee
+            process_result.executed = exec_result.executed
+
+            return process_result
 
         # Основная стратегия
         return self._check_mode_action(process_result)    
@@ -188,19 +195,29 @@ class Hedge2Strategy(BaseStrategy):
             return process_result
 
         if action_command.action == Action.OPEN:
-            process_result = self.action_service.process_action(
+            exec_result = self.action_service.process_action(
                 action_command,
-                process_result,
             )
+
+            process_result.action_command = exec_result.action_command
+            process_result.price = exec_result.price
+            process_result.qty = exec_result.qty
+            process_result.fee = exec_result.fee
+            process_result.executed = exec_result.executed
+
             process_result.status = status_line
             return process_result
 
         if action_command.action == Action.CLOSE:
-            return self.close_processor.execute(
-                action_command,
-                process_result,
-                status_line,
-            )
+            exec_result = self.close_processor.execute(action_command)
+
+            process_result.action_command = exec_result.action_command
+            process_result.price = exec_result.price
+            process_result.qty = exec_result.qty
+            process_result.fee = exec_result.fee
+            process_result.executed = exec_result.executed
+            process_result.status = status_line
+            return process_result
 
         raise ValueError(
             f"Unsupported action in Hedge2Strategy: {action_command.action}"

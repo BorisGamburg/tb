@@ -1,7 +1,5 @@
-# action_resolver/hedge_2_strategy/close_processor.py
-
 from action_processor.execution.limit_order_result import LimitOrderStatus
-from action_processor.process_result import ProcessResult
+from action_processor.execution.execution_result import ExecutionResult
 from action_processor.action import ActionCommand
 from action_resolver.hedge_2_strategy.partial_close_calculator import (
     PartialCloseCalculator,
@@ -24,36 +22,19 @@ class CloseProcessor:
     def execute(
         self,
         action_command: ActionCommand,
-        process_result: ProcessResult,
-        status_line: str,
-    ) -> ProcessResult:
-        exec_result = self.action_service.execution.execute(
-            action_command,
-        )
-
-        process_result.action_command = exec_result.action_command
-        process_result.price = exec_result.price
-        process_result.qty = exec_result.qty
-        process_result.fee = exec_result.fee
-        process_result.executed = exec_result.executed
+    ) -> ExecutionResult:
+        exec_result = self.action_service.execution.execute(action_command)
 
         if not exec_result.executed:
-            process_result.status = status_line
-            return process_result
+            return exec_result
 
         if exec_result.status == LimitOrderStatus.PARTIALLY_FILLED:
-            return self._execute_partial(
-                exec_result,
-                process_result,
-                status_line,
-            )
+            self._execute_partial(exec_result)
+            return exec_result
 
         if exec_result.status == LimitOrderStatus.FILLED:
-            return self._execute_filled(
-                exec_result,
-                process_result,
-                status_line,
-            )
+            self._execute_filled(exec_result)
+            return exec_result
 
         raise ValueError(
             f"Unexpected CLOSE execution status: {exec_result.status}"
@@ -62,9 +43,7 @@ class CloseProcessor:
     def _execute_filled(
         self,
         exec_result,
-        process_result: ProcessResult,
-        status_line: str,
-    ) -> ProcessResult:
+    ):
         self.action_service.accounting.apply(
             action=exec_result.action_command.action,
             price=exec_result.price,
@@ -73,15 +52,10 @@ class CloseProcessor:
             levels=exec_result.action_command.levels,
         )
 
-        process_result.status = status_line
-        return process_result
-
     def _execute_partial(
         self,
         exec_result,
-        process_result: ProcessResult,
-        status_line: str,
-    ) -> ProcessResult:
+    ):
         levels = exec_result.action_command.levels
         executed_qty = exec_result.qty
 
@@ -122,6 +96,4 @@ class CloseProcessor:
                 new_qty_2,
             )
 
-        process_result.status = status_line
-        return process_result
 

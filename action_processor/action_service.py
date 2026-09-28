@@ -2,7 +2,6 @@ from action_processor.execution.execution import Execution
 from action_processor.accounting import Accounting
 from action_processor.bootstrap import AppContext
 from action_processor.state.state import State
-from action_processor.process_result import ProcessResult
 from action_processor.execution.execution_result import ExecutionResult
 from action_processor.trade_table_logger import TradeTableLogger
 from action_processor.action import Action, ActionCommand
@@ -40,23 +39,15 @@ class ActionService:
     def process_action(
         self,
         action_command: ActionCommand,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> ExecutionResult:
         # Логируем команду
         self.notify_action(action_command)
 
         # Запускаем Executor
         exec_result = self.execution.execute(action_command)
 
-        # Заносим результаты в process_result
-        process_result.action_command = exec_result.action_command
-        process_result.price = exec_result.price
-        process_result.qty = exec_result.qty
-        process_result.fee = exec_result.fee
-        process_result.executed = exec_result.executed        
-
         if not exec_result.executed:
-            return process_result
+            return exec_result
 
         # Уведомляем о фактическом исполнении
         self.log_execution(exec_result)
@@ -74,7 +65,7 @@ class ActionService:
         # Логируем результаты
         self.trade_table_logger.log_trade_table(exec_result)
 
-        return process_result
+        return exec_result
 
     def log_execution(self, exec_result):
         self.logger.info(
