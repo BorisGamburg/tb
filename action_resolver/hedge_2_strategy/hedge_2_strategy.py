@@ -4,7 +4,7 @@ from action_processor.bootstrap import AppContext
 from action_resolver.hedge_2_strategy.hedge_mode_mng import HedgeModeMng
 from action_resolver.hedge_2_strategy.mode_to_action_transformer import transform
 from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
-from action_resolver.resolve_result import TmpResolveResult, ResolveResult
+from action_resolver.resolve_result import ResolveResult
 from common.trading_info import TradingInfo
 from action_processor.action import Action, ActionCommand
 from signals.ha_reversal_signal import HAReversalSignal
@@ -14,7 +14,6 @@ from action_resolver.hedge_2_strategy.partial_close_calculator import PartialClo
 from action_resolver.hedge_2_strategy.close_processor import CloseProcessor
 from action_processor.action_source import ActionSource
 from action_resolver.hedge_2_strategy.level_distance_checker import is_level_distance_allowed
-from action_processor.process_result import ProcessResult
 
 
 class Hedge2Strategy(BaseStrategy):
@@ -89,13 +88,10 @@ class Hedge2Strategy(BaseStrategy):
             f"Side: {self.state_store.data.side}"
         )
 
-    def _check_recovery(self) -> tuple[bool, TmpResolveResult]:
-        empty_result = TmpResolveResult(
-            action_command=ActionCommand(
-                action=Action.NO_ACTION,
-                symbol=self.symbol,
-            ),
-            executed=False,
+    def _check_recovery(self) -> tuple[bool, ActionCommand]:
+        empty_result = ActionCommand(
+            action=Action.NO_ACTION,
+            symbol=self.symbol,
         )
 
         # Если recovery не нужен, то выходим
@@ -130,10 +126,7 @@ class Hedge2Strategy(BaseStrategy):
                 source=ActionSource.HEDGE_RECOVERY
             )
 
-            return True, TmpResolveResult(
-                action_command=action_command,
-                executed=False
-            )
+            return True, action_command
 
         return False, empty_result
 
@@ -155,11 +148,9 @@ class Hedge2Strategy(BaseStrategy):
         self,
     ) -> ResolveResult:
         # 1. Проверяем одноразовый триггер Recovery
-        recovery_triggered, recovery_result = self._check_recovery()
+        recovery_triggered, action_command = self._check_recovery()
         if recovery_triggered:
-            exec_result = self.action_service.process_action(
-                recovery_result.action_command,
-            )
+            exec_result = self.action_service.process_action(action_command)
 
             return ResolveResult(
                 executed=exec_result.executed,
@@ -167,28 +158,11 @@ class Hedge2Strategy(BaseStrategy):
             )
 
         # Основная стратегия
-        process_result = ProcessResult(
-            external_command=None,
-            action_command=None,
-            status="",
-            executed=False,
-            signal=False,
-            price=0.0,
-            qty=0.0,
-            fee=0.0,
-        )
-
-        process_result = self._check_mode_action(process_result)
-
-        return ResolveResult(
-            executed=process_result.executed,
-            status=process_result.status,
-        )
+        return self._check_mode_action()
 
     def _check_mode_action(
         self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> ResolveResult:
         # Получаем режим
         mode_result, status = self.hedge_mode_mng.check()
 
@@ -203,33 +177,28 @@ class Hedge2Strategy(BaseStrategy):
         status_line = self._build_status_line(status=status)
 
         if action_command.action == Action.NO_ACTION:
-            process_result.status = status_line
-            return process_result
+            return ResolveResult(
+                executed=False,
+                status=status_line,
+            )
 
         if action_command.action == Action.OPEN:
             exec_result = self.action_service.process_action(
                 action_command,
             )
 
-            process_result.action_command = exec_result.action_command
-            process_result.price = exec_result.price
-            process_result.qty = exec_result.qty
-            process_result.fee = exec_result.fee
-            process_result.executed = exec_result.executed
-
-            process_result.status = status_line
-            return process_result
+            return ResolveResult(
+                executed=exec_result.executed,
+                status=status_line,
+            )
 
         if action_command.action == Action.CLOSE:
             exec_result = self.close_processor.execute(action_command)
 
-            process_result.action_command = exec_result.action_command
-            process_result.price = exec_result.price
-            process_result.qty = exec_result.qty
-            process_result.fee = exec_result.fee
-            process_result.executed = exec_result.executed
-            process_result.status = status_line
-            return process_result
+            return ResolveResult(
+                executed=exec_result.executed,
+                status=status_line,
+            )
 
         raise ValueError(
             f"Unsupported action in Hedge2Strategy: {action_command.action}"
