@@ -1,8 +1,8 @@
 from action_processor.state.state import State
 from action_processor.action_service import ActionService
-from action_processor.action import Action, ActionCommand
+from action_processor.action import Action, ActionCommand, ActionDetails
 from common.trading_info import TradingInfo
-from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker, EntryCheckResult
+from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker, EntryCheckResult, EntryCheckDetails
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from action_processor.bootstrap import AppContext
 from action_processor.execution.execution_result import ExecutionResult
@@ -58,28 +58,30 @@ class EntryMng:
 
     def _execute_open(
         self,
+        details: EntryCheckDetails,
     ) -> ExecutionResult:
-        action = ActionCommand(
+        action_command = ActionCommand(
             action=Action.OPEN,
             symbol=self.state_store.data.symbol,
             side=self.state_store.data.side,
             qty=self._get_entry_qty(),
             reason="ha_reversal",
+            details=ActionDetails(
+                entry_check=details,
+            ),
         )
 
-        return self.action_service.process_action(
-            action,
-        )
+        return self.action_service.process_action(action_command)
 
     def resolve(
         self,
     ) -> tuple[ExecutionResult | None, EntryCheckResult]:
-        check_result = self.entry_checker.check()
+        entry_check_result, entry_check_details = self.entry_checker.check()
 
-        entry_allowed = check_result.entry_allowed
-        ha_ok = check_result.ha.signal
-        rsi_ok = check_result.rsi.ok
-        distance_ok = check_result.distance.ok
+        entry_allowed = entry_check_result.entry_allowed
+        ha_ok = entry_check_result.ha.signal
+        rsi_ok = entry_check_result.rsi.ok
+        distance_ok = entry_check_result.distance.ok
 
         if self.app_ctx.notifier is None:
             raise RuntimeError("Notifier is not initialized")
@@ -91,9 +93,8 @@ class EntryMng:
         )
 
         if entry_allowed:
-            exec_result = self._execute_open(
-            )
+            exec_result = self._execute_open(entry_check_details)
         else:
             exec_result = None
 
-        return exec_result, check_result
+        return exec_result, entry_check_result

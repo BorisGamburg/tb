@@ -5,6 +5,34 @@ from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal, HARe
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from services.bb_service import BBService
 
+
+@dataclass
+class HAReversDetails:
+    tf: str
+
+@dataclass
+class DistanceCheckDetails:
+    tf: str | None
+    price: float | None
+    last_entry_price: float | None
+    bbw: float | None
+    bbw_multiplier: float | None
+    min_distance_ratio: float
+    required_move: float | None
+    threshold: float | None
+    
+@dataclass
+class BbCheckDetails:
+    tf: str
+    value: float | None
+    mid: float | None
+
+@dataclass
+class RsiCheckDetails:
+    tf: str
+    value: float | None
+    threshold: float | None
+
 @dataclass
 class DistanceCheckResult:
     ok: bool
@@ -23,6 +51,13 @@ class BbCheckResult:
     value: float | None
     mid: float | None
     tf: str
+
+@dataclass
+class EntryCheckDetails:
+    ha_revers_details: HAReversDetails
+    rsi_details: RsiCheckDetails
+    bb_details: BbCheckDetails
+    distance_details: DistanceCheckDetails
 
 @dataclass
 class EntryCheckResult:
@@ -82,14 +117,16 @@ class EntryChecker:
 
         return rsi <= threshold
 
-    def _check_distance(self) -> DistanceCheckResult:
+    def _check_distance(self) -> tuple[DistanceCheckResult, DistanceCheckDetails]:
         # Получаем уровни
         entries = self.state_store.stack_mng.data.entries
 
         # Проверяем дистанцию
-        distance_result = self._is_distance_ok(entries)
+        distance_result, distance_details = self._is_distance_ok(
+            entries
+        )
 
-        return distance_result
+        return distance_result, distance_details
 
     def _check_ha_revers(self):
         # Получаем уровни
@@ -101,18 +138,32 @@ class EntryChecker:
 
         # Проверяем разворот по ha
         result = self.ha_signal.is_entry(tf, self.side)
-        return result
+        ha_revers_details = HAReversDetails(tf=tf)
+        return result, ha_revers_details
 
     def _is_distance_ok(
         self,
         entries,
-    ) -> DistanceCheckResult:
+    ) -> tuple[DistanceCheckResult, DistanceCheckDetails]:
         # Если уровней нет -> выходим
         if not entries:
-            return DistanceCheckResult(
+            distance_result = DistanceCheckResult(
                 ok=True,
                 threshold=None,
             )
+
+            distance_details = DistanceCheckDetails(
+                tf=None,
+                price=None,
+                last_entry_price=None,
+                bbw=None,
+                bbw_multiplier=None,
+                min_distance_ratio=0.0035,
+                required_move=None,
+                threshold=None,
+            )
+
+            return distance_result, distance_details
 
         # Получаем текущую цену
         price = self.proxy_driver.get_last_price(
@@ -148,10 +199,23 @@ class EntryChecker:
             distance_threshold = last_entry.price - required_move
             dist_ok = price < distance_threshold
 
-        return DistanceCheckResult(
+        distance_result = DistanceCheckResult(
             ok=dist_ok,
             threshold=distance_threshold,
         )
+
+        distance_details = DistanceCheckDetails(
+            tf=distance_bbw_tf,
+            price=price,
+            last_entry_price=last_entry.price,
+            bbw=bbw,
+            bbw_multiplier=distance_bbw_multiplier,
+            min_distance_ratio=min_distance_ratio,
+            required_move=required_move,
+            threshold=distance_threshold,
+        )
+
+        return distance_result, distance_details
 
     def _get_last_atr(
         self,
@@ -182,7 +246,7 @@ class EntryChecker:
 
         return atr
 
-    def _check_bb(self) -> BbCheckResult:
+    def _check_bb(self) -> tuple[BbCheckResult, BbCheckDetails]:
         # Получаем среднюю Боллингера
         bb_mid, bb_tf = self.get_bb_mid()
 
@@ -194,12 +258,20 @@ class EntryChecker:
         # Сравниваем тек цену со средней Боллингера
         bb_entry_ok = self.get_bb_entry_ok(bb_mid, cur_price)
 
-        return BbCheckResult(
+        bb_check_details = BbCheckDetails(
+            tf=bb_tf,
+            value=cur_price,
+            mid=bb_mid,
+        )
+
+        bb_check_result = BbCheckResult(
             ok=bb_entry_ok,
             value=cur_price,
             mid=bb_mid,
             tf=bb_tf,
         )
+
+        return bb_check_result, bb_check_details
         
     def get_bb_entry_ok(self, bb_mid, cur_price):
         if self.side == "Sell":
@@ -216,7 +288,7 @@ class EntryChecker:
         bb_mid = bb["mid"]
         return bb_mid, tpl.htf_filter
     
-    def _check_rsi(self) -> RsiCheckResult:
+    def _check_rsi(self) -> tuple[RsiCheckResult, RsiCheckDetails]:
         entries = self.state_store.stack_mng.data.entries
         level = len(entries)
         tpl = self.map_mng.get_template_by_level(level)
@@ -230,18 +302,33 @@ class EntryChecker:
             tf_threshold
         )
 
-        return RsiCheckResult(
+        rsi_check_details = RsiCheckDetails(
+            tf=tpl.tf_filter,
+            value=rsi_tf,
+            threshold=tf_threshold,
+        )
+
+        rsi_check_result = RsiCheckResult(
             ok=rsi_tf_entry_ok,
             value=rsi_tf,
             threshold=tf_threshold,
             tf=tpl.tf_filter,
         )
+
+        return rsi_check_result, rsi_check_details
         
-    def check(self) -> EntryCheckResult:
-        ha_result = self._check_ha_revers()
-        rsi_result = self._check_rsi()
-        bb_result = self._check_bb()
-        distance_result = self._check_distance()
+    def check(self) -> tuple[EntryCheckResult, EntryCheckDetails]:
+        ha_result, ha_revers_details = self._check_ha_revers()
+        rsi_result, rsi_details = self._check_rsi()
+        bb_result, bb_details = self._check_bb()
+        distance_result, distance_details = self._check_distance()
+
+        entry_check_details = EntryCheckDetails(
+            ha_revers_details=ha_revers_details,
+            rsi_details=rsi_details,
+            bb_details=bb_details,
+            distance_details=distance_details,
+        )
 
         entry_allowed = (
             ha_result.signal
@@ -250,10 +337,12 @@ class EntryChecker:
             and distance_result.ok
         )
 
-        return EntryCheckResult(
+        entry_check_result = EntryCheckResult(
             entry_allowed=entry_allowed,
             ha=ha_result,
             rsi=rsi_result,
             bb=bb_result,
             distance=distance_result,
         )
+
+        return entry_check_result, entry_check_details
