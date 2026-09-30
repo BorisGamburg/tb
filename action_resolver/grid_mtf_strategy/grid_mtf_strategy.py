@@ -210,12 +210,13 @@ class GridMTFStrategy(BaseStrategy):
     def _resolve_exit_cross(
         self,
     ) -> CrossExitResult:
-        should_exit, entry = self.partial_exit_cross.check()
+        should_exit, entry, cross_exit_details = self.partial_exit_cross.check()
 
         if should_exit:
             exec_result = self._execute_close(
                 entry,
                 reason="cross",
+                details=ActionDetails(cross_exit=cross_exit_details)
             )
 
             return CrossExitResult(
@@ -304,7 +305,7 @@ class GridMTFStrategy(BaseStrategy):
         ExecutionResult | None,
         EntryCheckResult | None,
         RearmCheckResult | None,
-        BBWCheckResult,
+        BBWCheckResult | None
     ]:
         # Выход по пересечению предыдущего уровня
         cross_exit_result = self._resolve_exit_cross()
@@ -313,11 +314,7 @@ class GridMTFStrategy(BaseStrategy):
                 cross_exit_result.execution_result,
                 None,
                 None,
-                BBWCheckResult(
-                    has_position=False,
-                    bb_cross_tp=None,
-                    bb_width_tp=None,
-                ),
+                None
             )
                 
         # Выход по BBW

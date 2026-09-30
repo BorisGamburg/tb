@@ -3,6 +3,7 @@ from enum import Enum
 from action_processor.state.stack_schema import StackElem
 from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckDetails
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import BBWCheckDetails
+from action_resolver.grid_mtf_strategy.partial_exit_cross import CrossCheckDetails
 
 
 class Action(Enum):
@@ -16,6 +17,7 @@ class Action(Enum):
 class ActionDetails:
     entry_check: EntryCheckDetails | None = None
     bbw_exit: BBWCheckDetails | None = None  
+    cross_exit: CrossCheckDetails | None = None
 
 @dataclass
 class ActionCommand:
