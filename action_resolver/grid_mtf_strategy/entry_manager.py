@@ -2,11 +2,11 @@ from action_processor.state.state import State
 from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand
 from action_processor.action_source import ActionSource
-from action_processor.process_result import ProcessResult
 from common.trading_info import TradingInfo
 from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker, EntryCheckResult
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from action_processor.bootstrap import AppContext
+from action_processor.execution.execution_result import ExecutionResult
 
 
 class EntryMng:
@@ -59,8 +59,7 @@ class EntryMng:
 
     def _execute_open(
         self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> ExecutionResult:
         action = ActionCommand(
             action=Action.OPEN,
             symbol=self.state_store.data.symbol,
@@ -70,22 +69,13 @@ class EntryMng:
             source=ActionSource.ENTRY_CHECKER
         )
 
-        exec_result = self.action_service.process_action(
+        return self.action_service.process_action(
             action,
         )
 
-        process_result.action_command = exec_result.action_command
-        process_result.price = exec_result.price
-        process_result.qty = exec_result.qty
-        process_result.fee = exec_result.fee
-        process_result.executed = exec_result.executed
-
-        return process_result
-
     def resolve(
         self,
-        process_result: ProcessResult,
-    ) -> tuple[ProcessResult, EntryCheckResult]:
+    ) -> tuple[ExecutionResult | None, EntryCheckResult]:
         check_result = self.entry_checker.check()
 
         entry_allowed = check_result.entry_allowed
@@ -103,10 +93,9 @@ class EntryMng:
         )
 
         if entry_allowed:
-            process_result = self._execute_open(
-                process_result,
+            exec_result = self._execute_open(
             )
         else:
-            process_result.executed = False
+            exec_result = None
 
-        return process_result, check_result
+        return exec_result, check_result

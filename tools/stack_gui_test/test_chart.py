@@ -170,6 +170,7 @@ def main():
     view = ChartView(scene)
 
     window = QWidget()
+    window.setWindowTitle(f"Stack Grid — {symbol}")
 
     button = QPushButton("Merge")
     button.clicked.connect(

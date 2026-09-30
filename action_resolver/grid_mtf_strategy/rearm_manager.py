@@ -9,7 +9,6 @@ from proxy_server.proxy_driver import ProxyDriver
 from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand
 from action_processor.action_source import ActionSource
-from action_processor.process_result import ProcessResult
 from action_processor.execution.execution_result import ExecutionResult
 
 
@@ -191,32 +190,25 @@ class RearmMng:
 
     def _resolve_rearm(
         self,
-        process_result: ProcessResult,
         initial_qty: float
-    ) -> tuple[ProcessResult, RearmCheckResult]:
+    ) -> tuple[ExecutionResult | None, RearmCheckResult]:
         while True:
             # Проверяем, нужно ли выполнять REARM
             check_result = self.check()
 
             if not check_result.distance_ok or not check_result.rsi_ok:
                 # REARM не нужен -> выходим из цикла
-                return process_result, check_result
+                return None, check_result
             else:
                 # REARM нужен -> выполняем его
                 exec_result = self._execute_rearm(
                     initial_qty=initial_qty
                 )
 
-                process_result.action_command = exec_result.action_command
-                process_result.price = exec_result.price
-                process_result.qty = exec_result.qty
-                process_result.fee = exec_result.fee
-                process_result.executed = exec_result.executed
-
                 # Проверяем, выполнен ли REARM
-                if process_result.executed:
+                if exec_result.executed:
                     # REARM выполнен -> выходим из цикла
-                    return process_result, check_result
+                    return exec_result, check_result
                 else:
                     # REARM не выполнен -> повторно проверяем условия
                     self.logger.warning(

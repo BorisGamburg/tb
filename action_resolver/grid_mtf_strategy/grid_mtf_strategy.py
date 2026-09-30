@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
@@ -20,6 +22,15 @@ from action_processor.action_guard import ActionGuard, GuardResult
 from action_resolver.grid_mtf_strategy.status_line import StatusLine
 from action_processor.execution.execution_result import ExecutionResult
 
+@dataclass
+class BBWExitResult:
+    signal: bool
+    execution_result: ExecutionResult | None
+
+@dataclass
+class CrossExitResult:
+    signal: bool
+    execution_result: ExecutionResult | None    
 
 class GridMTFStrategy(BaseStrategy):
 
@@ -156,11 +167,17 @@ class GridMTFStrategy(BaseStrategy):
             )
             return process_result
 
-        process_result, check_result, rearm_check_result, bbw_check_result = (
-            self._resolve_action(
-                process_result,
-            )
-        )
+        exec_result, signal, check_result, rearm_check_result, bbw_check_result = self._resolve_action()
+        process_result.signal = signal
+        if exec_result is not None:
+            process_result.action_command = exec_result.action_command
+            process_result.price = exec_result.price
+            process_result.qty = exec_result.qty
+            process_result.fee = exec_result.fee
+            process_result.executed = exec_result.executed
+        else:
+            process_result.executed = False
+
         process_result.status = self._get_status_line(
             check_result,
             rearm_check_result,
@@ -193,8 +210,7 @@ class GridMTFStrategy(BaseStrategy):
 
     def _resolve_exit_cross(
         self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> CrossExitResult:
         should_exit, entry = self.partial_exit_cross.check()
 
         if should_exit:
@@ -204,36 +220,34 @@ class GridMTFStrategy(BaseStrategy):
                 source=ActionSource.PARTIAL_EXIT_CROSS
             )
 
-            process_result.action_command = exec_result.action_command
-            process_result.price = exec_result.price
-            process_result.qty = exec_result.qty
-            process_result.fee = exec_result.fee
-            process_result.executed = exec_result.executed
+            return CrossExitResult(
+                signal=True,
+                execution_result=exec_result,
+            )
 
-        return process_result
+        return CrossExitResult(
+            signal=False,
+            execution_result=None,
+        )
 
     def _resolve_entry(
         self,
-        process_result: ProcessResult,
-    ) -> tuple[ProcessResult, EntryCheckResult]:
-        return self.entry_manager.resolve(
-            process_result,
-        )
+    ) -> tuple[ExecutionResult | None, EntryCheckResult]:
+        return self.entry_manager.resolve()
 
     def _resolve_bbw_exit(
         self,
-        process_result: ProcessResult,
     ) -> tuple[
-        ProcessResult,
+        BBWExitResult,
         RearmCheckResult | None,
         BBWCheckResult,
     ]:
         # Есть сигнал на выход?
-        process_result.signal, entry, bbw_check_result = (
+        signal, entry, bbw_check_result = (
             self.partial_exit_bbw.check()
         )
 
-        if process_result.signal:
+        if signal:
             # Сигнал на выход есть
             exec_result = self._execute_close(
                 entry,
@@ -241,79 +255,87 @@ class GridMTFStrategy(BaseStrategy):
                 source=ActionSource.PARTIAL_EXIT_BBW
             )
 
-            process_result.action_command = exec_result.action_command
-            process_result.price = exec_result.price
-            process_result.qty = exec_result.qty
-            process_result.fee = exec_result.fee
-            process_result.executed = exec_result.executed
-
             # Выполнен ли CLOSE?
-            if process_result.executed:
+            if exec_result.executed:
                 # CLOSE выполнен -> запускаем REARM
-                process_result, rearm_check_result = (
+                rearm_result, rearm_check_result = (
                     self.rearm_manager._resolve_rearm(
-                        process_result,
                         initial_qty=entry.initial_qty
                     )
                 )
+
+                if rearm_result is not None:
+                    exec_result = rearm_result
+
                 return (
-                    process_result,
+                    BBWExitResult(
+                        signal=True,
+                        execution_result=exec_result,
+                    ),
                     rearm_check_result,
                     bbw_check_result,
                 )
-            else:
-                # CLOSE не выполнен -> выходим
-                return process_result, None, bbw_check_result
+
+            # CLOSE не выполнен -> выходим
+            return (
+                BBWExitResult(
+                    signal=True,
+                    execution_result=exec_result,
+                ),
+                None,
+                bbw_check_result,
+            )
 
         # Сигнала на выход нет
-        return process_result, None, bbw_check_result
+        return (
+            BBWExitResult(
+                signal=False,
+                execution_result=None,
+            ),
+            None,
+            bbw_check_result,
+        )
 
     def _resolve_action(
         self,
-        process_result: ProcessResult,
     ) -> tuple[
-        ProcessResult,
+        ExecutionResult | None,
+        bool,
         EntryCheckResult | None,
         RearmCheckResult | None,
         BBWCheckResult,
     ]:
         # Выход по пересечению предыдущего уровня
-        process_result = self._resolve_exit_cross(
-            process_result,
-        )
-        if process_result.signal:
-            return process_result, None, None, BBWCheckResult(
+        cross_exit_result = self._resolve_exit_cross()
+        if cross_exit_result.signal:
+            return cross_exit_result.execution_result, True, None, None, BBWCheckResult(
                 has_position=False,
                 bb_cross_tp=None,
                 bb_width_tp=None,
             )
                 
         # Выход по BBW
-        process_result, rearm_check_result, bbw_check_result = (
-            self._resolve_bbw_exit(
-                process_result,
-            )
+        bbw_exit_result, rearm_check_result, bbw_check_result = (
+            self._resolve_bbw_exit()
         )
-        if process_result.signal:
+        if bbw_exit_result.signal:
             return (
-                process_result,
+                bbw_exit_result.execution_result,
+                True,
                 None,
                 rearm_check_result,
                 bbw_check_result,
             )
 
-
         # Проверка на вход
-        process_result, check_result = self._resolve_entry(
-            process_result,
-        )
-
+        exec_result, check_result = self._resolve_entry()
         return (
-            process_result,
+            exec_result,
+            False,
             check_result,
             None,
             bbw_check_result,
-        )    
+        )
 
     def _get_status_line(
         self,
