@@ -1,7 +1,7 @@
 from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
-from action_resolver.resolve_result import TmpResolveResult
+from action_resolver.resolve_result import RecoveryResult
 from orchestrator.orchestrator import Orchestrator
 from common.trading_info import TradingInfo
 from action_processor.action import Action, ActionCommand
@@ -83,9 +83,9 @@ class OrchestratorStrategy(BaseStrategy):
         self,
         ctx,
         execution_result=None,
-    ) -> TmpResolveResult:
+    ) -> RecoveryResult:
         if not self._is_close_allowed():
-            return TmpResolveResult(
+            return RecoveryResult(
                 action_command=ActionCommand(
                     action=Action.NO_ACTION,
                     symbol=self.symbol,
@@ -101,7 +101,7 @@ class OrchestratorStrategy(BaseStrategy):
         # TODO: После завершения тестирования раскомментировать.
         # self._close_positions()
 
-        return TmpResolveResult(
+        return RecoveryResult(
             action_command=ActionCommand(
                 action=Action.NO_ACTION,
                 symbol=self.symbol,
