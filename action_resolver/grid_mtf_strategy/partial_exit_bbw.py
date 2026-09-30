@@ -4,6 +4,17 @@ from services.bb_service import BBService
 
 
 @dataclass
+class BBWCheckDetails:
+    tf: str
+    price: float
+    entry_price: float
+    distance: float
+    min_distance: float
+    max_distance: float
+    bb_cross_tp: float
+    bb_width_tp: float
+
+@dataclass
 class BBWCheckResult:
     has_position: bool
     bb_cross_tp: float | None
@@ -170,6 +181,17 @@ class PartialExitBBW:
         else:
             bb_width_tp = prof_level.price + max_dist
 
+        bbw_check_details = BBWCheckDetails(
+            tf=self.get_tf(),
+            price=cur_price,
+            entry_price=prof_level.price,
+            distance=cur_dist,
+            min_distance=min_dist,
+            max_distance=max_dist,
+            bb_cross_tp=bb_cross_tp,
+            bb_width_tp=bb_width_tp,
+        )            
+
         # Проверка выхода
         signal, entry, _ = self._check_exit(exit_context)
 
@@ -181,6 +203,7 @@ class PartialExitBBW:
                 bb_cross_tp=bb_cross_tp,
                 bb_width_tp=bb_width_tp,
             ),
+            bbw_check_details,
         )
 
     def _is_bb_tp_reached(self, cur_price):
