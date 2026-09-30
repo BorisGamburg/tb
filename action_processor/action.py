@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
 from action_processor.state.stack_schema import StackElem
-from action_processor.action_source import ActionSource
 
 
 class Action(Enum):
@@ -19,4 +18,3 @@ class ActionCommand:
     qty: float | None = None
     levels: list[StackElem] | None = None
     reason: str | None = None
-    source: ActionSource | None = None

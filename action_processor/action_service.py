@@ -92,7 +92,6 @@ class ActionService:
 
         if result.action_command.action == Action.OPEN:
             reason = result.action_command.reason
-            source = result.action_command.source.value
 
             if result.status == LimitOrderStatus.PARTIALLY_FILLED:
                 return (
@@ -103,7 +102,6 @@ class ActionService:
                     f"Price: {result.price}\n"
                     "Status: PARTIALLY_FILLED\n"
                     f"Reason: {reason}\n"
-                    f"Source: {source}"
                 )
 
             return (
@@ -113,13 +111,11 @@ class ActionService:
                 f"Qty: {result.qty}\n"
                 f"Price: {result.price}\n"
                 f"Reason: {reason}\n"
-                f"Source: {source}"
             )
             
         
         if result.action_command.action == Action.CLOSE:
             reason = result.action_command.reason
-            source = result.action_command.source.value
 
             return (
                 "📉 LEVELS CLOSED\n"
@@ -127,7 +123,6 @@ class ActionService:
                 f"Qty: {result.qty}\n"
                 f"Price: {result.price}\n"
                 f"Reason: {reason}\n"
-                f"Source: {source}"
             )
 
         return None

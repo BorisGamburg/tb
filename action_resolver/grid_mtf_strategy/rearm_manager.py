@@ -8,7 +8,6 @@ from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
 from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand
-from action_processor.action_source import ActionSource
 from action_processor.execution.execution_result import ExecutionResult
 
 
@@ -42,7 +41,6 @@ class RearmMng:
         self.side = side
         self.trading_info = trading_info
         self.action_service = action_service
-        
 
     def _get_rsi_last_closed(
         self,
@@ -175,7 +173,6 @@ class RearmMng:
             side=self.side,
             qty=qty,
             reason="REARM",
-            source=ActionSource.REARM_CHECKER
         )
 
     def _execute_rearm(

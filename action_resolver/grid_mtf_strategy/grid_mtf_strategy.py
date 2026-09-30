@@ -13,7 +13,6 @@ from common.trading_info import TradingInfo
 from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand
 from utils.utils import get_inverse_side
-from action_processor.action_source import ActionSource
 from action_resolver.grid_mtf_strategy.merge_levels import MergeLevels
 from action_resolver.grid_mtf_strategy.entry_manager import EntryMng
 from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
@@ -192,7 +191,6 @@ class GridMTFStrategy(BaseStrategy):
         self,
         entry,
         reason: str,
-        source: ActionSource,
     ) -> ExecutionResult:
         # Сигнал есть -> запускаем CLOSE
         action_command = ActionCommand(
@@ -202,7 +200,6 @@ class GridMTFStrategy(BaseStrategy):
                 side=get_inverse_side(self.side),
                 qty=entry.qty,
                 reason=reason,
-                source=source
             )
 
         return self.action_service.process_action(
@@ -218,7 +215,6 @@ class GridMTFStrategy(BaseStrategy):
             exec_result = self._execute_close(
                 entry,
                 reason="cross",
-                source=ActionSource.PARTIAL_EXIT_CROSS
             )
 
             return CrossExitResult(
@@ -253,7 +249,6 @@ class GridMTFStrategy(BaseStrategy):
             exec_result = self._execute_close(
                 entry,
                 reason="bbw",
-                source=ActionSource.PARTIAL_EXIT_BBW
             )
 
             # Выполнен ли CLOSE?

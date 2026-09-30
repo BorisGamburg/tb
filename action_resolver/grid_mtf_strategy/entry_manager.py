@@ -1,7 +1,6 @@
 from action_processor.state.state import State
 from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand
-from action_processor.action_source import ActionSource
 from common.trading_info import TradingInfo
 from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker, EntryCheckResult
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
@@ -66,7 +65,6 @@ class EntryMng:
             side=self.state_store.data.side,
             qty=self._get_entry_qty(),
             reason="ha_reversal",
-            source=ActionSource.ENTRY_CHECKER
         )
 
         return self.action_service.process_action(
