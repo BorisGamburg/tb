@@ -6,7 +6,7 @@ from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from action_processor.bootstrap import AppContext
 from action_resolver.grid_mtf_strategy.partial_exit_cross import PartialExitCross
 from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
-from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW, BBWCheckResult, BBWCheckDetails
+from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW, BBWCheckDetails
 from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
 from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng, RearmCheckResult
 from common.trading_info import TradingInfo
@@ -169,7 +169,8 @@ class GridMTFStrategy(BaseStrategy):
             )
         
         # Запускаем стратегию
-        exec_result, check_result, rearm_check_result, bbw_check_result = self._resolve_action()
+        exec_result, check_result, rearm_check_result, bbw_check_details = self._resolve_action()
+
         if exec_result is not None:
             executed = exec_result.executed
         else:
@@ -178,7 +179,7 @@ class GridMTFStrategy(BaseStrategy):
         status = self._get_status_line(
             check_result,
             rearm_check_result,
-            bbw_check_result,
+            bbw_check_details,
             guard_result,
         )
 
@@ -266,7 +267,7 @@ class GridMTFStrategy(BaseStrategy):
     ) -> tuple[
         BBWExitResult,
         RearmCheckResult | None,
-        BBWCheckResult,
+        BBWCheckDetails | None,
     ]:
         # Есть сигнал на выход?
         signal, entry, bbw_check_result, bbw_check_details = (
@@ -281,7 +282,7 @@ class GridMTFStrategy(BaseStrategy):
                     execution_result=None,
                 ),
                 None,
-                bbw_check_result,
+                bbw_check_details,
             )
 
         # Сигнал есть -> выполняем bbw_exit
@@ -296,7 +297,7 @@ class GridMTFStrategy(BaseStrategy):
                 execution_result=exec_result,
             ),
             rearm_check_result,
-            bbw_check_result,
+            bbw_check_details,
         )
 
     def _resolve_action(
@@ -305,7 +306,7 @@ class GridMTFStrategy(BaseStrategy):
         ExecutionResult | None,
         EntryCheckResult | None,
         RearmCheckResult | None,
-        BBWCheckResult | None
+        BBWCheckDetails | None
     ]:
         # Выход по пересечению предыдущего уровня
         cross_exit_result = self._resolve_exit_cross()
@@ -321,14 +322,14 @@ class GridMTFStrategy(BaseStrategy):
         (
             bbw_exit_result,
             rearm_check_result,
-            bbw_check_result,
+            bbw_check_details,
         ) = self._resolve_bbw_exit()
         if bbw_exit_result.signal:
             return (
                 bbw_exit_result.execution_result,
                 None,
                 rearm_check_result,
-                bbw_check_result,
+                bbw_check_details,
             )
 
         # Проверка на вход
@@ -337,22 +338,22 @@ class GridMTFStrategy(BaseStrategy):
             exec_result,
             entry_check_result,
             None,
-            bbw_check_result,
+            bbw_check_details,
         )
 
     def _get_status_line(
         self,
-        check_result: EntryCheckResult | None = None,
+        entry_check_result: EntryCheckResult | None = None,
         rearm_check_result: RearmCheckResult | None = None,
-        bbw_check_result: BBWCheckResult | None = None,
+        bbw_check_details: BBWCheckDetails | None = None,
         guard_result: GuardResult | None = None,
     ):
         last_price = self.proxy_driver.get_last_price(self.symbol)
         status_line = self.status_line.build(
             price=last_price,
-            check_result=check_result,
+            check_result=entry_check_result,
             rearm_check_result=rearm_check_result,
-            bbw_check_result=bbw_check_result,
+            bbw_check_details=bbw_check_details,
             guard_result=guard_result,
         )
         return status_line

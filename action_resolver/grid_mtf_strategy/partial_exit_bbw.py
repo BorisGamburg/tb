@@ -13,6 +13,7 @@ class BBWCheckDetails:
     max_distance: float
     bb_cross_tp: float
     bb_width_tp: float
+    exit_type: str
 
 @dataclass
 class BBWCheckResult:
@@ -138,22 +139,23 @@ class PartialExitBBW:
         # Распаковываем контекст выхода
         prof_level, cur_price, cur_dist, min_dist, max_dist = exit_context
 
-        # Проверяем, превысила ли текущая дистанция минимальную 
+        # Проверяем, превысила ли текущая дистанция минимальную
         # Если нет, то выходим без действий
         if cur_dist < min_dist:
             return False, None, None
 
         # Проверяем, превысила ли текущая дистанция максимальную
-        # Если да, то даем команду на закрытие 
+        # Если да, то даем команду на закрытие
         if cur_dist >= max_dist:
-            return True, prof_level, None
+            return True, prof_level, "MAX BBW"
+
         # Проверяем, достигнут ли tp по BB
         reached, tp = self._is_bb_tp_reached(cur_price)
         if not reached:
-            return False, None, tp
+            return False, None, None
 
-        return True, prof_level, tp
-
+        return True, prof_level, "BB CROSS"
+    
     def check(self):
         # Получаем данные для проверки выхода
         exit_context = self._get_exit_context()
@@ -181,6 +183,9 @@ class PartialExitBBW:
         else:
             bb_width_tp = prof_level.price + max_dist
 
+        # Проверка выхода
+        signal, entry, exit_type = self._check_exit(exit_context)
+
         bbw_check_details = BBWCheckDetails(
             tf=self.get_tf(),
             price=cur_price,
@@ -190,10 +195,8 @@ class PartialExitBBW:
             max_distance=max_dist,
             bb_cross_tp=bb_cross_tp,
             bb_width_tp=bb_width_tp,
-        )            
-
-        # Проверка выхода
-        signal, entry, _ = self._check_exit(exit_context)
+            exit_type=exit_type,
+        )
 
         return (
             signal,

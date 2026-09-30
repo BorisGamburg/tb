@@ -2,8 +2,8 @@ from rich.text import Text
 
 from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 from action_resolver.grid_mtf_strategy.rearm_manager import RearmCheckResult
-from action_resolver.grid_mtf_strategy.partial_exit_bbw import BBWCheckResult
 from action_processor.action_guard import GuardResult
+from action_resolver.grid_mtf_strategy.partial_exit_bbw import BBWCheckDetails
 
 
 class StatusLine:
@@ -13,7 +13,7 @@ class StatusLine:
         price: float,
         check_result: EntryCheckResult | None = None,
         rearm_check_result: RearmCheckResult | None = None,
-        bbw_check_result: BBWCheckResult | None = None,
+        bbw_check_details: BBWCheckDetails | None = None,
         guard_result: GuardResult | None = None,
     ) -> Text:
 
@@ -22,7 +22,7 @@ class StatusLine:
         text.append(self._build_entry_status(check_result))
         text.append(self._build_exit_status(
             rearm_check_result,
-            bbw_check_result,
+            bbw_check_details,
         ))
         text.append(self._build_guard_status(guard_result))
 
@@ -144,7 +144,7 @@ class StatusLine:
     def _build_exit_status(
         self,
         rearm_check_result: RearmCheckResult | None = None,
-        bbw_check_result: BBWCheckResult | None = None,
+        bbw_check_details: BBWCheckDetails | None = None,
     ) -> Text:
 
         text = Text()
@@ -166,25 +166,12 @@ class StatusLine:
             )
 
         text.append(" | BBW: ", style="cyan")
-        if bbw_check_result is not None:
-            if not bbw_check_result.has_position:
-                text.append(
-                    "NO_POS",
-                    style="dim",
-                )
-            elif (
-                bbw_check_result.bb_cross_tp is not None
-                and bbw_check_result.bb_width_tp is not None
-            ):
-                text.append(
-                    f"[cross={bbw_check_result.bb_cross_tp:.6f} "
-                    f"width={bbw_check_result.bb_width_tp:.6f}]"
-                )
-            else:
-                text.append(
-                    "N/A",
-                    style="dim",
-                )
+        if bbw_check_details is not None:
+            text.append(
+                f"({bbw_check_details.tf}m) "
+                f"[cross={bbw_check_details.bb_cross_tp:.6f} "
+                f"width={bbw_check_details.bb_width_tp:.6f}]"
+            )
         else:
             text.append(
                 "N/A",
@@ -192,7 +179,6 @@ class StatusLine:
             )
 
         return text
-
     def _build_guard_status(
         self,
         guard_result: GuardResult | None = None,
