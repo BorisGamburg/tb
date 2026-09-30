@@ -4,6 +4,12 @@ from action_processor.action import ActionCommand
 
 
 @dataclass(frozen=True)
-class ResolveResult:
+class TmpResolveResult:
     action_command: ActionCommand
     executed: bool
+
+
+@dataclass(frozen=True)
+class ResolveResult:
+    executed: bool
+    status: str

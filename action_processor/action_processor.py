@@ -11,6 +11,7 @@ from action_resolver.strategy_factory import StrategyFactory
 from action_processor.action_service import ActionService
 from action_processor.external_command_processor import ExternalCommandProcessor
 from action_processor.process_result import ProcessResult
+from action_resolver.resolve_result import ResolveResult
 
 
 class ActionProcessor:
@@ -112,20 +113,10 @@ class ActionProcessor:
             ) as self.live:
                 while not self.shutdown_event.is_set():
                     # Логика цикла
-                    process_result = ProcessResult(
-                        external_command=None,
-                        action_command=None,
-                        status="",
-                        executed=False,
-                        signal=False,
-                        price=0.0,
-                        qty=0.0,
-                        fee=0.0,
-                    )
-                    self._process_cycle(process_result)
+                    resolve_result = self._process_cycle()
 
                     # Обновляем строку статуса 
-                    self.live.update(process_result.status)
+                    self.live.update(resolve_result.status)
 
                     # Sleep, если не отменен
                     time.sleep(
@@ -146,42 +137,56 @@ class ActionProcessor:
 
     def _process_cycle(
         self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> ResolveResult:
         # 1. Проверяем внешние команды
-        process_result = self._process_external_logic(process_result)
+        external_command, resolve_result = self._process_external_logic()
 
         # Если внешней команды нет, продолжаем с внутренней логикой
-        if process_result.external_command is None:
-            process_result = self._process_internal_logic(process_result)
+        if external_command is None:
+            resolve_result = self._process_internal_logic()
 
         # 2. Если было выполнено действие, увеличиваем итерацию и вызываем on_iteration
-        if process_result.executed:
+        if resolve_result.executed:
             self.iteration += 1
             self._on_iteration()
 
-        # Возвращаем process_result 
-        return process_result
+        return resolve_result
 
     def _process_external_logic(
         self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> tuple[dict | None, ResolveResult]:
         external_command = self._get_external_command()
 
         if not external_command:
-            return process_result
+            return (
+                None,
+                ResolveResult(
+                    executed=False,
+                    status="",
+                ),
+            )
 
-        process_result.external_command = external_command
-
-        return self.external_command_processor.process(
-            process_result,
+        process_result = self.external_command_processor.process(
+            ProcessResult(
+                external_command=external_command,
+                action_command=None,
+                status="",
+                executed=False,
+                signal=False,
+                price=0.0,
+                qty=0.0,
+                fee=0.0,
+            )
         )
+
+        result = ResolveResult(
+            executed=process_result.executed,
+            status=process_result.status,
+        )
+
+        return external_command, result
 
     def _process_internal_logic(
         self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
-        process_result = self.strategy.resolve(process_result)
-
-        return process_result
+    ) -> ResolveResult:
+        return self.strategy.resolve()

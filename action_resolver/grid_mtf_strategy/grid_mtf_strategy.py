@@ -11,7 +11,6 @@ from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
 from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng, RearmCheckResult
 from common.trading_info import TradingInfo
 from action_processor.action_service import ActionService
-from action_processor.process_result import ProcessResult
 from action_processor.action import Action, ActionCommand
 from utils.utils import get_inverse_side
 from action_processor.action_source import ActionSource
@@ -21,6 +20,7 @@ from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 from action_processor.action_guard import ActionGuard, GuardResult
 from action_resolver.grid_mtf_strategy.status_line import StatusLine
 from action_processor.execution.execution_result import ExecutionResult
+from action_resolver.resolve_result import ResolveResult
 
 @dataclass
 class BBWExitResult:
@@ -147,45 +147,46 @@ class GridMTFStrategy(BaseStrategy):
 
     def resolve(
         self,
-        process_result: ProcessResult,
-    ) -> ProcessResult:
+    ) -> ResolveResult:
          # Проверяем есть ли группа маленьких уровней для merge.
         # Если есть -> объединяем все уровни группы
         merged = self.merge_levels.merge_multiple_levels()
 
+        # Если было соединение уровней -> выходим
         if merged:
-            process_result.executed = True
-            process_result.status = self._get_status_line()
-            return process_result
-        
-        guard_result = self.is_exit_allowed()
-
-        if not guard_result.allowed:
-            process_result.executed = False
-            process_result.status = self._get_status_line(
-                guard_result=guard_result,
+            return ResolveResult(
+                executed=True,
+                status=self._get_status_line(),
             )
-            return process_result
 
+        # Если закрывать нельзя -> выходим        
+        guard_result = self.is_exit_allowed()
+        if not guard_result.allowed:
+            return ResolveResult(
+                executed=False,
+                status=self._get_status_line(
+                    guard_result=guard_result,
+                ),
+            )
+        
+        # Запускаем стратегию
         exec_result, signal, check_result, rearm_check_result, bbw_check_result = self._resolve_action()
-        process_result.signal = signal
         if exec_result is not None:
-            process_result.action_command = exec_result.action_command
-            process_result.price = exec_result.price
-            process_result.qty = exec_result.qty
-            process_result.fee = exec_result.fee
-            process_result.executed = exec_result.executed
+            executed = exec_result.executed
         else:
-            process_result.executed = False
+            executed = False
 
-        process_result.status = self._get_status_line(
+        status = self._get_status_line(
             check_result,
             rearm_check_result,
             bbw_check_result,
             guard_result,
         )
 
-        return process_result
+        return ResolveResult(
+            executed=executed,
+            status=status,
+        )
     
     def _execute_close(
         self,
