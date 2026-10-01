@@ -9,6 +9,8 @@ from services.bb_service import BBService
 @dataclass
 class HAReversDetails:
     tf: str
+    prev: str
+    curr: str
 
 @dataclass
 class DistanceCheckDetails:
@@ -138,7 +140,11 @@ class EntryChecker:
 
         # Проверяем разворот по ha
         result = self.ha_signal.is_entry(tf, self.side)
-        ha_revers_details = HAReversDetails(tf=tf)
+        ha_revers_details = HAReversDetails(
+            tf=tf,
+            prev=result.prev,
+            curr=result.curr,
+        )
         return result, ha_revers_details
 
     def _is_distance_ok(
