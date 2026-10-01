@@ -83,9 +83,9 @@ class EntryMng:
         entry_check_result, entry_check_details = self.entry_checker.check()
 
         entry_allowed = entry_check_result.entry_allowed
-        ha_ok = entry_check_result.ha.signal
-        rsi_ok = entry_check_result.rsi.ok
-        distance_ok = entry_check_result.distance.ok
+        ha_ok = entry_check_result.ha_revers_result.ok
+        rsi_ok = entry_check_result.rsi_check_result.ok
+        distance_ok = entry_check_result.distance_check_result.ok
 
         if self.app_ctx.notifier is None:
             raise RuntimeError("Notifier is not initialized")

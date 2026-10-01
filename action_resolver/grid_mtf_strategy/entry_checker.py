@@ -1,16 +1,33 @@
 from dataclasses import dataclass
 
 from action_processor.state.state import State
-from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal, HAReversalResult
+from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal, HAReversResult, HAReversDetails
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from services.bb_service import BBService
 
 
 @dataclass
-class HAReversDetails:
+class DistanceCheckResult:
+    ok: bool
+
+@dataclass
+class RsiCheckResult:
+    ok: bool
     tf: str
-    prev: str
-    curr: str
+    value: float | None
+    threshold: float | None
+
+@dataclass
+class BbCheckResult:
+    ok: bool
+
+@dataclass
+class EntryCheckResult:
+    entry_allowed: bool
+    ha_revers_result: HAReversResult
+    rsi_check_result: RsiCheckResult
+    bb_check_result: BbCheckResult
+    distance_check_result: DistanceCheckResult
 
 @dataclass
 class DistanceCheckDetails:
@@ -30,44 +47,10 @@ class BbCheckDetails:
     mid: float | None
 
 @dataclass
-class RsiCheckDetails:
-    tf: str
-    value: float | None
-    threshold: float | None
-
-@dataclass
-class DistanceCheckResult:
-    ok: bool
-    threshold: float | None
-
-@dataclass
-class RsiCheckResult:
-    ok: bool
-    value: float | None
-    threshold: float | None
-    tf: str    
-
-@dataclass
-class BbCheckResult:
-    ok: bool
-    value: float | None
-    mid: float | None
-    tf: str
-
-@dataclass
 class EntryCheckDetails:
     ha_revers_details: HAReversDetails
-    rsi_details: RsiCheckDetails
-    bb_details: BbCheckDetails
-    distance_details: DistanceCheckDetails
-
-@dataclass
-class EntryCheckResult:
-    entry_allowed: bool
-    ha: HAReversalResult
-    rsi: RsiCheckResult
-    bb: BbCheckResult
-    distance: DistanceCheckResult
+    bb_check_details: BbCheckDetails
+    distance_check_details: DistanceCheckDetails
 
 class EntryChecker:
     def __init__(
@@ -139,13 +122,7 @@ class EntryChecker:
         tf = self.map_mng.get_tf_for_level(level)
 
         # Проверяем разворот по ha
-        result = self.ha_signal.is_entry(tf, self.side)
-        ha_revers_details = HAReversDetails(
-            tf=tf,
-            prev=result.prev,
-            curr=result.curr,
-        )
-        return result, ha_revers_details
+        return self.ha_signal.is_entry(tf, self.side)
 
     def _is_distance_ok(
         self,
@@ -155,7 +132,6 @@ class EntryChecker:
         if not entries:
             distance_result = DistanceCheckResult(
                 ok=True,
-                threshold=None,
             )
 
             distance_details = DistanceCheckDetails(
@@ -207,7 +183,6 @@ class EntryChecker:
 
         distance_result = DistanceCheckResult(
             ok=dist_ok,
-            threshold=distance_threshold,
         )
 
         distance_details = DistanceCheckDetails(
@@ -272,9 +247,6 @@ class EntryChecker:
 
         bb_check_result = BbCheckResult(
             ok=bb_entry_ok,
-            value=cur_price,
-            mid=bb_mid,
-            tf=bb_tf,
         )
 
         return bb_check_result, bb_check_details
@@ -294,7 +266,7 @@ class EntryChecker:
         bb_mid = bb["mid"]
         return bb_mid, tpl.htf_filter
     
-    def _check_rsi(self) -> tuple[RsiCheckResult, RsiCheckDetails]:
+    def _check_rsi(self) -> RsiCheckResult:
         entries = self.state_store.stack_mng.data.entries
         level = len(entries)
         tpl = self.map_mng.get_template_by_level(level)
@@ -308,47 +280,40 @@ class EntryChecker:
             tf_threshold
         )
 
-        rsi_check_details = RsiCheckDetails(
-            tf=tpl.tf_filter,
-            value=rsi_tf,
-            threshold=tf_threshold,
-        )
-
         rsi_check_result = RsiCheckResult(
             ok=rsi_tf_entry_ok,
+            tf=tpl.tf_filter,
             value=rsi_tf,
             threshold=tf_threshold,
-            tf=tpl.tf_filter,
         )
 
-        return rsi_check_result, rsi_check_details
+        return rsi_check_result
         
     def check(self) -> tuple[EntryCheckResult, EntryCheckDetails]:
-        ha_result, ha_revers_details = self._check_ha_revers()
-        rsi_result, rsi_details = self._check_rsi()
-        bb_result, bb_details = self._check_bb()
-        distance_result, distance_details = self._check_distance()
+        ha_revers_result, ha_revers_details = self._check_ha_revers()
+        rsi_check_result = self._check_rsi()
+        bb_check_result, bb_check_details = self._check_bb()
+        distance_check_result, distance_check_details = self._check_distance()
 
         entry_check_details = EntryCheckDetails(
             ha_revers_details=ha_revers_details,
-            rsi_details=rsi_details,
-            bb_details=bb_details,
-            distance_details=distance_details,
+            bb_check_details=bb_check_details,
+            distance_check_details=distance_check_details,
         )
 
         entry_allowed = (
-            ha_result.signal
-            and rsi_result.ok
-            and bb_result.ok
-            and distance_result.ok
+            ha_revers_result.ok
+            and rsi_check_result.ok
+            and bb_check_result.ok
+            and distance_check_result.ok
         )
 
         entry_check_result = EntryCheckResult(
             entry_allowed=entry_allowed,
-            ha=ha_result,
-            rsi=rsi_result,
-            bb=bb_result,
-            distance=distance_result,
+            ha_revers_result=ha_revers_result,
+            rsi_check_result=rsi_check_result,
+            bb_check_result=bb_check_result,
+            distance_check_result=distance_check_result,
         )
 
         return entry_check_result, entry_check_details

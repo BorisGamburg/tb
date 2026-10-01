@@ -11,7 +11,7 @@ class StatusLine:
     def build(
         self,
         price: float,
-        check_result: EntryCheckResult | None = None,
+        entry_check_result: EntryCheckResult | None = None,
         check_details: EntryCheckDetails | None = None,
         rearm_check_result: RearmCheckResult | None = None,
         bbw_check_details: BBWCheckDetails | None = None,
@@ -21,7 +21,7 @@ class StatusLine:
         text = Text()
         text.append(f"PRICE: {price:.6f}  ", style="cyan")
         text.append(self._build_entry_status(
-            check_result,
+            entry_check_result,
             check_details,
         ))
         text.append(self._build_exit_status(
@@ -40,21 +40,21 @@ class StatusLine:
 
     def _build_entry_status(
         self,
-        check_result: EntryCheckResult | None = None,
-        check_details: EntryCheckDetails | None = None,
+        entry_check_result: EntryCheckResult | None = None,
+        entry_check_details: EntryCheckDetails | None = None,
     ) -> Text:
 
         text = Text()
 
         text.append("\nENTRY")
 
-        self.append_ha_part(check_details, check_result, text)
+        self.append_ha_part(entry_check_details, entry_check_result, text)
 
-        self.append_rsi_part(check_details, check_result, text)
+        self.append_rsi_part(entry_check_result, text)
 
-        self.append_bb_part(check_details, check_result, text)
+        self.append_bb_part(entry_check_details, entry_check_result, text)
 
-        return self.append_dist_part(check_details, check_result, text)
+        return self.append_dist_part(entry_check_details, entry_check_result, text)
 
     def append_dist_part(
         self,
@@ -127,13 +127,12 @@ class StatusLine:
 
     def append_rsi_part(
         self,
-        check_details,
         check_result,
         text,
     ):
         text.append(" | RSI: ", style="cyan")
-        if check_details is not None:
-            rsi = check_details.rsi_details
+        if check_result is not None:
+            rsi = check_result.rsi_check_result
 
             tf_th = (
                 f"{rsi.threshold:.0f}"
@@ -157,8 +156,7 @@ class StatusLine:
                 f"cur:{tf_v} {operator} thres:{tf_th}"
             )
 
-            if check_result is not None:
-                self._append_status_circle(text, check_result.rsi.ok)
+            self._append_status_circle(text, rsi.ok)
         else:
             text.append(
                 "N/A",
@@ -168,7 +166,7 @@ class StatusLine:
     def append_ha_part(
         self,
         check_details,
-        check_result,
+        entry_check_result,
         text,
     ):
         text.append(" | HA: ", style="cyan")
@@ -178,10 +176,10 @@ class StatusLine:
                 f"({ha.tf}m) [{ha.prev}→{ha.curr}]"
             )
 
-            if check_result is not None:
+            if entry_check_result is not None:
                 self._append_status_circle(
                     text,
-                    check_result.ha.signal,
+                    entry_check_result.ha.signal,
                 )
         else:
             text.append(

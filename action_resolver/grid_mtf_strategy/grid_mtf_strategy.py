@@ -171,7 +171,7 @@ class GridMTFStrategy(BaseStrategy):
         # Запускаем стратегию
         (
             exec_result,
-            check_result,
+            entry_check_result,
             entry_check_details,
             rearm_check_result,
             bbw_check_details,
@@ -183,7 +183,7 @@ class GridMTFStrategy(BaseStrategy):
             executed = False
 
         status = self._get_status_line(
-            check_result,
+            entry_check_result,
             entry_check_details,
             rearm_check_result,
             bbw_check_details,
@@ -372,7 +372,7 @@ class GridMTFStrategy(BaseStrategy):
         last_price = self.proxy_driver.get_last_price(self.symbol)
         status_line = self.status_line.build(
             price=last_price,
-            check_result=entry_check_result,
+            entry_check_result=entry_check_result,
             check_details=entry_check_details,
             rearm_check_result=rearm_check_result,
             bbw_check_details=bbw_check_details,
