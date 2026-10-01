@@ -15,7 +15,7 @@ from action_processor.action import Action, ActionCommand, ActionDetails
 from utils.utils import get_inverse_side
 from action_resolver.grid_mtf_strategy.merge_levels import MergeLevels
 from action_resolver.grid_mtf_strategy.entry_manager import EntryMng
-from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult, EntryCheckDetails
+from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 from action_processor.action_guard import ActionGuard, GuardResult
 from action_resolver.grid_mtf_strategy.status_line import StatusLine
 from action_processor.execution.execution_result import ExecutionResult
@@ -172,7 +172,6 @@ class GridMTFStrategy(BaseStrategy):
         (
             exec_result,
             entry_check_result,
-            entry_check_details,
             rearm_check_result,
             bbw_check_details,
         ) = self._resolve_action()
@@ -183,11 +182,10 @@ class GridMTFStrategy(BaseStrategy):
             executed = False
 
         status = self._get_status_line(
-            entry_check_result,
-            entry_check_details,
-            rearm_check_result,
-            bbw_check_details,
-            guard_result,
+            entry_check_result=entry_check_result,
+            rearm_check_result=rearm_check_result,
+            bbw_check_details=bbw_check_details,
+            guard_result=guard_result,
         )
 
         return ResolveResult(
@@ -242,7 +240,6 @@ class GridMTFStrategy(BaseStrategy):
     ) -> tuple[
         ExecutionResult | None,
         EntryCheckResult,
-        EntryCheckDetails,
     ]:
         return self.entry_manager.resolve()
 
@@ -316,7 +313,6 @@ class GridMTFStrategy(BaseStrategy):
     ) -> tuple[
         ExecutionResult | None,
         EntryCheckResult | None,
-        EntryCheckDetails | None,
         RearmCheckResult | None,
         BBWCheckDetails | None
     ]:
@@ -325,7 +321,6 @@ class GridMTFStrategy(BaseStrategy):
         if cross_exit_result.signal:
             return (
                 cross_exit_result.execution_result,
-                None,
                 None,
                 None,
                 None,
@@ -341,7 +336,6 @@ class GridMTFStrategy(BaseStrategy):
             return (
                 bbw_exit_result.execution_result,
                 None,
-                None,
                 rearm_check_result,
                 bbw_check_details,
             )
@@ -350,13 +344,11 @@ class GridMTFStrategy(BaseStrategy):
         (
             exec_result,
             entry_check_result,
-            entry_check_details,
         ) = self._resolve_entry()
 
         return (
             exec_result,
             entry_check_result,
-            entry_check_details,
             None,
             bbw_check_details,
         )
@@ -364,7 +356,6 @@ class GridMTFStrategy(BaseStrategy):
     def _get_status_line(
         self,
         entry_check_result: EntryCheckResult | None = None,
-        entry_check_details: EntryCheckDetails | None = None,
         rearm_check_result: RearmCheckResult | None = None,
         bbw_check_details: BBWCheckDetails | None = None,
         guard_result: GuardResult | None = None,
@@ -373,7 +364,6 @@ class GridMTFStrategy(BaseStrategy):
         status_line = self.status_line.build(
             price=last_price,
             entry_check_result=entry_check_result,
-            check_details=entry_check_details,
             rearm_check_result=rearm_check_result,
             bbw_check_details=bbw_check_details,
             guard_result=guard_result,

@@ -3,14 +3,15 @@ from dataclasses import dataclass
 
 
 @dataclass
-class HAReversResult:
-    ok: bool
-
-@dataclass
 class HAReversDetails:
     tf: str
     prev: str
     curr: str    
+
+@dataclass
+class HAReversResult:
+    ok: bool
+    details: HAReversDetails
 
 
 class HAReversalSignal:
@@ -18,7 +19,7 @@ class HAReversalSignal:
         self.proxy_driver = proxy_driver
         self.symbol = symbol
 
-    def is_entry(self, tf: str, side: str) -> tuple[HAReversResult, HAReversDetails]:
+    def is_entry(self, tf: str, side: str) -> HAReversResult:
         prev, curr, live = self._get_prev_curr_live(tf)
 
         if side == "Sell":
@@ -36,17 +37,16 @@ class HAReversalSignal:
         else:
             raise RuntimeError(f"Invalid side: {side}")
 
-        ha_revers_result = HAReversResult(
-            ok=signal,
-        )
-
         ha_revers_details = HAReversDetails(
             tf=tf,
             prev=prev,
             curr=curr,
         )
 
-        return ha_revers_result, ha_revers_details
+        return HAReversResult(
+            ok=signal,
+            details=ha_revers_details,
+        )
 
     def is_exit(self, tf: str, side: str) -> tuple[bool, Text]:
         prev, curr, live = self._get_prev_curr_live(tf)

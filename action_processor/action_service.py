@@ -96,7 +96,7 @@ class ActionService:
             ha_reversal_tf = None
 
             if details and details.entry_check:
-                ha_reversal_tf = details.entry_check.ha_revers_details.tf
+                ha_reversal_tf = details.entry_check.ha_revers_result.details.tf
                 
             if result.status == LimitOrderStatus.PARTIALLY_FILLED:
                 return (

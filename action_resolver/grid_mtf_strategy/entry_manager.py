@@ -2,7 +2,7 @@ from action_processor.state.state import State
 from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand, ActionDetails
 from common.trading_info import TradingInfo
-from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker, EntryCheckResult, EntryCheckDetails
+from action_resolver.grid_mtf_strategy.entry_checker import EntryChecker, EntryCheckResult
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from action_processor.bootstrap import AppContext
 from action_processor.execution.execution_result import ExecutionResult
@@ -58,7 +58,7 @@ class EntryMng:
 
     def _execute_open(
         self,
-        details: EntryCheckDetails,
+        result: EntryCheckResult,
     ) -> ExecutionResult:
         action_command = ActionCommand(
             action=Action.OPEN,
@@ -67,7 +67,7 @@ class EntryMng:
             qty=self._get_entry_qty(),
             reason="ha_reversal",
             details=ActionDetails(
-                entry_check=details,
+                entry_check=result,
             ),
         )
 
@@ -78,9 +78,8 @@ class EntryMng:
     ) -> tuple[
         ExecutionResult | None,
         EntryCheckResult,
-        EntryCheckDetails,
     ]:
-        entry_check_result, entry_check_details = self.entry_checker.check()
+        entry_check_result = self.entry_checker.check()
 
         entry_allowed = entry_check_result.entry_allowed
         ha_ok = entry_check_result.ha_revers_result.ok
@@ -97,8 +96,8 @@ class EntryMng:
         )
 
         if entry_allowed:
-            exec_result = self._execute_open(entry_check_details)
+            exec_result = self._execute_open(entry_check_result)
         else:
             exec_result = None
 
-        return exec_result, entry_check_result, entry_check_details
+        return exec_result, entry_check_result

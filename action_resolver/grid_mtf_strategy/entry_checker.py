@@ -1,33 +1,10 @@
 from dataclasses import dataclass
 
 from action_processor.state.state import State
-from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal, HAReversResult, HAReversDetails
+from action_resolver.grid_mtf_strategy.ha_reversal import HAReversalSignal, HAReversResult
 from action_resolver.grid_mtf_strategy.grid_mtf_map_mng import GridMTFMapMng
 from services.bb_service import BBService
 
-
-@dataclass
-class DistanceCheckResult:
-    ok: bool
-
-@dataclass
-class RsiCheckResult:
-    ok: bool
-    tf: str
-    value: float | None
-    threshold: float | None
-
-@dataclass
-class BbCheckResult:
-    ok: bool
-
-@dataclass
-class EntryCheckResult:
-    entry_allowed: bool
-    ha_revers_result: HAReversResult
-    rsi_check_result: RsiCheckResult
-    bb_check_result: BbCheckResult
-    distance_check_result: DistanceCheckResult
 
 @dataclass
 class DistanceCheckDetails:
@@ -39,7 +16,23 @@ class DistanceCheckDetails:
     min_distance_ratio: float
     required_move: float | None
     threshold: float | None
-    
+
+@dataclass
+class DistanceCheckResult:
+    ok: bool
+    details: DistanceCheckDetails
+
+@dataclass
+class RsiCheckDetails:
+    tf: str
+    value: float | None
+    threshold: float | None
+
+@dataclass
+class RsiCheckResult:
+    ok: bool
+    details: RsiCheckDetails
+
 @dataclass
 class BbCheckDetails:
     tf: str
@@ -47,10 +40,17 @@ class BbCheckDetails:
     mid: float | None
 
 @dataclass
-class EntryCheckDetails:
-    ha_revers_details: HAReversDetails
-    bb_check_details: BbCheckDetails
-    distance_check_details: DistanceCheckDetails
+class BbCheckResult:
+    ok: bool
+    details: BbCheckDetails
+
+@dataclass
+class EntryCheckResult:
+    entry_allowed: bool
+    ha_revers_result: HAReversResult
+    rsi_check_result: RsiCheckResult
+    bb_check_result: BbCheckResult
+    distance_check_result: DistanceCheckResult
 
 class EntryChecker:
     def __init__(
@@ -102,16 +102,12 @@ class EntryChecker:
 
         return rsi <= threshold
 
-    def _check_distance(self) -> tuple[DistanceCheckResult, DistanceCheckDetails]:
+    def _check_distance(self) -> DistanceCheckResult:
         # Получаем уровни
         entries = self.state_store.stack_mng.data.entries
 
         # Проверяем дистанцию
-        distance_result, distance_details = self._is_distance_ok(
-            entries
-        )
-
-        return distance_result, distance_details
+        return self._is_distance_ok(entries)
 
     def _check_ha_revers(self):
         # Получаем уровни
@@ -127,13 +123,9 @@ class EntryChecker:
     def _is_distance_ok(
         self,
         entries,
-    ) -> tuple[DistanceCheckResult, DistanceCheckDetails]:
+    ) -> DistanceCheckResult:
         # Если уровней нет -> выходим
         if not entries:
-            distance_result = DistanceCheckResult(
-                ok=True,
-            )
-
             distance_details = DistanceCheckDetails(
                 tf=None,
                 price=None,
@@ -145,7 +137,10 @@ class EntryChecker:
                 threshold=None,
             )
 
-            return distance_result, distance_details
+            return DistanceCheckResult(
+                ok=True,
+                details=distance_details,
+            )
 
         # Получаем текущую цену
         price = self.proxy_driver.get_last_price(
@@ -181,10 +176,6 @@ class EntryChecker:
             distance_threshold = last_entry.price - required_move
             dist_ok = price < distance_threshold
 
-        distance_result = DistanceCheckResult(
-            ok=dist_ok,
-        )
-
         distance_details = DistanceCheckDetails(
             tf=distance_bbw_tf,
             price=price,
@@ -196,7 +187,10 @@ class EntryChecker:
             threshold=distance_threshold,
         )
 
-        return distance_result, distance_details
+        return DistanceCheckResult(
+            ok=dist_ok,
+            details=distance_details,
+        )
 
     def _get_last_atr(
         self,
@@ -227,7 +221,7 @@ class EntryChecker:
 
         return atr
 
-    def _check_bb(self) -> tuple[BbCheckResult, BbCheckDetails]:
+    def _check_bb(self) -> BbCheckResult:
         # Получаем среднюю Боллингера
         bb_mid, bb_tf = self.get_bb_mid()
 
@@ -245,11 +239,10 @@ class EntryChecker:
             mid=bb_mid,
         )
 
-        bb_check_result = BbCheckResult(
+        return BbCheckResult(
             ok=bb_entry_ok,
+            details=bb_check_details,
         )
-
-        return bb_check_result, bb_check_details
         
     def get_bb_entry_ok(self, bb_mid, cur_price):
         if self.side == "Sell":
@@ -280,26 +273,24 @@ class EntryChecker:
             tf_threshold
         )
 
-        rsi_check_result = RsiCheckResult(
-            ok=rsi_tf_entry_ok,
+        rsi_check_details = RsiCheckDetails(
             tf=tpl.tf_filter,
             value=rsi_tf,
             threshold=tf_threshold,
         )
 
+        rsi_check_result = RsiCheckResult(
+            ok=rsi_tf_entry_ok,
+            details=rsi_check_details,
+        )
+
         return rsi_check_result
         
-    def check(self) -> tuple[EntryCheckResult, EntryCheckDetails]:
-        ha_revers_result, ha_revers_details = self._check_ha_revers()
+    def check(self) -> EntryCheckResult:
+        ha_revers_result = self._check_ha_revers()
         rsi_check_result = self._check_rsi()
-        bb_check_result, bb_check_details = self._check_bb()
-        distance_check_result, distance_check_details = self._check_distance()
-
-        entry_check_details = EntryCheckDetails(
-            ha_revers_details=ha_revers_details,
-            bb_check_details=bb_check_details,
-            distance_check_details=distance_check_details,
-        )
+        bb_check_result = self._check_bb()
+        distance_check_result = self._check_distance()
 
         entry_allowed = (
             ha_revers_result.ok
@@ -316,4 +307,4 @@ class EntryChecker:
             distance_check_result=distance_check_result,
         )
 
-        return entry_check_result, entry_check_details
+        return entry_check_result

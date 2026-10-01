@@ -1,6 +1,6 @@
 from rich.text import Text
 
-from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult, EntryCheckDetails
+from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
 from action_resolver.grid_mtf_strategy.rearm_manager import RearmCheckResult
 from action_processor.action_guard import GuardResult
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import BBWCheckDetails
@@ -12,7 +12,6 @@ class StatusLine:
         self,
         price: float,
         entry_check_result: EntryCheckResult | None = None,
-        check_details: EntryCheckDetails | None = None,
         rearm_check_result: RearmCheckResult | None = None,
         bbw_check_details: BBWCheckDetails | None = None,
         guard_result: GuardResult | None = None,
@@ -20,10 +19,7 @@ class StatusLine:
 
         text = Text()
         text.append(f"PRICE: {price:.6f}  ", style="cyan")
-        text.append(self._build_entry_status(
-            entry_check_result,
-            check_details,
-        ))
+        text.append(self._build_entry_status(entry_check_result))
         text.append(self._build_exit_status(
             rearm_check_result,
             bbw_check_details,
@@ -41,41 +37,38 @@ class StatusLine:
     def _build_entry_status(
         self,
         entry_check_result: EntryCheckResult | None = None,
-        entry_check_details: EntryCheckDetails | None = None,
     ) -> Text:
 
         text = Text()
 
         text.append("\nENTRY")
 
-        self.append_ha_part(entry_check_details, entry_check_result, text)
+        self.append_ha_part(entry_check_result, text)
 
         self.append_rsi_part(entry_check_result, text)
 
-        self.append_bb_part(entry_check_details, entry_check_result, text)
+        self.append_bb_part(entry_check_result, text)
 
-        return self.append_dist_part(entry_check_details, entry_check_result, text)
+        return self.append_dist_part(entry_check_result, text)
 
     def append_dist_part(
         self,
-        check_details,
         check_result,
         text,
     ):
         text.append(" | DIST: ", style="cyan")
-        if check_details is not None:
-            distance = check_details.distance_details
+        if check_result is not None:
+            distance = check_result.distance_check_result.details
 
             if distance.threshold is not None:
                 text.append(
                     f"{distance.threshold:.6f}"
                 )
 
-                if check_result is not None:
-                    self._append_status_circle(
-                        text,
-                        check_result.distance.ok,
-                    )
+                self._append_status_circle(
+                    text,
+                    check_result.distance_check_result.ok,
+                )
             else:
                 text.append(
                     "N/A",
@@ -91,13 +84,12 @@ class StatusLine:
 
     def append_bb_part(
         self,
-        check_details,
         check_result,
         text,
     ):
         text.append(" | BB: ", style="cyan")
-        if check_details is not None:
-            bb = check_details.bb_details
+        if check_result is not None:
+            bb = check_result.bb_check_result.details
 
             if bb.value is not None and bb.mid is not None:
                 relation = (
@@ -112,8 +104,7 @@ class StatusLine:
                     f"(price:{bb.value:.6f} {relation} mid:{bb.mid:.6f})"
                 )
 
-                if check_result is not None:
-                    self._append_status_circle(text, check_result.bb.ok)
+                self._append_status_circle(text, check_result.bb_check_result.ok)
             else:
                 text.append(
                     f"({bb.tf}m) N/A",
@@ -132,7 +123,7 @@ class StatusLine:
     ):
         text.append(" | RSI: ", style="cyan")
         if check_result is not None:
-            rsi = check_result.rsi_check_result
+            rsi = check_result.rsi_check_result.details
 
             tf_th = (
                 f"{rsi.threshold:.0f}"
@@ -156,7 +147,7 @@ class StatusLine:
                 f"cur:{tf_v} {operator} thres:{tf_th}"
             )
 
-            self._append_status_circle(text, rsi.ok)
+            self._append_status_circle(text, check_result.rsi_check_result.ok)
         else:
             text.append(
                 "N/A",
@@ -165,22 +156,20 @@ class StatusLine:
 
     def append_ha_part(
         self,
-        check_details,
         entry_check_result,
         text,
     ):
         text.append(" | HA: ", style="cyan")
-        if check_details is not None:
-            ha = check_details.ha_revers_details
+        if entry_check_result is not None:
+            ha = entry_check_result.ha_revers_result.details
             text.append(
                 f"({ha.tf}m) [{ha.prev}→{ha.curr}]"
             )
 
-            if entry_check_result is not None:
-                self._append_status_circle(
-                    text,
-                    entry_check_result.ha.signal,
-                )
+            self._append_status_circle(
+                text,
+                entry_check_result.ha_revers_result.ok,
+            )
         else:
             text.append(
                 "N/A",
