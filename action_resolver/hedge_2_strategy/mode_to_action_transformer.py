@@ -9,7 +9,6 @@ from action_resolver.hedge_2_strategy.optimization_mng import (
     OptimizationResult,
 )
 from utils.utils import get_inverse_side
-from action_processor.action_source import ActionSource
 
 
 def transform(
@@ -43,7 +42,6 @@ def _transform_build(
         symbol=symbol,
         side=result.side,
         qty=result.qty,
-        source=ActionSource.HEDGE_OPEN
     )
 
 
@@ -69,5 +67,4 @@ def _transform_optimization(
         side=get_inverse_side(side),
         qty=result.qty,
         levels=levels,
-        source=ActionSource.HEDGE_CLOSE
     )

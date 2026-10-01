@@ -75,7 +75,11 @@ class EntryMng:
 
     def resolve(
         self,
-    ) -> tuple[ExecutionResult | None, EntryCheckResult]:
+    ) -> tuple[
+        ExecutionResult | None,
+        EntryCheckResult,
+        EntryCheckDetails,
+    ]:
         entry_check_result, entry_check_details = self.entry_checker.check()
 
         entry_allowed = entry_check_result.entry_allowed
@@ -97,4 +101,4 @@ class EntryMng:
         else:
             exec_result = None
 
-        return exec_result, entry_check_result
+        return exec_result, entry_check_result, entry_check_details

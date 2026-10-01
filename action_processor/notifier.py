@@ -132,7 +132,7 @@ class Notifier:
                 symbol = self.state_store.data.symbol
                 side = self.state_store.data.side
 
-                self.logger.info(
+                self.logger.debug(
                     f"[ENTRY BLOCKED BY DISTANCE] "
                     f"Symbol: {symbol} | Side: {side} | "
                     f"HA: PASS | RSI: PASS"

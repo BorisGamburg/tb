@@ -175,7 +175,7 @@ class CloseLimitMng:
         order_id = res["orderId"]
 
         # Лог
-        self.logger.info(
+        self.logger.debug(
             f"[CLOSE LIMIT] order placed | "
             f"side={side} | "
             f"qty={qty} | "
@@ -246,7 +246,7 @@ class CloseLimitMng:
         )
 
         # Лог
-        self.logger.info(
+        self.logger.debug(
             f"[CLOSE LIMIT] order filled | "
             f"side={side} | "
             f"qty={filled_qty} | "

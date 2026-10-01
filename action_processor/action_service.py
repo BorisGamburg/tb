@@ -92,7 +92,12 @@ class ActionService:
 
         if result.action_command.action == Action.OPEN:
             reason = result.action_command.reason
+            details = result.action_command.details
+            ha_reversal_tf = None
 
+            if details and details.entry_check:
+                ha_reversal_tf = details.entry_check.ha_revers_details.tf
+                
             if result.status == LimitOrderStatus.PARTIALLY_FILLED:
                 return (
                     "💎 LEVEL PARTIALLY OPENED\n"
@@ -100,8 +105,8 @@ class ActionService:
                     f"Side: {side}\n"
                     f"Qty: {result.qty}\n"
                     f"Price: {result.price}\n"
+                    f"HA reversal TF: {ha_reversal_tf}\n"
                     "Status: PARTIALLY_FILLED\n"
-                    f"Reason: {reason}\n"
                 )
 
             return (
@@ -110,11 +115,23 @@ class ActionService:
                 f"Side: {side}\n"
                 f"Qty: {result.qty}\n"
                 f"Price: {result.price}\n"
-                f"Reason: {reason}\n"
+                f"HA reversal TF: {ha_reversal_tf}\n"
             )
             
         
         if result.action_command.action == Action.CLOSE:
+            details = result.action_command.details
+
+            if details and details.bbw_exit:
+                return (
+                    "📉 LEVELS CLOSED\n"
+                    f"Symbol: {symbol}\n"
+                    f"Qty: {result.qty}\n"
+                    f"Price: {result.price}\n"
+                    f"BB TF: {details.bbw_exit.tf}\n"
+                    f"Exit: {details.bbw_exit.exit_type}\n"
+                )
+
             reason = result.action_command.reason
 
             return (
