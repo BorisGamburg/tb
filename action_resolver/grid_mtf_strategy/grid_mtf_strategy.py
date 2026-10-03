@@ -360,9 +360,10 @@ class GridMTFStrategy(BaseStrategy):
         bbw_check_details: BBWCheckDetails | None = None,
         guard_result: GuardResult | None = None,
     ):
-        last_price = self.proxy_driver.get_last_price(self.symbol)
+        ticker = self.proxy_driver.get_ticker(self.symbol)
         status_line = self.status_line.build(
-            price=last_price,
+            bid=float(ticker["bid"]),
+            ask=float(ticker["ask"]),
             entry_check_result=entry_check_result,
             rearm_check_result=rearm_check_result,
             bbw_check_details=bbw_check_details,

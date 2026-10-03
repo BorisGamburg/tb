@@ -1,10 +1,14 @@
 from pybit.unified_trading import HTTP
-from ks.keys import API_KEY, DB_PASSWORD
+from prog.managers.account_loader import load_account
 
-# Авторизация
+
+ACCOUNT_NAME = "bybit_live"
+account = load_account(ACCOUNT_NAME)
+
 session = HTTP(
-    api_key=API_KEY,
-    api_secret=DB_PASSWORD,
+    testnet=account.demo,
+    api_key=account.api_key,
+    api_secret=account.api_secret,
 )
 
 def calc_total_pnl(positions):
@@ -96,6 +100,12 @@ def get_active_positions(session, settle_coin="USDT"):
 
 def main():
     positions = get_active_positions(session, "USDT")
+    equity = float(
+        session.get_wallet_balance(
+            accountType="UNIFIED",
+            coin="USDT",
+        )["result"]["list"][0]["coin"][0]["walletBalance"]
+    )
     
     if not positions:
         print("\nНет открытых позиций.")
@@ -104,7 +114,7 @@ def main():
     # Сортировка по символу (алфавит) и стороне (Buy/Sell)
     positions = sorted(positions, key=lambda x: (x.get('symbol', ''), x.get('side', '')))
 
-    header = f"\n{'#':>2} | {'Символ':<12} | {'Сторона':<5} | {'Размер':>10} | {'Стоимость $':>12} | {'Вход':>10} | {'PnL (USDT)':>10}"
+    header = f"\n{'#':>2} | {'Символ':<12} | {'Сторона':<5} | {'Размер':>10} | {'Стоимость $':>12} | {'% депо':>8} | {'Вход':>10} | {'PnL (USDT)':>10}"
     print(header)
     print("-" * len(header))
 
@@ -114,28 +124,32 @@ def main():
     
     for i, pos in enumerate(positions, start=1):
         symbol = pos.get('symbol')
-        
+
         # Если это не первая итерация и символ изменился — рисуем черту
         if last_symbol is not None and symbol != last_symbol:
             print("-" * len(header))
-        
+
         last_symbol = symbol
 
         side = pos.get('side')
+        side_display = "BUY" if side == "Buy" else "SELL"
+
         size = float(pos.get('size', 0))
         entry = round(float(pos.get('avgPrice', 0)), 4)
         mark_price = float(pos.get('markPrice', 0))
         pnl = round(float(pos.get('unrealisedPnl', 0)), 2)
-        
+
         value_usdt = round(size * mark_price, 2)
-        
+        value_pct = value_usdt / equity * 100 if equity > 0 else 0.0
+
+        print(
+            f"{i:>2}.| {symbol:<12} | {side_display:<7} | "
+            f"{size:>10} | {value_usdt:>12.2f} | "
+            f"{value_pct:>7.2f}% | {entry:>10} | {pnl:>10}"
+        )
+
         total_pnl += pnl
         total_value += value_usdt
-
-        side_display = "BUY" if side == "Buy" else "SELL"
-        
-        print(f"{i:>2}.| {symbol:<12} | {side_display:<7} | {size:>10} | {value_usdt:>12.2f} | {entry:>10} | {pnl:>10}")
-
 
     print("=" * len(header)) # Итоговая черта жирнее
     print(f"Общая стоимость всех позиций: {total_value:.2f} USDT")
@@ -143,12 +157,11 @@ def main():
     print(f"Всего активных позиций:       {len(positions)}")
 
         # === RISK OBSERVER ===
-    EQUITY = 200.0               # твой депозит
     PER_SYMBOL_LIMIT = 10.0      # USDT, пока консервативно
 
     risk = collect_risk_metrics(
         positions,
-        equity=EQUITY,
+        equity=equity,
         per_symbol_limit=PER_SYMBOL_LIMIT
     )
 
@@ -165,8 +178,8 @@ def main():
     for sym, data in risk['net_by_symbol'].items():
         net_val = data['exposure']
         pnl_val = data['pnl']
-        pnl_pct = (pnl_val / EQUITY) * 100 if EQUITY > 0 else 0
-        net_pct_of_depo = (net_val / EQUITY) * 100 if EQUITY > 0 else 0
+        pnl_pct = (pnl_val / equity) * 100 if equity > 0 else 0
+        net_pct_of_depo = (net_val / equity) * 100 if equity > 0 else 0
         
         # Подкрасим вывод: + для лонгов/профита, - для шортов/убытка (опционально)
         print(f"{sym:<12} | {net_val:>10.2f} | {net_pct_of_depo:>9.2f}% | {pnl_val:>8.2f} | {pnl_pct:>+8.2f}%")

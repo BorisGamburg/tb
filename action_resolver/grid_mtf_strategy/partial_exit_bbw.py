@@ -159,7 +159,6 @@ class PartialExitBBW:
     def check(self):
         # Получаем данные для проверки выхода
         exit_context = self._get_exit_context()
-
         if exit_context is None:
             return (
                 False,
@@ -169,6 +168,7 @@ class PartialExitBBW:
                     bb_cross_tp=None,
                     bb_width_tp=None,
                 ),
+                None,
             )
 
         # Распаковываем контекст выхода

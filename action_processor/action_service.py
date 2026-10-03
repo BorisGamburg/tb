@@ -3,7 +3,6 @@ from action_processor.accounting import Accounting
 from action_processor.bootstrap import AppContext
 from action_processor.state.state import State
 from action_processor.execution.execution_result import ExecutionResult
-from action_processor.trade_table_logger import TradeTableLogger
 from action_processor.action import Action, ActionCommand
 from action_processor.execution.limit_order_result import LimitOrderStatus
 from common.trading_info import TradingInfo
@@ -31,11 +30,6 @@ class ActionService:
             logger=app_ctx.logger,
         )
 
-        self.trade_table_logger = TradeTableLogger(
-            trade_logger=app_ctx.trade_logger,
-            state_store=state_store,
-        )
-
     def process_action(
         self,
         action_command: ActionCommand,
@@ -61,9 +55,6 @@ class ActionService:
             fee=exec_result.fee,
             levels=exec_result.action_command.levels,
         )
-
-        # Логируем результаты
-        self.trade_table_logger.log_trade_table(exec_result)
 
         return exec_result
 

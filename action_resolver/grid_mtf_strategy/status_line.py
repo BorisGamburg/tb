@@ -10,7 +10,8 @@ class StatusLine:
 
     def build(
         self,
-        price: float,
+        bid: float,
+        ask: float,
         entry_check_result: EntryCheckResult | None = None,
         rearm_check_result: RearmCheckResult | None = None,
         bbw_check_details: BBWCheckDetails | None = None,
@@ -18,7 +19,7 @@ class StatusLine:
     ) -> Text:
 
         text = Text()
-        text.append(f"PRICE: {price:.6f}  ", style="cyan")
+        text.append(f"BID/ASK: {bid:.6f} — {ask:.6f}  ", style="cyan")
         text.append(self._build_entry_status(entry_check_result))
         text.append(self._build_exit_status(
             rearm_check_result,
@@ -206,6 +207,17 @@ class StatusLine:
                 f"({bbw_check_details.tf}m) "
                 f"[cross={bbw_check_details.bb_cross_tp:.6f} "
                 f"width={bbw_check_details.bb_width_tp:.6f}]"
+            )
+
+            text.append(
+                " | MIN_DIST: "
+                f"cur={bbw_check_details.distance:.6f} "
+                f"{'>' if bbw_check_details.distance >= bbw_check_details.min_distance else '<'} "
+                f"min={bbw_check_details.min_distance:.6f}"
+            )
+            self._append_status_circle(
+                text,
+                bbw_check_details.distance >= bbw_check_details.min_distance,
             )
         else:
             text.append(
