@@ -1,6 +1,12 @@
 import importlib
-from accounts.account import Account
+import sys
+from pathlib import Path
 
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from accounts.account import Account
 
 
 def load_account(account_name: str) -> Account:

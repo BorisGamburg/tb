@@ -1,74 +1,10 @@
 import pandas as pd
-from pybit.unified_trading import HTTP
-import time
-from pprint import pprint
-from prog.managers.account_loader import load_account
 import sys
 
-ACCOUNT_NAME = "bybit_live"
-account = load_account(ACCOUNT_NAME)
-
-session = HTTP(
-    testnet=account.demo,
-    api_key=account.api_key,
-    api_secret=account.api_secret,
+from common.bybit_executions import (
+    get_full_history_by_weeks,
+    get_ticker_price,
 )
-
-def get_full_history_by_weeks(symbol, period_days):
-    all_trades = []
-    
-    # Константы в миллисекундах
-    MS_IN_DAY = 24 * 60 * 60 * 1000
-    WINDOW_SIZE = 7 * MS_IN_DAY  # Окно в 7 дней
-    
-    # Начало
-    start_search = int((time.time() - period_days * 24 * 60 * 60) * 1000)
-    now = int(time.time() * 1000)
-    
-    current_start = start_search
-
-    print(f"Начинаю сканирование истории по 7 дней...")
-
-    while current_start < now:
-        date_str = time.strftime('%Y-%m-%d', time.localtime(current_start / 1000))
-        print(f"date: {date_str}")
-        current_end = current_start + WINDOW_SIZE
-        if current_end > now:
-            current_end = now
-            
-        cursor = None
-        
-        # Внутри каждой недели используем пагинацию (cursor), если сделок много
-        while True:
-            response = session.get_executions(
-                category="linear",
-                symbol=symbol,
-                startTime=current_start,
-                endTime=current_end,
-                limit=100,
-                cursor=cursor
-            )
-            
-            if response['retCode'] == 0:
-                trades = response['result']['list']
-                if trades:
-                    print(f"  Получено сделок: {len(trades)}")
-                    all_trades.extend(trades)
-                
-                cursor = response['result'].get('nextPageCursor')
-                if not cursor:
-                    break
-            else:
-                print(f"Ошибка API: {response['retMsg']}")
-                break
-        
-        # Сдвигаем окно на следующую неделю
-        current_start = current_end + 1
-        
-        # Чтобы не спамить API слишком быстро
-        # time.sleep(0.05) 
-
-    return pd.DataFrame(all_trades)
 
 def calc_true_pnl(df, current_price):
     """
@@ -328,8 +264,7 @@ if __name__ == "__main__":
         sys.exit(0)
     
     # Получаем текущую цену
-    ticker_resp = session.get_tickers(category="linear", symbol=symbol)
-    cur_price = float(ticker_resp['result']['list'][0]['lastPrice'])
+    cur_price = get_ticker_price(symbol)
     #print(f"\nТекущая цена {symbol}: {cur_price}")
     
     # Рассчитываем 3 величины
