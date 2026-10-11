@@ -155,8 +155,8 @@ class EntryChecker:
         level = len(entries)
         tpl = self.map_mng.get_template_by_level(level)
 
-        distance_bbw_tf = tpl.distance_bbw_tf
-        distance_bbw_multiplier = tpl.distance_bbw_multiplier
+        distance_bbw_tf = tpl.entry_dist_tf_bbw
+        distance_bbw_multiplier = tpl.entry_dist_multiplier_bbw
 
         bb = self.bb_service.get_live(distance_bbw_tf)
         bbw = bb["width_abs"]
@@ -255,9 +255,9 @@ class EntryChecker:
         entries = self.state_store.stack_mng.data.entries
         level = len(entries)
         tpl = self.map_mng.get_template_by_level(level)
-        bb = self.bb_service.get_live(tpl.htf_filter)
+        bb = self.bb_service.get_live(tpl.entry_bb_rearm_rsi_htf)
         bb_mid = bb["mid"]
-        return bb_mid, tpl.htf_filter
+        return bb_mid, tpl.entry_bb_rearm_rsi_htf
     
     def _check_rsi(self) -> RsiCheckResult:
         entries = self.state_store.stack_mng.data.entries
@@ -265,16 +265,16 @@ class EntryChecker:
         tpl = self.map_mng.get_template_by_level(level)
 
         rsi_tf = self._get_rsi_last_closed(
-            tpl.tf_filter
+            tpl.entry_tf_ha_rsi
         )
-        tf_threshold = tpl.tf_rsi_entry_threshold
+        tf_threshold = tpl.entry_tf_threshold_rsi
         rsi_tf_entry_ok = self._is_rsi_entry_threshold_ok(
             rsi_tf,
             tf_threshold
         )
 
         rsi_check_details = RsiCheckDetails(
-            tf=tpl.tf_filter,
+            tf=tpl.entry_tf_ha_rsi,
             value=rsi_tf,
             threshold=tf_threshold,
         )

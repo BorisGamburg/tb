@@ -86,10 +86,10 @@ class RearmMng:
         )
 
         rsi = self._get_rsi_last_closed(
-            tpl.htf_filter
+            tpl.entry_bb_rearm_rsi_htf
         )
 
-        threshold = tpl.htf_rsi_rearm_threshold
+        threshold = tpl.rearm_rsi_htf_threshold
 
         rsi_ok = self._is_rsi_ok(
             rsi,

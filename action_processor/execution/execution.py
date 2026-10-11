@@ -1,7 +1,5 @@
 from action_processor.action import Action, ActionCommand
-from proxy_server.proxy_driver import ProxyDriver
 from action_processor.execution.execution_waiter import ExecutionWaiter
-import logging
 from action_processor.execution.execution_result import ExecutionResult
 from utils.utils import get_inverse_side
 from action_processor.execution.open_active_limit_mng import OpenActiveLimitMng

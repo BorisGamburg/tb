@@ -10,14 +10,14 @@ class GridMTFTemplate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    tf_filter: AllowedTimeframes              
-    tf_rsi_entry_threshold: float
-    htf_filter: AllowedTimeframes
-    htf_rsi_rearm_threshold: float
-    distance_bbw_tf: AllowedTimeframes
-    distance_bbw_multiplier: float   
-    bbw_exit_tf: AllowedTimeframes 
-    qty_pct: Pct            
+    entry_tf_ha_rsi: AllowedTimeframes
+    entry_tf_threshold_rsi: float
+    entry_bb_rearm_rsi_htf: AllowedTimeframes
+    rearm_rsi_htf_threshold: float
+    entry_dist_tf_bbw: AllowedTimeframes
+    entry_dist_multiplier_bbw: float
+    exit_tf_bbw: AllowedTimeframes
+    qty_pct: Pct
 
 
 class GridMTFSchema(BaseModel):

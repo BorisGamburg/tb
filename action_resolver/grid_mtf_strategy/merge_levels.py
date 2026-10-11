@@ -36,14 +36,17 @@ class MergeLevels:
         return merge_threshold
 
     def __get_levels_to_merge(self, merge_threshold) -> list[StackElem]:
-        # Получаем отсортированные уровни
+        # Получаем отсортированные уровни.
+        # После sort_stack последний элемент (entries[-1]) -- самый свежий
+        # уровень (для Sell -- самый высокий, для Buy -- самый низкий).
         self.state_store.stack_mng.sort_stack(self.side)
         levels = self.state_store.stack_mng.data.entries
 
         # Ищем группу маленьких уровней
         small_levels = []
         total_qty = 0.0
-        for level in levels:
+
+        for index, level in enumerate(levels):
             # Если размер уровня превышает порог -> обнуляем накопленные уровни и размер
             if level.qty >= merge_threshold:
                 small_levels = []
@@ -54,8 +57,12 @@ class MergeLevels:
             small_levels.append(level)
             total_qty += level.qty
 
-            # Если размер накоплен -> выходим
-            if total_qty > merge_threshold:
+            # Размер накоплен, но объединять можно только если после группы
+            # есть ещё один уровень (триггер). Триггер в группу не входит
+            # и остаётся отдельным уровнем на текущей цене, поэтому после
+            # merge новый вход не откроется. Если триггера нет -> ждём.
+            has_trigger = index + 1 < len(levels)
+            if total_qty > merge_threshold and has_trigger:
                 return small_levels
 
         # Подходящая группа не найдена -> выходим
