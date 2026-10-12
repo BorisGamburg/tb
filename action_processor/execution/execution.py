@@ -19,6 +19,7 @@ class Execution:
         self.proxy_driver = app_ctx.proxy_driver
         self.price_service = app_ctx.price_service
         self.logger = app_ctx.logger
+        self.telegram = app_ctx.telegram
 
         self.execution_waiter = ExecutionWaiter(self.proxy_driver)
         self.open_active_limit_mng = OpenActiveLimitMng(
@@ -86,6 +87,9 @@ class Execution:
             executed=executed,
             status=status,
         )
+
+        if exec_result.executed:
+            self.notify_telegram(exec_result)        
 
         return exec_result
 
@@ -173,3 +177,76 @@ class Execution:
             executed,
             order_result.status,
         )
+
+    def notify_telegram(self, exec_result: ExecutionResult) -> None:
+        tg_msg = self._build_message(exec_result)
+        if tg_msg and self.telegram:
+            self.telegram.send_telegram_message(tg_msg)  
+
+    def _build_message(
+        self,
+        result: ExecutionResult,
+    ) -> str | None:
+        symbol = result.action_command.symbol
+        side = result.action_command.side
+
+        if result.action_command.action == Action.OPEN:
+            details = result.action_command.details
+            ha_reversal_tf = None
+
+            if details and details.entry_check:
+                ha_reversal_tf = details.entry_check.ha_revers_result.details.tf
+
+            if result.status == LimitOrderStatus.PARTIALLY_FILLED:
+                return (
+                    "💎 LEVEL PARTIALLY OPENED\n"
+                    f"Symbol: {symbol}\n"
+                    f"Side: {side}\n"
+                    f"Qty: {result.qty}\n"
+                    f"Price: {result.price}\n"
+                    f"HA reversal TF: {ha_reversal_tf}\n"
+                    "Status: PARTIALLY_FILLED\n"
+                )
+
+            return (
+                "💎 LEVEL OPENED\n"
+                f"Symbol: {symbol}\n"
+                f"Side: {side}\n"
+                f"Qty: {result.qty}\n"
+                f"Price: {result.price}\n"
+                f"HA reversal TF: {ha_reversal_tf}\n"
+            )
+
+        if result.action_command.action in (Action.CLOSE, Action.CLOSE_PARTIAL):            
+            details = result.action_command.details
+
+            if details and details.bbw_exit:
+                return (
+                    "📉 LEVELS CLOSED\n"
+                    f"Symbol: {symbol}\n"
+                    f"Qty: {result.qty}\n"
+                    f"Price: {result.price}\n"
+                    f"BB TF: {details.bbw_exit.tf}\n"
+                    f"Exit: {details.bbw_exit.exit_type}\n"
+                )
+
+            reason = result.action_command.reason
+
+            return (
+                "📉 LEVELS CLOSED\n"
+                f"Symbol: {symbol}\n"
+                f"Qty: {result.qty}\n"
+                f"Price: {result.price}\n"
+                f"Reason: {reason}\n"
+            )
+
+        if result.action_command.action == Action.CLOSE_POSITION:
+            return (
+                "📉 POSITION CLOSED\n"
+                f"Symbol: {symbol}\n"
+                f"Side: {side}\n"
+                f"Qty: {result.qty}\n"
+                f"Price: {result.price}\n"
+            )        
+
+        return None            

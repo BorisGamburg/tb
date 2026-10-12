@@ -3,8 +3,7 @@ from action_processor.accounting import Accounting
 from action_processor.bootstrap import AppContext
 from action_processor.state.state import State
 from action_processor.execution.execution_result import ExecutionResult
-from action_processor.action import Action, ActionCommand
-from action_processor.execution.limit_order_result import LimitOrderStatus
+from action_processor.action import ActionCommand
 from common.trading_info import TradingInfo
 
 
@@ -18,7 +17,6 @@ class ActionService:
     ):
         self.logger = app_ctx.logger
         self.state_store = state_store
-        self.telegram = app_ctx.telegram
         
         self.execution = Execution(
             app_ctx=app_ctx,
@@ -45,7 +43,6 @@ class ActionService:
 
         # Уведомляем о фактическом исполнении
         self.log_execution(exec_result)
-        self.notify_telegram(exec_result)
 
         # Запускаем Accounter
         self.accounting.apply(
@@ -66,75 +63,6 @@ class ActionService:
             f"| price={exec_result.price}"
         )
     
-    def notify_telegram(self, exec_result: ExecutionResult):
-        tg_msg = self._build_message(exec_result)
-        if tg_msg and self.telegram:
-            self.telegram.send_telegram_message(tg_msg)        
-
-    def _build_message(
-        self,
-        result: ExecutionResult,
-    ) -> str | None:
-        """
-        Формирует текст уведомления.
-        """
-        symbol = self.state_store.data.symbol
-        side = self.state_store.data.side
-
-        if result.action_command.action == Action.OPEN:
-            reason = result.action_command.reason
-            details = result.action_command.details
-            ha_reversal_tf = None
-
-            if details and details.entry_check:
-                ha_reversal_tf = details.entry_check.ha_revers_result.details.tf
-                
-            if result.status == LimitOrderStatus.PARTIALLY_FILLED:
-                return (
-                    "💎 LEVEL PARTIALLY OPENED\n"
-                    f"Symbol: {symbol}\n"
-                    f"Side: {side}\n"
-                    f"Qty: {result.qty}\n"
-                    f"Price: {result.price}\n"
-                    f"HA reversal TF: {ha_reversal_tf}\n"
-                    "Status: PARTIALLY_FILLED\n"
-                )
-
-            return (
-                "💎 LEVEL OPENED\n"
-                f"Symbol: {symbol}\n"
-                f"Side: {side}\n"
-                f"Qty: {result.qty}\n"
-                f"Price: {result.price}\n"
-                f"HA reversal TF: {ha_reversal_tf}\n"
-            )
-            
-        
-        if result.action_command.action == Action.CLOSE:
-            details = result.action_command.details
-
-            if details and details.bbw_exit:
-                return (
-                    "📉 LEVELS CLOSED\n"
-                    f"Symbol: {symbol}\n"
-                    f"Qty: {result.qty}\n"
-                    f"Price: {result.price}\n"
-                    f"BB TF: {details.bbw_exit.tf}\n"
-                    f"Exit: {details.bbw_exit.exit_type}\n"
-                )
-
-            reason = result.action_command.reason
-
-            return (
-                "📉 LEVELS CLOSED\n"
-                f"Symbol: {symbol}\n"
-                f"Qty: {result.qty}\n"
-                f"Price: {result.price}\n"
-                f"Reason: {reason}\n"
-            )
-
-        return None
-
     def notify_action(self, act_cmd: ActionCommand) -> None:
         action = act_cmd.action.value.upper()
         reason = act_cmd.reason or "N/A"
