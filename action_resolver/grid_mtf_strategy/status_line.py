@@ -1,12 +1,17 @@
 from rich.text import Text
 
 from action_resolver.grid_mtf_strategy.entry_checker import EntryCheckResult
-from action_resolver.grid_mtf_strategy.rearm_manager import RearmCheckResult
+from action_resolver.grid_mtf_strategy.rearm_manager import (
+    RearmCheckResult,
+    RearmRSIStatus,
+)
 from action_processor.action_guard import GuardResult
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import BBWCheckDetails
 
 
 class StatusLine:
+    def __init__(self, side: str):
+        self.side = side    
 
     def build(
         self,
@@ -16,15 +21,14 @@ class StatusLine:
         rearm_check_result: RearmCheckResult | None = None,
         bbw_check_details: BBWCheckDetails | None = None,
         guard_result: GuardResult | None = None,
+        rearm_rsi_status: RearmRSIStatus | None = None,        
     ) -> Text:
 
         text = Text()
         text.append(f"BID/ASK: {bid:.6f} — {ask:.6f}  ", style="cyan")
         text.append(self._build_entry_status(entry_check_result))
-        text.append(self._build_exit_status(
-            rearm_check_result,
-            bbw_check_details,
-        ))
+        text.append(self._build_rearm_status(rearm_rsi_status))
+        text.append(self._build_exit_status(bbw_check_details=bbw_check_details))
         text.append(self._build_guard_status(guard_result))
 
         return text
@@ -179,29 +183,13 @@ class StatusLine:
 
     def _build_exit_status(
         self,
-        rearm_check_result: RearmCheckResult | None = None,
         bbw_check_details: BBWCheckDetails | None = None,
     ) -> Text:
 
         text = Text()
 
-        text.append("\nEXIT  | RSI: ", style="cyan")
-        if rearm_check_result is not None:
-            text.append(
-                f"({rearm_check_result.rsi:.1f}/"
-                f"{rearm_check_result.rsi_threshold:.0f})"
-            )
-            self._append_status_circle(
-                text,
-                rearm_check_result.rsi_ok,
-            )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
+        text.append("\nEXIT  | BBW: ", style="cyan")        
 
-        text.append(" | BBW: ", style="cyan")
         if bbw_check_details is not None:
             text.append(
                 f"({bbw_check_details.tf}m) "
@@ -226,6 +214,7 @@ class StatusLine:
             )
 
         return text
+    
     def _build_guard_status(
         self,
         guard_result: GuardResult | None = None,
@@ -238,3 +227,25 @@ class StatusLine:
             self._append_status_circle(text, guard_result.allowed)
 
         return text
+
+    def _build_rearm_status(
+        self,
+        rearm_rsi_status: RearmRSIStatus | None = None,
+    ) -> Text:
+        text = Text()
+
+        text.append("\nREARM RSI: ", style="cyan")
+        if rearm_rsi_status is not None:
+            operator = "≥" if self.side == "Sell" else "≤"
+
+            text.append(
+                f"({rearm_rsi_status.rsi_tf}m) "
+                f"cur:{rearm_rsi_status.rsi:.1f} "
+                f"{operator} "
+                f"thres:{rearm_rsi_status.rsi_threshold:.1f}"
+            )
+            self._append_status_circle(text, rearm_rsi_status.rsi_ok)
+        else:
+            text.append("N/A", style="dim")
+
+        return text    

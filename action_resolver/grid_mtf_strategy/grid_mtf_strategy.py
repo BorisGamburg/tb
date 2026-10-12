@@ -8,7 +8,7 @@ from action_resolver.grid_mtf_strategy.partial_exit_cross import PartialExitCros
 from action_resolver.grid_mtf_strategy.breakeven_checker import BreakevenChecker
 from action_resolver.grid_mtf_strategy.partial_exit_bbw import PartialExitBBW, BBWCheckDetails
 from action_resolver.grid_mtf_strategy.profit_filter import ProfitFilter
-from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng, RearmCheckResult
+from action_resolver.grid_mtf_strategy.rearm_manager import RearmMng, RearmCheckResult, RearmRSIStatus
 from common.trading_info import TradingInfo
 from action_processor.action_service import ActionService
 from action_processor.action import Action, ActionCommand, ActionDetails
@@ -126,7 +126,7 @@ class GridMTFStrategy(BaseStrategy):
             fee_taker=self.trading_info.fee_taker,
         )
 
-        self.status_line = StatusLine()
+        self.status_line = StatusLine(side=self.side)
 
         self._log_parameters()
 
@@ -361,13 +361,26 @@ class GridMTFStrategy(BaseStrategy):
         guard_result: GuardResult | None = None,
     ):
         ticker = self.proxy_driver.get_ticker(self.symbol)
+
+        if rearm_check_result is not None:
+            rearm_rsi_status = RearmRSIStatus(
+                rsi=rearm_check_result.rsi,
+                rsi_threshold=rearm_check_result.rsi_threshold,
+                rsi_tf=rearm_check_result.rsi_tf,
+                rsi_ok=rearm_check_result.rsi_ok,
+            )
+        elif self.state_store.stack_mng.data.entries:
+            rearm_rsi_status = self.rearm_manager.get_rsi_status()
+        else:
+            rearm_rsi_status = None
+
         status_line = self.status_line.build(
             bid=float(ticker["bid"]),
             ask=float(ticker["ask"]),
             entry_check_result=entry_check_result,
-            rearm_check_result=rearm_check_result,
             bbw_check_details=bbw_check_details,
             guard_result=guard_result,
+            rearm_rsi_status=rearm_rsi_status,
         )
         return status_line
         

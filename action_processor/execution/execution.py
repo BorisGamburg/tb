@@ -191,11 +191,16 @@ class Execution:
         side = result.action_command.side
 
         if result.action_command.action == Action.OPEN:
-            details = result.action_command.details
-            ha_reversal_tf = None
+            if result.action_command.reason == "REARM":
+                opening_context = "Reason: REARM\n"
+            else:
+                details = result.action_command.details
+                ha_reversal_tf = None
 
-            if details and details.entry_check:
-                ha_reversal_tf = details.entry_check.ha_revers_result.details.tf
+                if details and details.entry_check:
+                    ha_reversal_tf = details.entry_check.ha_revers_result.details.tf
+
+                opening_context = f"HA reversal TF: {ha_reversal_tf}\n"
 
             if result.status == LimitOrderStatus.PARTIALLY_FILLED:
                 return (
@@ -204,7 +209,7 @@ class Execution:
                     f"Side: {side}\n"
                     f"Qty: {result.qty}\n"
                     f"Price: {result.price}\n"
-                    f"HA reversal TF: {ha_reversal_tf}\n"
+                    f"{opening_context}"
                     "Status: PARTIALLY_FILLED\n"
                 )
 
@@ -214,7 +219,7 @@ class Execution:
                 f"Side: {side}\n"
                 f"Qty: {result.qty}\n"
                 f"Price: {result.price}\n"
-                f"HA reversal TF: {ha_reversal_tf}\n"
+                f"{opening_context}"
             )
 
         if result.action_command.action in (Action.CLOSE, Action.CLOSE_PARTIAL):            

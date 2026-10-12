@@ -17,6 +17,14 @@ class RearmCheckResult:
     rsi_ok: bool
     rsi: float
     rsi_threshold: float
+    rsi_tf: int
+
+@dataclass
+class RearmRSIStatus:
+    rsi: float
+    rsi_threshold: float
+    rsi_tf: int
+    rsi_ok: bool    
 
 class RearmMng:
 
@@ -78,26 +86,28 @@ class RearmMng:
         return distance_ok    
 
     def is_rearm_rsi_ok(self, entries):
+        status = self.get_rsi_status(entries)
+
+        return status.rsi_ok, status.rsi, status.rsi_threshold, status.rsi_tf
+
+    def get_rsi_status(self, entries=None):
+        if entries is None:
+            entries = self.state_store.stack_mng.data.entries
 
         level = len(entries) - 1
-
-        tpl = self.map_mng.get_template_by_level(
-            level
-        )
-
-        rsi = self._get_rsi_last_closed(
-            tpl.entry_bb_rearm_rsi_htf
-        )
-
+        tpl = self.map_mng.get_template_by_level(level)
+        rsi_tf = tpl.entry_bb_rearm_rsi_htf
+        rsi = self._get_rsi_last_closed(rsi_tf)
         threshold = tpl.rearm_rsi_htf_threshold
+        rsi_ok = self._is_rsi_ok(rsi, threshold)
 
-        rsi_ok = self._is_rsi_ok(
-            rsi,
-            threshold,
+        return RearmRSIStatus(
+            rsi=rsi,
+            rsi_threshold=threshold,
+            rsi_tf=rsi_tf,
+            rsi_ok=rsi_ok,
         )
 
-        return rsi_ok, rsi, threshold
-    
     def check(self):
 
         entries = self.state_store.stack_mng.data.entries
@@ -112,13 +122,14 @@ class RearmMng:
             entries,
         )
 
-        rsi_ok, rsi, rsi_threshold = self.is_rearm_rsi_ok(entries)
+        rsi_ok, rsi, rsi_threshold, rsi_tf = self.is_rearm_rsi_ok(entries)
 
         return RearmCheckResult(
             distance_ok=distance_ok,
             rsi_ok=rsi_ok,
             rsi=rsi,
             rsi_threshold=rsi_threshold,
+            rsi_tf=rsi_tf,
         )
 
     def _get_qty(self):
