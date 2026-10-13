@@ -27,7 +27,6 @@ class DirCtx:
 @dataclass(slots=True)
 class AppContext:
     logger: logging.Logger
-    trade_logger: logging.Logger
 
     telegram: Telegram
     proxy_driver: ProxyDriver
@@ -95,7 +94,7 @@ def init_infrastruct(
     console = Console()
 
     # Инициализируем логгеры
-    logger, trade_logger = init_loggers(config_file_rel_path, dir_ctx, console)
+    logger = init_loggers(config_file_rel_path, dir_ctx, console)
 
     # Инициализируем телеграм
     telegram = init_telegram(dir_ctx, logger)
@@ -112,7 +111,6 @@ def init_infrastruct(
     # Возвращаем контекст приложения
     return AppContext(
         logger=logger,
-        trade_logger=trade_logger,
         telegram=telegram,
         proxy_driver=proxy_driver,
         price_service=price_service,
@@ -151,12 +149,7 @@ def init_loggers(config_file_rel_path, dir_ctx, console):
         console=console
     )
 
-    trade_logger = setup_trade_logger(
-        config_tag=config_tag,
-        log_dir=instrument_log_dir,
-        console=console
-    )
-    return logger,trade_logger
+    return logger
 
 # ============================================================
 # LOGGER
@@ -245,59 +238,3 @@ def setup_logger(
     pybit_logger.setLevel(logging.WARNING)
 
     return logger
-
-
-# ============================================================
-# TRADE LOGGER
-# ============================================================
-
-def setup_trade_logger(
-    config_tag: str,
-    log_dir: Path,
-    console: Console,
-) -> logging.Logger:
-
-    trade_logger = logging.getLogger(
-        f"{config_tag}_trades"
-    )
-
-    if trade_logger.handlers:
-        return trade_logger
-
-    trade_logger.setLevel(
-        logging.INFO
-    )
-
-    trade_logger.propagate = False
-
-    # [УДАЛЕНЫ 14 СТРОК НИЖЕ] (Было: блок CONSOLE (RICH), добавлявший RichHandler в trade_logger)
-
-    # =========================
-    # FILE LOG
-    # =========================
-
-    trade_log_path = log_dir / f"{config_tag}_trades.log"
-    trade_log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    is_new_file = not trade_log_path.exists() or trade_log_path.stat().st_size == 0
-
-    file_handler = logging.FileHandler(
-        trade_log_path,
-        encoding="utf-8",
-    )
-
-    file_handler.setFormatter(
-        logging.Formatter("%(message)s")
-    )
-
-    trade_logger.addHandler(file_handler)
-
-    if is_new_file:
-        header = (
-            f"===================================================================================================================================================\n"
-            f"TIMESTAMP        | EVENT | SYMBOL       | SIDE | LVL | QTY     | EXEC_PRICE | ENTRY_PRICE| GROSS_USD ($) | GROSS_% | FEES ($)  | NET_USD ($)  | NET_%  | REASON\n"
-            f"==================================================================================================================================================="
-        )
-        trade_logger.info(header)
-
-    return trade_logger

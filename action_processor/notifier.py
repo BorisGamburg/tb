@@ -7,12 +7,10 @@ class Notifier:
     def __init__(
         self,
         logger,
-        trade_logger,
         telegram,
         state_store: State,
     ):
         self.logger = logger
-        self.trade_logger = trade_logger
         self.telegram = telegram
         self.state_store = state_store
 

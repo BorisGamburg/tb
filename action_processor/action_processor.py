@@ -59,7 +59,6 @@ class ActionProcessor:
         # 6. Инициализация Notifier
         self.notifier = Notifier(
             logger=self.logger,
-            trade_logger=self.app_ctx.trade_logger,
             telegram=self.telegram,
             state_store=self.state_store,
         )

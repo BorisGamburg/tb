@@ -158,23 +158,18 @@ class GridMTFStrategy(BaseStrategy):
                 status=self._get_status_line(),
             )
 
-        # Если закрывать нельзя -> выходим        
+        # Проверяем, разрешено ли закрытие
         guard_result = self.is_exit_allowed()
-        if not guard_result.allowed:
-            return ResolveResult(
-                executed=False,
-                status=self._get_status_line(
-                    guard_result=guard_result,
-                ),
-            )
-        
-        # Запускаем стратегию
+
+        # Запускаем стратегию; guard ограничивает только выход
         (
             exec_result,
             entry_check_result,
             rearm_check_result,
             bbw_check_details,
-        ) = self._resolve_action()
+        ) = self._resolve_action(
+            allow_exit=guard_result.allowed,
+        )
 
         if exec_result is not None:
             executed = exec_result.executed
@@ -310,35 +305,41 @@ class GridMTFStrategy(BaseStrategy):
 
     def _resolve_action(
         self,
+        allow_exit: bool = True,
     ) -> tuple[
         ExecutionResult | None,
         EntryCheckResult | None,
         RearmCheckResult | None,
         BBWCheckDetails | None
     ]:
-        # Выход по пересечению предыдущего уровня
-        cross_exit_result = self._resolve_exit_cross()
-        if cross_exit_result.signal:
-            return (
-                cross_exit_result.execution_result,
-                None,
-                None,
-                None,
-            )
-                
-        # Выход по BBW
-        (
-            bbw_exit_result,
-            rearm_check_result,
-            bbw_check_details,
-        ) = self._resolve_bbw_exit()
-        if bbw_exit_result.signal:
-            return (
-                bbw_exit_result.execution_result,
-                None,
+        bbw_check_details = None
+        rearm_check_result = None
+
+        if allow_exit:
+            # Выход по пересечению предыдущего уровня
+            cross_exit_result = self._resolve_exit_cross()
+            if cross_exit_result.signal:
+                return (
+                    cross_exit_result.execution_result,
+                    None,
+                    None,
+                    None,
+                )
+
+            # Выход по BBW
+            (
+                bbw_exit_result,
                 rearm_check_result,
                 bbw_check_details,
-            )
+            ) = self._resolve_bbw_exit()
+
+            if bbw_exit_result.signal:
+                return (
+                    bbw_exit_result.execution_result,
+                    None,
+                    rearm_check_result,
+                    bbw_check_details,
+                )
 
         # Проверка на вход
         (
@@ -349,7 +350,7 @@ class GridMTFStrategy(BaseStrategy):
         return (
             exec_result,
             entry_check_result,
-            None,
+            rearm_check_result,
             bbw_check_details,
         )
 
