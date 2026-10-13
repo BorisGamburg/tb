@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 import logging
@@ -11,6 +12,7 @@ from rich.logging import RichHandler
 from utils.telegram import Telegram
 from proxy_server.proxy_driver import ProxyDriver
 from common.market_service import MarketService
+from action_processor.execution.order_storage import OrderStorage
 
 if TYPE_CHECKING:
     from action_processor.notifier import Notifier
@@ -38,8 +40,9 @@ class AppContext:
 
     dir_ctx: DirCtx
     notifier: Notifier | None = None
+    order_storage: OrderStorage | None = None
 
-# Подготавливаем каталоги проекта: root, log, state, config 
+# Подготавливаем каталоги проекта: root, log, state, config
 def prepare_dirs(
     project_root_dir: Path | None = None
 ) -> DirCtx:
@@ -89,7 +92,7 @@ def init_infrastruct(
     config_file = (
         dir_ctx.config_dir /
         config_file_rel_path
-    )    
+    )
 
     console = Console()
 
@@ -108,6 +111,19 @@ def init_infrastruct(
         proxy_driver=proxy_driver
     )
 
+    dsn = os.environ.get("PG_DSN")
+    order_storage = None
+
+    if dsn:
+        order_storage = OrderStorage(
+            dsn=dsn,
+            bot=config_file.stem,
+        )
+    else:
+        logger.warning(
+            "PG_DSN не задана. Запись результатов ордеров в PostgreSQL отключена."
+        )
+
     # Возвращаем контекст приложения
     return AppContext(
         logger=logger,
@@ -117,6 +133,7 @@ def init_infrastruct(
         config_file=config_file,
         console=console,
         dir_ctx=dir_ctx,
+        order_storage=order_storage,
     )
 
 def init_telegram(dir_ctx, logger):
@@ -190,7 +207,7 @@ def setup_logger(
         logging.Formatter(
             "%(message)s"
         )
-    )    
+    )
 
     logger.addHandler(
         rich_handler

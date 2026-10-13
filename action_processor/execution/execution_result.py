@@ -12,6 +12,10 @@ class ExecutionResult:
     qty: float
     fee: float
 
+    executed_at: int | None = None
+
     executed: bool = False
 
     status: LimitOrderStatus | None = None
+
+    order_id: str | None = None

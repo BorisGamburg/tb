@@ -32,7 +32,7 @@ class Execution:
             market_service=self.price_service,
             logger=self.logger,
         )
-        
+
     def _get_order_details(self, res, symbol):
         order_id = res["result"]["orderId"]
 
@@ -61,21 +61,26 @@ class Execution:
             raise RuntimeError(f"Market order failed: {res}")
 
         return res
-    
+
     def execute(self, act_cmd: ActionCommand) -> ExecutionResult:
         action = act_cmd.action
 
         if action == Action.OPEN:
-            price, qty, fee, executed, status = self._exec_open(act_cmd)
+            price, qty, fee, executed, status, order_id = self._exec_open(
+                act_cmd,
+            )
 
         elif action == Action.CLOSE:
-            price, qty, fee, executed, status = self._exec_close(act_cmd)
+            price, qty, fee, executed, status, order_id = self._exec_close(
+                act_cmd,
+            )
 
         elif action == Action.CLOSE_POSITION:
             price, qty, fee, executed, status = self._exec_close_position(
                 act_cmd,
             )
-            
+            order_id = None
+
         else:
             raise ValueError(f"Unknown Action: {action}")
 
@@ -86,10 +91,35 @@ class Execution:
             fee=fee,
             executed=executed,
             status=status,
+            order_id=order_id,
         )
 
         if exec_result.executed:
-            self.notify_telegram(exec_result)        
+            order_storage = self.app_ctx.order_storage
+
+            if (
+                order_storage is not None
+                and exec_result.order_id is not None
+                and exec_result.status is not None
+            ):
+                try:
+                    order_storage.save_order(
+                        order_id=exec_result.order_id,
+                        symbol=act_cmd.symbol,
+                        side=act_cmd.side,
+                        status=exec_result.status.value,
+                        filled_qty=exec_result.qty,
+                        avg_price=exec_result.price,
+                        fee=exec_result.fee,
+                    )
+                except Exception:
+                    self.logger.exception(
+                        "Failed to save order to PostgreSQL "
+                        f"| symbol={act_cmd.symbol} "
+                        f"| order_id={exec_result.order_id}"
+                    )
+
+            self.notify_telegram(exec_result)
 
         return exec_result
 
@@ -144,7 +174,7 @@ class Execution:
             symbol=result.symbol,
             side=result.side,
             qty=result.qty,
-            
+
         )
 
         return (
@@ -153,6 +183,7 @@ class Execution:
             order_result.fee,
             order_result.filled,
             order_result.status,
+            order_result.order_id,
         )
 
     def _exec_close(self, result):
@@ -176,12 +207,13 @@ class Execution:
             order_result.fee,
             executed,
             order_result.status,
+            order_result.order_id,
         )
 
     def notify_telegram(self, exec_result: ExecutionResult) -> None:
         tg_msg = self._build_message(exec_result)
         if tg_msg and self.telegram:
-            self.telegram.send_telegram_message(tg_msg)  
+            self.telegram.send_telegram_message(tg_msg)
 
     def _build_message(
         self,
@@ -222,7 +254,7 @@ class Execution:
                 f"{opening_context}"
             )
 
-        if result.action_command.action in (Action.CLOSE, Action.CLOSE_PARTIAL):            
+        if result.action_command.action in (Action.CLOSE, Action.CLOSE_PARTIAL):
             details = result.action_command.details
 
             if details and details.bbw_exit:
@@ -252,6 +284,6 @@ class Execution:
                 f"Side: {side}\n"
                 f"Qty: {result.qty}\n"
                 f"Price: {result.price}\n"
-            )        
+            )
 
-        return None            
+        return None
