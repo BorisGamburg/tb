@@ -610,6 +610,7 @@ class BybitDriver:
                 "category": "linear",
                 "symbol": symbol,
                 "orderId": order_id,
+                "limit": 100,
             }
             # Обращаемся именно к истории сделок
             response: Any = self.http_client.get_executions(**params)
@@ -634,7 +635,10 @@ class BybitDriver:
                 "avgPrice": avg_price,
                 "totalQty": total_qty,
                 "execFee": sum(float(exec['execFee']) for exec in executions),
-                "lastExecTime": executions[0]['execTime']
+                "lastExecTime": max(
+                    int(exec["execTime"])
+                    for exec in executions
+                ),
             }
         
         # Вызов с повторными попытками
