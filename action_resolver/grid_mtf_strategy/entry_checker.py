@@ -16,6 +16,8 @@ class DistanceCheckDetails:
     min_distance_ratio: float
     required_move: float | None
     threshold: float | None
+    bb_upper: float | None = None
+    bb_lower: float | None = None    
 
 @dataclass
 class DistanceCheckResult:
@@ -160,6 +162,7 @@ class EntryChecker:
 
         bb = self.bb_service.get_live(distance_bbw_tf)
         bbw = bb["width_abs"]
+        #print(f"BBW DEBUG tf={distance_bbw_tf} up={bb['upper']:.6f} lo={bb['lower']:.6f} mid={bb['mid']:.6f} width={bbw:.6f}")
 
 
         min_distance_ratio = 0.0035
@@ -185,6 +188,8 @@ class EntryChecker:
             min_distance_ratio=min_distance_ratio,
             required_move=required_move,
             threshold=distance_threshold,
+            bb_upper=bb["upper"],
+            bb_lower=bb["lower"],                
         )
 
         return DistanceCheckResult(

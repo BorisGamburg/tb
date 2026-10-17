@@ -94,7 +94,7 @@ class RearmMng:
         if entries is None:
             entries = self.state_store.stack_mng.data.entries
 
-        level = len(entries) - 1
+        level = len(entries)
         tpl = self.map_mng.get_template_by_level(level)
         rsi_tf = tpl.entry_bb_rearm_rsi_htf
         rsi = self._get_rsi_last_closed(rsi_tf)
