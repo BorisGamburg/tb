@@ -1,3 +1,4 @@
+import random
 import pandas as pd
 import pandas_ta as ta
 from pybit.unified_trading import HTTP, WebSocket
@@ -26,13 +27,14 @@ class CandleDataMng:
         self.max_delay = 60  # секунд до "смерти"
 
         self.last_full_sync = time.time()
-        self.force_sync_interval = 3600 * 0.5  # Перезагружать историю каждые 30 мин
+        self.force_sync_interval = random.uniform(1500, 2100)   # 25–35 минут        
 
     def _ensure_data_ready(self):
         # Периодическая принудительная синхронизация
         if time.time() - self.last_full_sync > self.force_sync_interval:
             self.needs_sync = True
             self.last_full_sync = time.time()
+            self.force_sync_interval = random.uniform(1500, 2100)   # перевыбор на следующий цикл
 
         # Проверка фатальной ошибки
         if self.fatal_error_msg:
