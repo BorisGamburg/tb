@@ -1,14 +1,11 @@
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from time import sleep
+from time import monotonic, sleep
 
 import pandas as pd
 from pybit.unified_trading import HTTP
-
-from prog.drivers.bybit_driver import BybitDriver
-from prog.managers.account_loader import load_account
-from prog.utils.telegram import Telegram
+from ta.momentum import RSIIndicator
 
 # ---------------- Logging ----------------
 logger = logging.getLogger()
@@ -18,40 +15,63 @@ ch = logging.StreamHandler()
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-# ---------------- Account / Telegram ----------------
-ACCOUNT_NAME = "bybit_live"
-account = load_account(ACCOUNT_NAME)
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_DIR = PROJECT_ROOT / "data" / "config"
-TELEGRAM_CONFIG_PATH = CONFIG_DIR / "telegram_config.txt"
-telegram = Telegram(logger=logger, config_file=TELEGRAM_CONFIG_PATH)
-
-bybit_driver = BybitDriver(
-    demo=account.demo,
-    api_key=account.api_key,
-    api_secret=account.api_secret,
-    logger=logger,
-    telegram=telegram,
-)
-
 # Публичные эндпоинты — ключи не нужны
 session = HTTP(testnet=False)
 
 # ---------------- Параметры ----------------
 RSI_INTERVAL = "D"
 RSI_THRESHOLD = 67
-MAX_SIZE_THRESHOLD = 0.3          # макс. мин. размер контракта в USDT
+MAX_SIZE_THRESHOLD = 0.1          # макс. мин. размер контракта в USDT
 MIN_TURNOVER_THRESHOLD = 1_000_000
 SIDE = "Sell"
 MAX_WORKERS = 8                   # при ошибках rate limit (10006 / 403) уменьшить
+MAX_REQUESTS_PER_SEC = 5          # общий лимит запросов свечей на все потоки
+
+
+# ---------------- Свечи: лимит запросов + повторы ----------------
+_rate_lock = threading.Lock()
+_next_call_at = 0.0
+
+
+def _throttle():
+    """Не чаще MAX_REQUESTS_PER_SEC запросов в секунду суммарно по всем потокам."""
+    global _next_call_at
+    interval = 1.0 / MAX_REQUESTS_PER_SEC
+    with _rate_lock:
+        now = monotonic()
+        wait = _next_call_at - now
+        _next_call_at = max(now, _next_call_at) + interval
+    if wait > 0:
+        sleep(wait)
+
+
+def get_kline_data(symbol, interval, limit=100, attempts=3):
+    """Свечи Bybit списком списков (новые → старые); None, если API вернул ошибку."""
+    for attempt in range(1, attempts + 1):
+        try:
+            _throttle()
+            response = session.get_kline(
+                category="linear",
+                symbol=symbol,
+                interval=interval,
+                limit=limit,
+            )
+            if response["retCode"] != 0:
+                logger.error(f"{symbol}: Bybit kline: {response['retMsg']}")
+                return None
+            return response["result"]["list"]
+        except Exception as e:
+            if attempt == attempts:
+                raise
+            logger.debug(f"{symbol}: kline error {e} (попытка {attempt}/{attempts})")
+            sleep(attempt)
 
 
 # ---------------- ATR ----------------
 def get_atr_m1_percent(symbol, window=14):
     """ATR(14) M1 в % от цены (Wilder/RMA)."""
     try:
-        klines = bybit_driver.get_kline_data(symbol, interval="1", limit=100)
+        klines = get_kline_data(symbol, interval="1", limit=100)
         if not klines:
             return None
 
@@ -122,11 +142,40 @@ def load_universe():
     return universe
 
 
+# ---------------- RSI ----------------
+def get_close_prices(symbol, interval="15", limit=100):
+    """Цены закрытия (старые → новые) для расчёта индикаторов."""
+    klines = get_kline_data(symbol, interval=interval, limit=limit)
+    if klines is None:
+        raise Exception("Не удалось получить данные K-line для расчёта цен закрытия.")
+
+    df = pd.DataFrame(klines, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+    df = df.astype(float)
+    df = df[::-1]  # Bybit отдаёт от новых к старым
+    return df["close"]
+
+
+def calculate_last_rsi(symbol, interval="15", limit=200):
+    """Рассчитывает RSI как на TradingView с использованием Wilder's RMA."""
+    close_prices = get_close_prices(symbol, interval=interval, limit=limit)
+    if len(close_prices) < 15:
+        raise Exception(f"Недостаточно данных для RSI: получено {len(close_prices)} свечей, требуется минимум 15")
+
+    rsi_indicator = RSIIndicator(close=close_prices, window=14, fillna=False)
+    rsi_series = rsi_indicator.rsi()
+    last_rsi = rsi_series.iloc[-1]
+
+    if pd.isna(last_rsi):
+        raise Exception("RSI не рассчитан")
+
+    return last_rsi
+
+
 # ---------------- RSI с ретраями ----------------
 def fetch_rsi(symbol):
     for attempt in range(3):
         try:
-            return symbol, bybit_driver.calculate_last_rsi(symbol, interval=RSI_INTERVAL)
+            return symbol, calculate_last_rsi(symbol, interval=RSI_INTERVAL)
         except Exception as e:
             logger.debug(f"{symbol}: RSI error {e}")
             sleep(0.5 * (attempt + 1))
