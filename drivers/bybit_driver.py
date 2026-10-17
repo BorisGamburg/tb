@@ -1,14 +1,7 @@
-import math
-import traceback
-import pandas as pd
-from time import time
 from pybit.unified_trading import HTTP
-from ta.momentum import RSIIndicator
-from ta.volatility import BollingerBands
 from pybit.exceptions import InvalidRequestError
 import time
-from typing import Any, Dict, cast
-from prog.utils.utils import round_to_step
+from typing import Any
 from ratelimit import limits, sleep_and_retry
 
 @sleep_and_retry
@@ -42,21 +35,9 @@ class BybitDriver:
     def retry_api_call(self, func, *args, **kwargs):
         """Оборачивает вызов API в цикл с попытками (без блокировок)."""
 
-        # Извлекаем стек вызовов
-        stack = traceback.extract_stack()
-        
-        # stack[-1] — это сам retry_api_call
-        # stack[-2] — это метод в bybit_driver (например, get_balance)
-        # stack[-3] — это то, что вызвало get_balance (например, balance_mng)
-        
-        driver_method = stack[-2].name  # Это будет 'get_balance'
-        caller_module = stack[-2].filename.split('/')[-1] # Кто попросил данные (balance_mng.py)
-        caller_line = stack[-2].lineno
-
         for attempt in range(1, self.max_attempts + 1):
             try:
                 # Прямой вызов функции
-                #self.logger.info(f"🚀 API Call: {driver_method} (from {caller_module}:{caller_line})")
                 result = _global_api_limiter(func, *args, **kwargs)
                 
                 return result
@@ -80,122 +61,6 @@ class BybitDriver:
             balances = self.http_client.get_wallet_balance(accountType="UNIFIED", coin="USDT",)  
             return float(balances['result']['list'][0]['coin'][0]['walletBalance']) # type: ignore
         return self.retry_api_call(call)
-    
-    def get_last_price(self, symbol):
-        """Получает последнюю цену тикера."""
-        def call():
-            ticker = self.http_client.get_tickers(category="linear", symbol=symbol)
-            return float(ticker['result']['list'][0]['lastPrice']) # type: ignore
-        return self.retry_api_call(call)
-    
-    def get_bid_ask_prices(self, symbol):
-        def call():
-            response = self.http_client.get_tickers(
-                category="linear",
-                symbol=symbol,
-            )
-            result = response['result']['list'][0] # type: ignore
-            return float(result['bid1Price']), float(result['ask1Price'])
-        return self.retry_api_call(call)
-    
-    def get_position_data(self, symbol):
-        """Получает детали позиций."""
-        def call():
-            # Получаем список позиций
-            raw_response = self.http_client.get_positions(category="linear", symbol=symbol)
-
-            # Принудительно говорим анализатору, что это словарь
-            response = cast(Dict[str, Any], raw_response)
-            print(response)
-
-            # Проверяем наличие ошибок
-            if response["retCode"] != 0:
-                raise Exception(f"Ошибка получения позиций: {response['retMsg']}")
-            
-            # Создаем переменнные для выходных значений
-            buy_size = 0.0
-            buy_unpnl = 0.0
-            buy_price = 0.0
-            sell_unpnl = 0.0
-            sell_size = 0.0
-            sell_price = 0.0
-
-            # Проходим в цикле по списку позиций
-            for position in response["result"]["list"]:
-                if position["symbol"] == symbol:
-                    if position["side"] == '':
-                        # Позиции нет
-                        continue
-
-                    if position["side"] == "Buy":
-                        buy_size =  float(position["size"])
-                        buy_unpnl = float(position["unrealisedPnl"])
-                        buy_price = float(position["avgPrice"])
-                    elif position["side"] == "Sell":
-                        sell_size =  float(position["size"])
-                        sell_unpnl = float(position["unrealisedPnl"])
-                        sell_price = float(position["avgPrice"])
-
-            # Возврат значений
-            return buy_size, sell_size, buy_unpnl, sell_unpnl, buy_price, sell_price
-        
-        result = self.retry_api_call(call)
-        return result 
-
-    def get_active_orders(self, symbol):
-        """Получает список активных ордеров."""
-        def call():
-            # Получаем открытые ордера
-            response: Any = self.http_client.get_open_orders(category="linear", symbol=symbol, limit=50)
-
-            # Проверяем наличие ошибок
-            if response["retCode"] != 0:
-                raise Exception(f"Ошибка получения активных ордеров: {response['retMsg']}")
-            
-            # Формируем список активных ордеров
-            active_orders = []
-            for order in response["result"]["list"]:
-                active_orders.append({
-                    "order_id": order["orderId"],
-                    "price": float(order["price"]),
-                    "side": order["side"],
-                    "qty": float(order["qty"]),
-                    "orderType": order["orderType"],
-                    "stopOrderType": order.get("stopOrderType", None)
-                })
-
-            # Возврат значений
-            return active_orders
-        
-        # Вызов с повторными попытками
-        result = self.retry_api_call(call)
-
-        # Возврат значений
-        return result 
-
-    def get_total_realised_pnl(self, symbol):
-        """Получает общий реализованный PNL."""
-        def call():
-            # Получаем закрытые PNL
-            response: Any = self.http_client.get_closed_pnl(category="linear", symbol=symbol, limit=50)
-
-            # Проверяем наличие ошибок
-            if response["retCode"] != 0:
-                raise Exception(f"Ошибка получения закрытого PNL: {response['retMsg']}")
-
-            # Суммируем PNL
-            total_pnl = 0.0
-            for trade in response["result"]["list"]:
-                total_pnl += float(trade["closedPnl"])
-
-            # Возврат значений
-            return total_pnl
-        
-        # Вызов с повторными попытками
-        result = self.retry_api_call(call)
-
-        # Возврат значений
-        return result 
 
     def cancel_lim_order(self, symbol, order_id):
         """Отменяет указанный ордер бота напрямую через API Bybit с повторными попытками."""
@@ -309,61 +174,7 @@ class BybitDriver:
             return response
 
         return self.retry_api_call(call)
-
-    def round_up_to_step(self, qty_float, qty_step_float):
-        """Округляет число вверх до ближайшего кратного шага."""
-        if qty_step_float <= 0:
-            return qty_float
-        # Используем ceil для округления вверх по сетке шага
-        return round(math.ceil(qty_float / qty_step_float) * qty_step_float, 8)
    
-    def calculate_last_rsi(self, symbol=None, interval="15", limit=200):
-        """Рассчитывает RSI как на TradingView с использованием Wilder's RMA."""
-        close_prices = self.get_close_prices(symbol=symbol, interval=interval, limit=limit)
-        if len(close_prices) < 15:
-            raise Exception(f"Недостаточно данных для RSI: получено {len(close_prices)} свечей, требуется минимум 15")
-
-        rsi_indicator = RSIIndicator(close=close_prices, window=14, fillna=False)
-        rsi_series = rsi_indicator.rsi()
-        last_rsi = rsi_series.iloc[-1]
-
-        if pd.isna(last_rsi):
-            raise Exception("RSI не рассчитан")
-
-        #self.logger.debug(f"Рассчитан RSI({interval}): {last_rsi:.2f}, последние 5 цен: {close_prices.tail(5).tolist()}")
-        return last_rsi
-    
-    def calc_bb(self, symbol=None, window=20, window_dev=2, timeframe="240", limit=200):
-        """Рассчитывает последние значения Bollinger Bands."""
-        close_prices = self.get_close_prices(symbol=symbol, interval=timeframe, limit=limit)
-        if not self._is_valid_price_data(close_prices, window):
-            return None, None, None
-        bb_values = self._compute_bollinger_bands(close_prices, window, window_dev)
-        return self._extract_last_bb_values(bb_values)
-
-    def _is_valid_price_data(self, close_prices, window):
-        """Проверяет, достаточно ли данных для расчёта Bollinger Bands."""
-        if close_prices.empty or len(close_prices) < window:
-            self.logger.warning(f"Недостаточно данных для Bollinger Bands: получено {len(close_prices)}, нужно {window}")
-            return False
-        return True
-
-    def _compute_bollinger_bands(self, close_prices, window, window_dev):
-        """Вычисляет Bollinger Bands с заданными параметрами."""
-        bb_indicator = BollingerBands(close=close_prices, window=window, window_dev=window_dev)
-        bb_high = bb_indicator.bollinger_hband()
-        bb_mid = bb_indicator.bollinger_mavg()
-        bb_low = bb_indicator.bollinger_lband()
-        return bb_high, bb_mid, bb_low
-
-    def _extract_last_bb_values(self, bb_values):
-        """Извлекает последние значения верхней, средней и нижней полос."""
-        bb_high, bb_mid, bb_low = bb_values
-        last_high = float(bb_high.iloc[-1]) if not pd.isna(bb_high.iloc[-1]) else None
-        last_mid = float(bb_mid.iloc[-1]) if not pd.isna(bb_mid.iloc[-1]) else None
-        last_low = float(bb_low.iloc[-1]) if not pd.isna(bb_low.iloc[-1]) else None
-        return last_high, last_mid, last_low    
-    
     def get_kline_data(self, symbol, interval, limit=100):
     # Функция для получения исторических данных (K-line)
         def call():
@@ -383,10 +194,6 @@ class BybitDriver:
             return response['result']['list']
 
         return self.retry_api_call(call)
-    
-    def log(self, message):
-        self.logger.info(message)
-        self.telegram.send_telegram_message(message)
 
     def get_limit_orders(self, symbol, side, category="linear"):
         """
@@ -501,105 +308,12 @@ class BybitDriver:
 
         result = self.retry_api_call(call)
         return result
-    
-    def exist_order(self, symbol=None, side= None, order_id=None):
-        # Получаем список лим ордеров
-        existing_orders = self.get_limit_orders(symbol=symbol, side=side)
-
-        if existing_orders is None:
-            raise Exception("Не удалось получить список существующих ордеров.")
-
-        # Ищем наш ордер по ID
-        my_order = next((o for o in existing_orders if o['orderId'] == order_id), None)
-
-        # Если ордер не найден
-        if not my_order:
-            self.logger.debug(f"✅ Ордер с ID {order_id} больше не активен.")
-            return False
-        
-        return True
 
     def get_symbol_info(self, symbol):
         def call():
             return self.http_client.get_instruments_info(category="linear", symbol=symbol)
         
         return self.retry_api_call(call)
-    
-    def _place_trigger_order(self, symbol, side, trigger_dir, pos_idx, trigger_price, qty_valid):
-        def call():
-            response = self.http_client.place_order(
-                category="linear",
-                symbol=symbol,
-                side=side,
-                orderType="Market",
-                qty=str(qty_valid),
-                triggerPrice=str(trigger_price),
-                triggerDirection=trigger_dir,
-                triggerBy="LastPrice",
-                reduceOnly=True,
-                positionIdx=pos_idx
-            )
-
-            return response
-        
-        return self.retry_api_call(call)
-
-    def amend_order(self, symbol, orderId, new_price):
-        """
-        Изменяет цену существующего ордера.
-        """
-        def call():
-            params = {
-                "category": "linear",
-                "symbol": symbol,
-                "orderId": orderId,
-                "triggerPrice": str(new_price),
-            }
-
-            return self.http_client.amend_order(**params)
-
-        return self.retry_api_call(call)
-    
-    def get_price_step(self, symbol):
-        response = self.get_symbol_info(symbol)
-
-        if response is None:
-            raise Exception(f"Не удалось получить информацию о символе: {symbol}.")
-        
-        instrument_info = response['result']['list'][0]
-        price_step = float(instrument_info['priceFilter']['tickSize'])
-        return  price_step
-
-    def round_price_to_step(self, symbol: str, price: float) -> float:
-        # Получаем price_step
-        price_step = self.get_price_step(symbol)
-        return round_to_step(price, price_step)
-
-    def get_executed_order_info(self, order_id):
-        """
-        Получить информацию о исполненном ордере по ID.
-        """
-        def call():
-            # ищем в истории ордеров
-            params = {
-                "category": "linear",
-                "orderId": order_id,
-            }
-            response: Any = self.http_client.get_order_history(**params)
-
-            # Проверяем успешность запроса
-            if response["retCode"] != 0:
-                raise Exception(f"Ошибка получения ордера: {response['retMsg']}")
-            
-            # Пробуем получить ордер 
-            orders = response.get("result", {}).get("list", [])
-            if not orders:
-                self.logger.debug(f"Ордер {order_id} не найден")
-                return None
-            
-            return orders[0]
-        
-        return self.retry_api_call(call)    
     
     def get_order_execution_details(self, symbol, order_id):
         """
@@ -670,60 +384,6 @@ class BybitDriver:
             return orders[0]
 
         return self.retry_api_call(call)    
-
-    def get_total_equity(self):
-        """Возвращает общую стоимость аккаунта (Equity) в USDT."""
-        def call():
-            # Запрашиваем баланс без фильтра по конкретной монете, 
-            # чтобы получить общую оценку аккаунта (Equity)
-            balances: Any = self.http_client.get_wallet_balance(accountType="UNIFIED")
-
-            # Возвращаем общую стоимость аккаунта
-            return float(balances['result']['list'][0]['totalEquity'])
-        
-        # Вызов с повторными попытками
-        return self.retry_api_call(call)
-
-    def get_kline_data_old(self, symbol, interval, limit=100):
-     # Функция для получения исторических данных (K-line)
-        def call():
-            response = self.http_client.get_kline(
-                category="linear",
-                symbol=symbol,
-                interval=interval,  # Интервал в минутах (15 минут в данном случае)
-                limit=limit        # Количество свечей
-            )
-            
-            # Проверяем успешность запроса
-            if response['retCode'] != 0:
-                self.logger.error(f"Ошибка API: {response['retMsg']}")
-                return None
-            
-            # Извлекаем данные
-            klines = response['result']['list']
-            
-            # Форматируем в DataFrame
-            df = pd.DataFrame(klines, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-            df = df.astype(float)
-            df['start_ms'] = df['timestamp'].astype(float)
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df['start_str'] = df['timestamp']
-            df = df[::-1]  # Переворачиваем, чтобы данные шли от старых к новым
-            return df
-    
-        return self.retry_api_call(call)
-    
-    def get_close_prices(self, symbol=None, interval="15", limit=100):
-        """Получает цены закрытия для расчёта индикаторов."""
-        # Получаем данные K-line
-        df = self.get_kline_data_old(symbol=symbol, interval=interval, limit=limit)
-
-        # Проверяем, что данные получены
-        if df is None:
-            raise Exception("Не удалось получить данные K-line для расчёта цен закрытия.")  
-        
-        # Возвращаем серию цен закрытия
-        return df["close"]
 
     def get_all_active_positions(self):
         """Получает список всех открытых позиций (размер > 0) по всем символам."""
@@ -806,126 +466,6 @@ class BybitDriver:
         
         return self.retry_api_call(call)
 
-    def fetch_order_history_page(self, start_time, end_time, cursor=None, limit=50):
-        """Низкоуровневый запрос одной страницы истории."""
-        return self.http_client.get_order_history(
-            category="linear",
-            startTime=start_time,
-            endTime=end_time,
-            limit=limit,
-            cursor=cursor,
-            settleCoin="USDT",
-        )
-
-    def _get_order_history(self, days_back=2):
-        """Внутренний сборщик всей истории за период (с окнами и курсором)."""
-        all_orders = []
-        ms_in_day = 86400000
-        window_size = 1 * ms_in_day
-        now = int(time.time() * 1000)
-        current_start = now - (days_back * ms_in_day)
-        print(f"current_start={current_start}")
-
-        while current_start < now:
-            current_end = min(current_start + window_size, now)
-            print(f"current_end={current_end}")
-            cursor = None
-            
-            while True:
-                print("Читаем страницу...")
-                response = self.fetch_order_history_page(current_start, current_end, cursor)
-                print(f"Длина страницы={len(response["result"]["list"])}")
-                
-                # Если Bybit вернул ошибку, кидаем исключение для срабатывания retry
-                if not response or response.get('retCode') != 0:
-                    err_msg = response.get('retMsg') if response else "Empty response"
-                    raise Exception(f"Bybit API Error in get_order_history: {err_msg}")
-                
-                result = response.get('result', {})
-                orders = result.get('list', [])
-                all_orders.extend(orders)
-                
-                cursor = result.get('nextPageCursor')
-                print(f"cursor={cursor}")
-                if not cursor:
-                    break
-            
-            current_start = current_end + 1
-        
-        return all_orders
-
-    def get_order_history(self, days_back=2):
-        """Получает историю ордеров за указанный период (по умолчанию 2 дня)."""
-        def call():
-            return self._get_order_history(days_back=days_back)
-        
-        return self.retry_api_call(call)
-    
-    def fetch_trade_history_page(self, start_time, end_time, cursor=None, limit=100):
-        """Низкоуровневый запрос одной страницы истории сделок (Executions)."""
-        return self.http_client.get_executions(
-            category="linear",
-            startTime=start_time,
-            endTime=end_time,
-            limit=limit,
-            cursor=cursor
-        )
-
-    def _get_trade_history(self, days_back=2):
-        """Внутренний сборщик всей истории сделок за период (аналог для Trade History)."""
-        all_trades = []
-        ms_in_day = 86400000
-        window_size = 1 * ms_in_day # Окна по 1 дню для стабильности
-        now = int(time.time() * 1000)
-        current_start = now - (days_back * ms_in_day)
-
-        print(f"--- Сбор Trade History (Executions) за {days_back} дн. ---")
-        
-        while current_start < now:
-            current_end = min(current_start + window_size, now)
-            cursor = None
-            
-            while True:
-                response = self.fetch_trade_history_page(current_start, current_end, cursor)
-                
-                if not response or response.get('retCode') != 0:
-                    err_msg = response.get('retMsg') if response else "Empty response"
-                    raise Exception(f"Bybit API Error in get_trade_history: {err_msg}")
-                
-                result = response.get('result', {})
-                trades = result.get('list', [])
-                all_trades.extend(trades)
-                
-                print(f"Загружено сделок: {len(trades)} | Окно: {current_start} -> {current_end}")
-                
-                cursor = result.get('nextPageCursor')
-                if not cursor:
-                    break
-            
-            current_start = current_end + 1
-        
-        return all_trades
-
-    def get_trade_history(self, days_back=2):
-        """Публичный метод для получения истории сделок с ретраями."""
-        def call():
-            return self._get_trade_history(days_back=days_back)
-        
-        return self.retry_api_call(call)
-    
-    def get_lot_size_params(self, symbol):
-        response = self.get_symbol_info(symbol)
-
-        if response is None or response.get("retCode") != 0:
-            raise Exception(f"Ошибка получения symbol info для {symbol}")
-
-        filters = response['result']['list'][0]['lotSizeFilter']
-
-        return {
-            "min_qty": float(filters['minOrderQty']),
-            "step_size": float(filters['qtyStep'])
-        }    
-    
     def get_fee_rates(self, symbol):
         def call():
             if self.demo:
