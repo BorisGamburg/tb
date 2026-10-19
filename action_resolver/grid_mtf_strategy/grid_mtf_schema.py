@@ -36,7 +36,7 @@ class GridMTFSchema(BaseModel):
     merge_threshold_pct: Pct
 
     # Уведомления в Telegram об открытии/закрытии ордеров (опционально)
-    order_notifications_enabled: bool = False    
+    order_notifications_enabled: bool = False
 
     # --- TP ---
     tp_price: float = 0.0

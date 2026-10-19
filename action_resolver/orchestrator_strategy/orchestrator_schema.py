@@ -12,4 +12,4 @@ class OrchestratorSchema(BaseModel):
     sleep_interval: float
 
     # Уведомления в Telegram об открытии/закрытии ордеров (опционально)
-    order_notifications_enabled: bool = False    
+    order_notifications_enabled: bool = False
