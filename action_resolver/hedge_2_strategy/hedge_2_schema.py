@@ -30,6 +30,10 @@ class Hedge2Schema(BaseModel):
 
     sleep_interval: float
 
+    # Уведомления в Telegram об открытии/закрытии ордеров (опционально)
+    order_notifications_enabled: bool = False
+
+
     # --- Stack / текущие уровни ---
     stack: StackData
 

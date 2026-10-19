@@ -21,6 +21,9 @@ class ActionService:
         self.execution = Execution(
             app_ctx=app_ctx,
             trading_info=trading_info,
+            order_notifications_enabled=(
+                state_store.data.order_notifications_enabled
+            ),
         )
 
         self.accounting = Accounting(

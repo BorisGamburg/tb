@@ -14,8 +14,10 @@ class Execution:
         self,
         app_ctx: AppContext,
         trading_info: TradingInfo,
+        order_notifications_enabled: bool = False,
     ):
         self.app_ctx = app_ctx
+        self.order_notifications_enabled = order_notifications_enabled
         self.proxy_driver = app_ctx.proxy_driver
         self.price_service = app_ctx.price_service
         self.logger = app_ctx.logger
@@ -211,6 +213,10 @@ class Execution:
         )
 
     def notify_telegram(self, exec_result: ExecutionResult) -> None:
+        # Уведомления об открытии/закрытии ордеров включаются в конфиге
+        if not self.order_notifications_enabled:
+            return
+
         tg_msg = self._build_message(exec_result)
         if tg_msg and self.telegram:
             self.telegram.send_telegram_message(tg_msg)
