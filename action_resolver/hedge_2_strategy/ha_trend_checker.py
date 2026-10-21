@@ -10,19 +10,19 @@ class HATrendChecker:
         self.symbol = symbol
         self.side = side
 
-    def _get_closed_ha_color(self, tf: str) -> str:
+    def _get_cur_ha_color(self, tf: str) -> str:
 
         ha = self.proxy_driver.get_ha(
             symbol=self.symbol,
             tf=tf
         )
 
-        if not ha or "prev1" not in ha:
+        if not ha or "curr" not in ha:
             raise RuntimeError(
                 f"Invalid HA data | symbol={self.symbol} tf={tf}"
             )
 
-        color = ha["prev1"]["color"]
+        color = ha["curr"]["color"]
 
         VALID = ("green", "red", "doji")
 
@@ -34,7 +34,7 @@ class HATrendChecker:
         return color
     
     def is_active(self, tf: str) -> bool:
-        color = self._get_closed_ha_color(tf)
+        color = self._get_cur_ha_color(tf)
 
         if self.side == "Buy":
             return color == "green"

@@ -10,6 +10,8 @@ class BuildResult:
     side: str
     qty: float
     report: str
+    trend_active: bool
+    distance_allowed: bool
 
 def calc_hedge_qty(
     main_qty: float,
@@ -33,7 +35,12 @@ def check_build(
     hedge_side: str,
     trading_info,
 ) -> BuildResult:
-    report = ""
+    # Проверяем дистанцию до существующих уровней
+    distance_allowed = is_level_distance_allowed(
+        cur_price=work_price,
+        entries=entries,
+        hedge_step_ratio=hedge_step_ratio,
+    )
 
     # Рассчитываем объем одного уровня защиты
     hedge_qty = calc_hedge_qty(
@@ -49,11 +56,13 @@ def check_build(
             side=hedge_side,
             qty=hedge_qty,
             report="Hedge qty below minimum. Build: denied ",
+            trend_active=trend_active,
+            distance_allowed=distance_allowed,
         )
 
     # Без активного тренда новые уровни защиты не строим
     if not trend_active:
-        report += (
+        report = (
             "Trend: inactive "
             "Build: denied "
         )
@@ -63,14 +72,9 @@ def check_build(
             side=hedge_side,
             qty=hedge_qty,
             report=report,
+            trend_active=trend_active,
+            distance_allowed=distance_allowed,
         )
-
-    # Проверяем дистанцию до существующих уровней
-    distance_allowed = is_level_distance_allowed(
-        cur_price=work_price,
-        entries=entries,
-        hedge_step_ratio=hedge_step_ratio,
-    )
 
     if not distance_allowed:
         return BuildResult(
@@ -78,15 +82,15 @@ def check_build(
             side=hedge_side,
             qty=hedge_qty,
             report="",
+            trend_active=trend_active,
+            distance_allowed=distance_allowed,
         )
-
-    report += (
-        "Build: allowed "
-    )
 
     return BuildResult(
         allowed=True,
         side=hedge_side,
         qty=hedge_qty,
-        report=report,
+        report="Build: allowed ",
+        trend_active=trend_active,
+        distance_allowed=distance_allowed,
     )
