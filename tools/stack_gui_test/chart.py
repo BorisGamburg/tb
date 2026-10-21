@@ -127,7 +127,18 @@ def create_price_axis(
     price_max,
     price_axis_x,
 ):
+    min_label_spacing = 30
+    y_scale = abs(price_to_y(price_min) - price_to_y(price_max)) / (
+        price_max - price_min
+    )
+
     price_step = 0.0002
+
+    if y_scale > 0:
+        min_price_step = min_label_spacing / y_scale
+
+        while price_step < min_price_step:
+            price_step *= 2
 
     price_start = (
         int(price_min / price_step)
@@ -160,8 +171,6 @@ def create_price_axis(
         scene.addItem(price_label)
 
         price += price_step
-
-
 def create_levels(
     scene,
     levels,
@@ -169,6 +178,8 @@ def create_levels(
     chart_width,
     level_label_width,
 ):
+    label_items = []
+
     for price, qty in levels:
         y = price_to_y(price)
 
@@ -190,12 +201,26 @@ def create_levels(
             QColor("#ffffff")
         )
 
-        label.setPos(
-            0,
-            y - 10,
-        )
+        label_items.append((y, label))
 
+    label_items.sort(key=lambda item: item[0])
+
+    min_label_spacing = 18
+    previous_y = None
+
+    for y, label in label_items:
+        label_y = y - 10
+
+        if previous_y is not None:
+            label_y = max(
+                label_y,
+                previous_y + min_label_spacing,
+            )
+
+        label.setPos(0, label_y)
         scene.addItem(label)
+
+        previous_y = label_y
 
 
 def get_chart_geometry(
@@ -313,6 +338,7 @@ def create_chart(
         price_max,
         chart_width + 15,
     )
+
 
     create_levels(
         scene,
