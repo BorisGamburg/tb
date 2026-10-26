@@ -12,7 +12,7 @@ from action_resolver.hedge_2_strategy.build_mng import calc_hedge_qty
 from action_processor.action_service import ActionService
 from action_resolver.hedge_2_strategy.partial_close_calculator import PartialCloseCalculator
 from action_resolver.hedge_2_strategy.close_processor import CloseProcessor
-from action_resolver.hedge_2_strategy.level_distance_checker import is_level_distance_allowed
+from common.level_distance_checker import is_level_distance_allowed
 
 
 class Hedge2Strategy(BaseStrategy):

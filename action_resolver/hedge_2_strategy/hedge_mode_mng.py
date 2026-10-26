@@ -4,9 +4,7 @@ from action_resolver.hedge_2_strategy.hedge_mode_selector import (
     HedgeModeSelector,
     HedgeMode,
 )
-from action_resolver.hedge_2_strategy.ha_trend_checker import (
-    HATrendChecker,
-)
+from common.ha_trend_checker import HATrendChecker
 from action_resolver.hedge_2_strategy.build_mng import (
     check_build,
     BuildResult,
