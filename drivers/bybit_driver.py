@@ -232,32 +232,6 @@ class BybitDriver:
         # Возврат значений
         return result 
 
-    def _handle_110001(self, symbol, orderId, new_price, new_qty):
-        """
-        Обрабатывает случай, когда ордер больше недоступен (ошибка 110001).
-        Пытается получить детали исполнения или создает расчетные значения.
-        """
-        self.logger.warning(f"⚠️ [110001] {symbol}: Ордер {orderId} недоступен. Считаем исполненным.")
-
-        details = self.get_order_execution_details(symbol, orderId)
-        if details:
-            # Мы говорим боту: "Все, этот ордер закрыт, вот по какой цене мы вошли"
-            self.logger.info(f"{symbol}: Ордер {orderId} полностью закрыт общим объемом {details['totalQty']}")
-            return {"status": "ORDER_FILLED", "details": details}
-        
-        # Если деталей в истории нет, создаем их сами!
-        # Берем new_price, которую мы ПЫТАЛИСЬ поставить.
-        self.logger.info(f"Используем расчетную цену {new_price} для ордера {orderId}")
-        return {
-            "status": "ORDER_FILLED", 
-            "details": {
-                "avgPrice": new_price, 
-                "totalQty": new_qty, 
-                "execFee": 0, # Комиссию бот переживет
-                "is_estimated": True # Пометка, что цена расчетная
-            }
-        }
-
     def _calc_sl(self, side, new_price, sl_ratio):
         """
         Вычисляет цену стоп-лосса на основе направления, цены и коэффициента.
@@ -277,37 +251,23 @@ class BybitDriver:
         """
         Изменяет цену существующего ордера.
         """
-        def call():
-            params = {
-                "category": "linear",
-                "symbol": symbol,
-                "orderId": orderId,
-                "price": str(new_price),
-                "qty": str(new_qty)
-            }
+        params = {
+            "category": "linear",
+            "symbol": symbol,
+            "orderId": orderId,
+            "price": str(new_price),
+            "qty": str(new_qty)
+        }
 
-            # --- вычисляем стоп-лосс ---
-            sl_price = self._calc_sl(side, new_price, sl_ratio)
-            if sl_price:
-                params["stopLoss"] = str(sl_price)
-                params["slTriggerBy"] = "LastPrice"
-                params["tpslMode"] = "Partial"  # 👈 стоп-лосс только для этого ордера
+        # --- вычисляем стоп-лосс ---
+        sl_price = self._calc_sl(side, new_price, sl_ratio)
+        if sl_price:
+            params["stopLoss"] = str(sl_price)
+            params["slTriggerBy"] = "LastPrice"
+            params["tpslMode"] = "Partial"
 
-            try:
-                # Если здесь успех, возвращаем ответ Bybit (retCode: 0)
-                self.http_client.amend_order(**params)
-                return {"status": "ORDER_CHANGED"}
-            except Exception as e:
-                err_msg = str(e)
-                
-                # Если "Too late to replace" (110001)
-                if "110001" in err_msg:
-                    return self._handle_110001(symbol, orderId, new_price, new_qty)
-                
-                raise e
-
-        result = self.retry_api_call(call)
-        return result
+        self.http_client.amend_order(**params)
+        return {"status": "ORDER_CHANGED"}
 
     def get_symbol_info(self, symbol):
         def call():
