@@ -149,13 +149,9 @@ class PartialExitBBW:
         if cur_dist >= max_dist:
             return True, prof_level, "MAX BBW"
 
-        # Проверяем, достигнут ли tp по BB
-        reached, tp = self._is_bb_tp_reached(cur_price)
-        if not reached:
-            return False, None, None
+        # Закрытие по BB CROSS отключено
+        return False, None, None
 
-        return True, prof_level, "BB CROSS"
-    
     def check(self):
         # Получаем данные для проверки выхода
         exit_context = self._get_exit_context()

@@ -42,7 +42,7 @@ class BBService:
 
         width_abs = upper - lower
 
-        if width_abs <= 0:
+        if width_abs < 0:
             raise RuntimeError(
                 f"Invalid BB width tf={tf} "
                 f"width={width_abs}"

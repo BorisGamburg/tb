@@ -44,30 +44,21 @@ class OpenActiveLimitMng:
     def _wait_limit_order(
         self,
         symbol,
-        timeout,
-        poll_interval,
         order_id,
     ):
-        start_time = time.monotonic()
+        time.sleep(0.2)
 
-        while True:
-            order_data = self.get_order_status(
-                symbol=symbol,
-                order_id=order_id,
+        order_data = self.get_order_status(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        if not order_data:
+            raise RuntimeError(
+                f"Order not found | symbol={symbol} | order_id={order_id}"
             )
 
-            if not order_data:
-                raise RuntimeError(
-                    f"Order not found | symbol={symbol} | order_id={order_id}"
-                )
-
-            if order_data["orderStatus"] == "Filled":
-                return order_data
-
-            if time.monotonic() - start_time >= timeout:
-                return order_data
-
-            time.sleep(poll_interval)    
+        return order_data
 
     def move_order_from_pool(self, symbol, side, qty, sl_ratio=None):
         # Получаем цену для быстрого исполнения лимитного ордера 
@@ -90,8 +81,6 @@ class OpenActiveLimitMng:
         symbol,
         side,
         qty,
-        timeout=10,
-        poll_interval=1,
     ):
         # Перемещаем ордер из пула на текущую цену и меняем количество
         move_result = self.move_order_from_pool(
@@ -112,8 +101,6 @@ class OpenActiveLimitMng:
         # Ждем исполнения ордера или таймаута
         order_data = self._wait_limit_order(
             symbol=symbol,
-            timeout=timeout,
-            poll_interval=poll_interval,
             order_id=order_id,
         )
 

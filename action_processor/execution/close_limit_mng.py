@@ -64,33 +64,22 @@ class CloseLimitMng:
         self,
         symbol: str,
         order_id: str,
-        timeout: float,
-        poll_interval: float,
     ):
-        start_time = time.monotonic()
+        time.sleep(0.2)
 
-        while True:
-            order_data = self.get_order_status(
-                symbol=symbol,
-                order_id=order_id,
+        order_data = self.get_order_status(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        if not order_data:
+            raise RuntimeError(
+                f"Order not found | "
+                f"symbol={symbol} | "
+                f"order_id={order_id}"
             )
 
-            if not order_data:
-                raise RuntimeError(
-                    f"Order not found | "
-                    f"symbol={symbol} | "
-                    f"order_id={order_id}"
-                )
-
-            status = order_data["orderStatus"]
-
-            if status == "Filled":
-                return order_data
-
-            if time.monotonic() - start_time >= timeout:
-                return order_data
-
-            time.sleep(poll_interval)
+        return order_data
 
     def wait_limit_order(
         self,
@@ -98,8 +87,6 @@ class CloseLimitMng:
         side: str,
         qty: float,
         exit_type: ExitType,
-        timeout: float = 10,
-        poll_interval: float = 1,
     ) -> LimitOrderResult:
         # Размещаем ордер на закрытие позиции
         order_id = self._place_close_order(
@@ -109,12 +96,10 @@ class CloseLimitMng:
             exit_type=exit_type
         )
 
-        # Ждем исполнения ордера или таймаута
+        # Проверяем исполнение ордера после короткой задержки
         order_data = self._wait_limit_order(
             symbol=symbol,
             order_id=order_id,
-            timeout=timeout,
-            poll_interval=poll_interval,
         )
 
         # Обрабатываем результат 
@@ -379,7 +364,8 @@ class CloseLimitMng:
         )
 
         # Проверяем результат отмены
-        if cancel_result not in (0, 110001):
+#        if cancel_result not in (0, 110001):
+        if cancel_result != 0:
             raise RuntimeError(
                 f"Failed to cancel close limit order | "
                 f"symbol={symbol} | "

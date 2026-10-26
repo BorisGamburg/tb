@@ -126,7 +126,7 @@ def insert_rows(conn, table, rows):
     from psycopg2.extras import execute_values
 
     query = sql.SQL(
-        "INSERT INTO {} ({}) VALUES %s ON CONFLICT (exec_id) DO NOTHING RETURNING exec_id"
+        "INSERT INTO {} ({}) VALUES %s ON CONFLICT DO NOTHING RETURNING exec_id"        
     ).format(
         sql.Identifier(table),
         sql.SQL(", ").join(sql.Identifier(c) for c in COLUMNS),

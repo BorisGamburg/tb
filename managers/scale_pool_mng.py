@@ -117,7 +117,12 @@ class ScalePoolMng:
         status = res.get("status") 
 
         if status == "ORDER_FILLED":
-            return {"retCode": "OK", "orderId": order_id, "newPrice": new_price, "filled": True}
+            return {
+                "retCode": "OK", 
+                "orderId": order_id, 
+                "newPrice": new_price, 
+                "filled": True
+            }
         
         if status != "ORDER_CHANGED":
             raise Exception(f"❌ Не удалось переместить ордер из пула: {res}")

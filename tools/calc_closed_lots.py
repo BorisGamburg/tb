@@ -165,11 +165,39 @@ def load_execs(dsn, table, symbol):
     ]
 
 
-def print_report(closed_lots, open_lots):
+def load_funding(dsn, table, symbol):
+    """Возвращает сумму Funding по Sell-позиции для символа."""
+    import psycopg2
+    from psycopg2 import sql
+
+    query = sql.SQL(
+        "SELECT COALESCE(SUM(exec_fee), 0) "
+        "FROM {} "
+        "WHERE symbol = %s "
+        "AND exec_type = 'Funding' "
+        "AND side = 'Sell'"
+    ).format(sql.Identifier(table))
+
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, (symbol,))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    return D(row[0])
+
+
+def print_report(closed_lots, open_lots, funding_pnl):
     print(f"\nЗакрытых лотов: {len(closed_lots)}")
     print(f"Gross PnL: {sum(c['gross_pnl'] for c in closed_lots):.8f}")
     print(f"Комиссии (по закрытым лотам): {sum(c['fees'] for c in closed_lots):.8f}")
-    print(f"Net PnL:   {sum(c['net_pnl'] for c in closed_lots):.8f}")
+
+    net_pnl = sum(c["net_pnl"] for c in closed_lots)
+    print(f"Net PnL закрытых лотов: {net_pnl:.8f}")
+    print(f"Funding Sell:            {funding_pnl:.8f}")
+    print(f"Итого с Funding:         {net_pnl + funding_pnl:.8f}")
 
     print("\nОткрытые лоты в буфере (текущая позиция):")
     if not open_lots:
@@ -306,13 +334,15 @@ def main():
     if not execs:
         return
 
+    funding_pnl = load_funding(args.dsn, args.table, args.symbol)
+
     try:
         closed_lots, open_lots = match_lots(execs)
     except PositionReversalError as err:
         sys.exit(f"ОШИБКА: {err}\n"
                  "Возможные причины: пропущены исполнения открытия, история начата "
                  "не с нулевой позиции, либо одно исполнение развернуло позицию.")
-    print_report(closed_lots, open_lots)
+    print_report(closed_lots, open_lots, funding_pnl)
     if args.csv:
         write_csv(args.csv, closed_lots)
     save_to_db(args.dsn, args.symbol, closed_lots, open_lots)
