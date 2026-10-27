@@ -42,7 +42,7 @@ class PyramidOptimizationMng:
         self.close_band_calculator = PyramidCloseBandCalculator(
             hedge_side=self.hedge_side,
             fee_taker=self.fee_taker,
-            profit_tolerance=state.data.profit_tolerance_pct / 100,
+            profit_tolerance=state.data.close_band_width_pct / 100,
         )
 
         self.close_result_calculator = PyramidCloseResultCalculator(
