@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 
-class PyramidPartialCloseCalculator:
+class PyrPartialCloseCalculator:
 
     def calc_proportional_reductions(
         self,

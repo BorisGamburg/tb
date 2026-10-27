@@ -15,7 +15,7 @@ from common.level_distance_checker import is_level_distance_allowed
 
 
 @dataclass
-class PyramidEntryResult:
+class PyrdEntryResult:
     allowed: bool
     qty: float
     trend_active: bool
@@ -23,7 +23,7 @@ class PyramidEntryResult:
     level_type: str | None
 
 
-class PyramidEntryChecker:
+class PyrEntryChecker:
 
     def __init__(
         self,
@@ -82,12 +82,12 @@ class PyramidEntryChecker:
             main_qty * self.qty_ratio
         )
 
-    def check(self, entries) -> PyramidEntryResult:
+    def check(self, entries) -> PyrdEntryResult:
         cur_price = float(self.proxy_driver.get_last_price(self.symbol))
 
         trend_active = self.ha_trend.is_active(self.entry_tf)
         if not trend_active:
-            return PyramidEntryResult(
+            return PyrdEntryResult(
                 allowed=False,
                 qty=0.0,
                 trend_active=False,
@@ -101,7 +101,7 @@ class PyramidEntryChecker:
             hedge_step_ratio=self.step_ratio,
         )
         if not distance_allowed:
-            return PyramidEntryResult(
+            return PyrdEntryResult(
                 allowed=False,
                 qty=0.0,
                 trend_active=True,
@@ -118,7 +118,7 @@ class PyramidEntryChecker:
                 entries,
             )
             if not extension_result.allowed:
-                return PyramidEntryResult(
+                return PyrdEntryResult(
                     allowed=False,
                     qty=0.0,
                     trend_active=True,
@@ -130,7 +130,7 @@ class PyramidEntryChecker:
 
         qty = self._get_pyramid_qty()
 
-        return PyramidEntryResult(
+        return PyrdEntryResult(
             allowed=qty > 0,
             qty=qty,
             trend_active=True,

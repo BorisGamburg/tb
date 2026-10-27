@@ -6,7 +6,7 @@ from action_processor.state.stack_schema import StackData
 from action_processor.state.types import AllowedTimeframes
 
 
-class PyramidSchema(BaseModel):
+class PyrSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 

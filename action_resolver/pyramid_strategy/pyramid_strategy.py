@@ -2,21 +2,21 @@ from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
 from common.trading_info import TradingInfo
-from action_resolver.pyramid_strategy.pyramid_optimization_mng import (
-    PyramidOptimizationMng,
+from action_resolver.pyramid_strategy.pyr_optimization_mng import (
+    PyrOptimizationMng,
 )
 from action_processor.action import Action
 from action_processor.action import ActionCommand
 from action_processor.action_service import ActionService
 from action_resolver.resolve_result import ResolveResult
 from action_resolver.pyramid_strategy.pyr_entry_checker import (
-    PyramidEntryChecker,
+    PyrEntryChecker,
 )
-from action_resolver.pyramid_strategy.pyramid_partial_close_calculator import (
-    PyramidPartialCloseCalculator,
+from action_resolver.pyramid_strategy.pyr_partial_close_calculator import (
+    PyrPartialCloseCalculator,
 )
 from action_resolver.pyramid_strategy.pyr_close_processor import (
-    PyramidCloseProcessor,
+    PyrCloseProcessor,
 )
 from action_resolver.pyramid_strategy.pyr_tp_checker import PyrTPChecker
 from utils.utils import get_inverse_side
@@ -36,7 +36,7 @@ class PyramidStrategy(BaseStrategy):
         self.app_ctx = app_ctx
         self.trading_info = trading_info
 
-        self.close_checker = PyramidOptimizationMng(
+        self.close_checker = PyrOptimizationMng(
             state=state_store,
             price_service=app_ctx.price_service,
             fee_taker=trading_info.fee_taker,
@@ -48,14 +48,14 @@ class PyramidStrategy(BaseStrategy):
             trading_info=trading_info,
         )
 
-        self.partial_close_calculator = PyramidPartialCloseCalculator()
+        self.partial_close_calculator = PyrPartialCloseCalculator()
 
-        self.close_processor = PyramidCloseProcessor(
+        self.close_processor = PyrCloseProcessor(
             action_service=self.action_service,
             partial_close_calculator=self.partial_close_calculator,
             trading_info=trading_info,
         )
-        self.open_checker = PyramidEntryChecker(
+        self.open_checker = PyrEntryChecker(
             proxy_driver=app_ctx.proxy_driver,
             symbol=state_store.data.symbol,
             side=state_store.data.side,

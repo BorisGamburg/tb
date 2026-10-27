@@ -128,10 +128,10 @@ class StrategyFactory:
         # --- СТРАТЕГИЯ 3: pyramid ---
         # =========================================================
         if strategy_name == "pyramid":
-            from action_resolver.pyramid_strategy.pyramid_schema import PyramidSchema
+            from action_resolver.pyramid_strategy.pyr_schema import PyrSchema
             from action_resolver.pyramid_strategy.pyramid_strategy import PyramidStrategy
 
-            config_data = PyramidSchema.model_validate(parsed_data)
+            config_data = PyrSchema.model_validate(parsed_data)
 
             trading_info = cls._load_trading_info(
                 symbol=config_data.symbol,

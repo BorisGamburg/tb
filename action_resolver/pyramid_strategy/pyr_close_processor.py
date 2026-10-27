@@ -7,7 +7,7 @@ from action_resolver.pyramid_strategy.pyramid_partial_close_calculator import (
 )
 
 
-class PyramidCloseProcessor:
+class PyrCloseProcessor:
 
     def __init__(
         self,
