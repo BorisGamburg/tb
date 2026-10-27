@@ -74,7 +74,8 @@ class PyramidStrategy(BaseStrategy):
             fee_taker=trading_info.fee_taker,
         )
 
-        self.close_band = None        
+        self.close_band = None
+        self._log_parameters()
 
     def resolve(self) -> ResolveResult:
         # Проверяем закрытие всей пирамиды по прибыли
@@ -198,7 +199,7 @@ class PyramidStrategy(BaseStrategy):
             status += "ENTRY: BASE | "
         elif entry_result.allowed and entry_result.level_type == "extension":
             status += "ENTRY: EXTENSION | "
-            
+
         dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
         status += f"DIST: {dist_marker} | "
 
@@ -212,4 +213,18 @@ class PyramidStrategy(BaseStrategy):
             status += "CLOSE BAND: N/A"
 
         return status
-    
+
+    def _log_parameters(self) -> None:
+        data = self.state_store.data
+        params = (
+            f"ЗАГРУЖЕННЫЕ ПАРАМЕТРЫ\n"
+            f"Symbol: {data.symbol}\n"
+            f"Side: {data.side}\n"
+            f"Strategy: {data.strategy}\n"
+            f"Entry TF: {data.entry_tf}\n"
+            f"Open step: {data.open_step_pct}\n"
+            f"Open qty: {data.open_qty_pct}\n"
+            f"Close band width: {data.close_band_width_pct}\n"
+            f"Sleep interval: {data.sleep_interval}\n"
+        )
+        self.app_ctx.logger.info(params)
