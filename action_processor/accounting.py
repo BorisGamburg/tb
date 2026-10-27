@@ -1,3 +1,4 @@
+from decimal import Decimal
 from action_processor.state.state import State
 from action_processor.state.stack_mng import StackMng
 from action_processor.action import Action
@@ -41,7 +42,7 @@ class Accounting:
             raise ValueError(f"⚠️ Unrecognized action: {action}")
 
         self.state_store.save()
-    
+
     def _apply_close(self, levels):
         levels_str = ", ".join(
             f"[{lvl.price:.8f}, {lvl.qty}]"
@@ -54,13 +55,13 @@ class Accounting:
         self.logger.info(
             f"[ACCOUNTING] CLOSE | "
             f"levels={levels_str}"
-        )  
+        )
 
     def _apply_open(self, price: float, qty: float, fee: float):
         self.stack_mng.push(
-            price=price, 
-            qty=qty, 
-            fee=fee, 
+            price=price,
+            qty=qty,
+            fee=fee,
             initial_qty=qty
         )
 
@@ -69,7 +70,7 @@ class Accounting:
             f"| price={price} "
             f"| stack={len(self.stack_mng.data.entries)}"
         )
-    
+
     def _apply_close_position(self, qty: float, price: float):
         self.stack_mng.clear()
 
@@ -136,4 +137,65 @@ class Accounting:
             f"qty={level.qty}"
         )
 
-        self.state_store.save()        
+        self.state_store.save()
+
+    def reduce_levels(self, levels: list, reductions: list[float]):
+        """
+        Атомарно уменьшает qty уровней на заданные величины.
+        Уровни, закрытые полностью, удаляются из стека.
+        State сохраняется один раз, после всех изменений.
+        """
+        if len(levels) != len(reductions):
+            raise ValueError(
+                f"levels/reductions length mismatch | "
+                f"levels={len(levels)} | reductions={len(reductions)}"
+            )
+
+        entries = self.stack_mng.data.entries
+
+        # Сначала валидация: ни одно изменение не применяется,
+        # если хотя бы одна редукция некорректна
+        plan = []
+        for level, reduction in zip(levels, reductions):
+            if not any(level is entry for entry in entries):
+                raise ValueError(
+                    f"Level is not in stack | "
+                    f"price={level.price} | qty={level.qty}"
+                )
+
+            qty = Decimal(str(level.qty))
+            reduction = Decimal(str(reduction))
+
+            if reduction < 0 or reduction > qty:
+                raise ValueError(
+                    f"Invalid level reduction | "
+                    f"price={level.price} | "
+                    f"qty={level.qty} | reduction={reduction}"
+                )
+
+            plan.append((level, qty - reduction))
+
+        # Применяем: сначала частичные, затем удаляем закрытые целиком.
+        # Удаление по идентичности объекта: равные по значению уровни
+        # не должны подменять друг друга.
+        removed = []
+        for level, new_qty in plan:
+            if new_qty == 0:
+                removed.append(level)
+            else:
+                level.qty = float(new_qty)
+
+        if removed:
+            entries[:] = [
+                entry for entry in entries
+                if not any(entry is gone for gone in removed)
+            ]
+
+        self.logger.info(
+            f"[ACCOUNTING] REDUCE_LEVELS | "
+            f"levels={len(levels)} | "
+            f"removed={len(removed)} | "
+            f"reduced={len(plan) - len(removed)}"
+        )
+
+        self.state_store.save()

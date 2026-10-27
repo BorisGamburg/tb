@@ -106,3 +106,57 @@ class PyramidPartialCloseCalculator:
             return float(lower)
 
         return float(upper)
+
+    def calc_sequential_reductions(
+        self,
+        levels,
+        executed_qty: float,
+        side: str,
+    ) -> list[float]:
+        """
+        Распределяет исполненный объём по уровням, начиная с наименее
+        прибыльных и двигаясь к наиболее прибыльным: каждый уровень
+        закрывается целиком, пока хватает объёма, последний — частично.
+
+        side — сторона ордера закрытия (как в calc_proportional_reductions):
+        "Sell" закрывает long, наименее прибыльный уровень — с наибольшей
+        ценой входа; "Buy" закрывает short, наименее прибыльный — с
+        наименьшей ценой входа. Возвращает редукции в исходном порядке levels.
+        """
+        if not levels:
+            raise ValueError("Expected at least one level")
+
+        if side not in ("Buy", "Sell"):
+            raise ValueError(f"Unsupported side: {side}")
+
+        qtys = [Decimal(str(level.qty)) for level in levels]
+        total = sum(qtys)
+        executed = Decimal(str(executed_qty))
+
+        if executed <= 0:
+            raise ValueError(f"Executed qty must be positive: {executed_qty}")
+        if executed > total:
+            raise ValueError(
+                f"Executed qty exceeds total levels qty | "
+                f"executed={executed_qty} | total={total}"
+            )
+
+        # Сортировка устойчива: при равных ценах порядок уровней сохраняется
+        order = sorted(
+            range(len(levels)),
+            key=lambda i: levels[i].price,
+            reverse=(side == "Sell"),
+        )
+
+        reductions = [Decimal(0)] * len(levels)
+        remaining = executed
+
+        for i in order:
+            if remaining <= 0:
+                break
+
+            reduction = min(qtys[i], remaining)
+            reductions[i] = reduction
+            remaining -= reduction
+
+        return [float(value) for value in reductions]

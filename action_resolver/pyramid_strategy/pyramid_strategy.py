@@ -9,16 +9,17 @@ from action_processor.action import Action
 from action_processor.action import ActionCommand
 from action_processor.action_service import ActionService
 from action_resolver.resolve_result import ResolveResult
-from action_resolver.pyramid_strategy.pyramid_entry_checker import (
+from action_resolver.pyramid_strategy.pyr_entry_checker import (
     PyramidEntryChecker,
 )
 from action_resolver.pyramid_strategy.pyramid_partial_close_calculator import (
     PyramidPartialCloseCalculator,
 )
-from action_resolver.pyramid_strategy.pyramid_close_processor import (
+from action_resolver.pyramid_strategy.pyr_close_processor import (
     PyramidCloseProcessor,
 )
 from action_resolver.pyramid_strategy.pyr_tp_checker import PyrTPChecker
+from utils.utils import get_inverse_side
 
 
 
@@ -142,17 +143,23 @@ class PyramidStrategy(BaseStrategy):
         if not self.profit_close_checker.check(entries):
             return ResolveResult(executed=False, status=""), False
 
-        # Закрываем всю позицию
+        # Закрываем только уровни пирамиды (Action.CLOSE на их суммарный qty),
+        # а не всю биржевую позицию: в ней могут быть позиции других стратегий.
+        # levels — копия: Accounting удаляет уровни из того же списка entries.
+        levels = list(entries)
         action_command = ActionCommand(
-            action=Action.CLOSE_POSITION,
+            action=Action.CLOSE,
             symbol=self.state_store.data.symbol,
-            side=self.state_store.data.side,
+            side=get_inverse_side(self.state_store.data.side),
+            qty=round(sum(level.qty for level in levels), 8),
+            levels=levels,
             reason="PYRAMID_PROFIT_CLOSE",
         )
 
-        exec_result = self.action_service.process_action(action_command)
+        self.action_service.notify_action(action_command)
+        exec_result = self.close_processor.execute_profit_close(action_command)
 
         return ResolveResult(
             executed=exec_result.executed,
             status="",
-        ), exec_result.executed
+        ), True
