@@ -8,13 +8,11 @@ class PyrTPChecker:
         proxy_driver,
         symbol: str,
         side: str,
-        entry_tf: str,
         price_service,
         fee_taker: float,
     ):
         self.symbol = symbol
         self.side = side
-        self.entry_tf = entry_tf
         self.price_service = price_service
         self.fee_taker = fee_taker
 
@@ -23,9 +21,9 @@ class PyrTPChecker:
             symbol=symbol,
         )
 
-    def check(self, entries) -> bool:
+    def check(self, entries, entry_tf: str) -> bool:
         # Проверяем HA-разворот
-        if not self.ha_signal.is_exit(tf=self.entry_tf, side=self.side):
+        if not self.ha_signal.is_exit(tf=entry_tf, side=self.side):
             return False
 
         # Уровней нет — закрывать нечего

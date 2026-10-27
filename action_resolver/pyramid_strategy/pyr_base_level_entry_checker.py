@@ -19,12 +19,10 @@ class PyrBaseLevelEntryChecker:
     def __init__(
         self,
         side: str,
-        timeframe: str,
         ha_signal: HAReversalSignal,
         bb_service: BBService,
     ):
         self.side = side
-        self.timeframe = timeframe
         self.ha_signal = ha_signal
         self.bb_service = bb_service
 
@@ -34,19 +32,19 @@ class PyrBaseLevelEntryChecker:
 
         return all(entry.price <= cur_price for entry in entries)
 
-    def _check_ha_reversal(self) -> tuple[bool, dict]:
-        return self.ha_signal.is_entry(self.timeframe, self.side)
+    def _check_ha_reversal(self, entry_tf: str) -> tuple[bool, dict]:
+        return self.ha_signal.is_entry(entry_tf, self.side)
 
-    def _check_bb(self, cur_price: float) -> bool:
-        bb = self.bb_service.get_live(self.timeframe)
+    def _check_bb(self, cur_price: float, entry_tf: str) -> bool:
+        bb = self.bb_service.get_live(entry_tf)
 
         if self.side == "Buy":
             return cur_price < bb["mid"]
 
         return cur_price > bb["mid"]
 
-    def check(self, cur_price: float, entries) -> PyrBaseLevelEntryResult:
-        ha_reversal, ha_payload = self._check_ha_reversal()
+    def check(self, cur_price: float, entries, entry_tf: str) -> PyrBaseLevelEntryResult:
+        ha_reversal, ha_payload = self._check_ha_reversal(entry_tf)
 
         ha_prev_color = ha_payload["prev_color"]
         ha_curr_color = ha_payload["curr_color"]
@@ -72,7 +70,7 @@ class PyrBaseLevelEntryChecker:
                 ha_curr_color=ha_curr_color,
             )
 
-        bb_allowed = self._check_bb(cur_price)
+        bb_allowed = self._check_bb(cur_price, entry_tf)
 
         return PyrBaseLevelEntryResult(
             allowed=bb_allowed,

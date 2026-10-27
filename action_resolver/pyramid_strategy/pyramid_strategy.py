@@ -24,6 +24,7 @@ from utils.utils import get_inverse_side
 
 
 class PyramidStrategy(BaseStrategy):
+    BASE_TIMEFRAMES = ["1", "5", "15", "60", "240"]    
     def __init__(
         self,
         state_store: State,
@@ -59,7 +60,6 @@ class PyramidStrategy(BaseStrategy):
             proxy_driver=app_ctx.proxy_driver,
             symbol=state_store.data.symbol,
             side=state_store.data.side,
-            entry_tf=state_store.data.entry_tf,
             step_pct=float(state_store.data.open_step_pct),
             qty_pct=float(state_store.data.open_qty_pct),
             trading_info=trading_info,
@@ -69,7 +69,6 @@ class PyramidStrategy(BaseStrategy):
             proxy_driver=app_ctx.proxy_driver,
             symbol=state_store.data.symbol,
             side=state_store.data.side,
-            entry_tf=state_store.data.entry_tf,
             price_service=app_ctx.price_service,
             fee_taker=trading_info.fee_taker,
         )
@@ -94,7 +93,8 @@ class PyramidStrategy(BaseStrategy):
     def _process_open(self) -> ResolveResult:
         # Проверяем сигнал на открытие
         entry_result = self.open_checker.check(
-            self.state_store.data.stack.entries
+            self.state_store.data.stack.entries,
+            self.state_store.data.entry_tf,
         )
 
         status = self._build_status_line(entry_result)
@@ -112,6 +112,8 @@ class PyramidStrategy(BaseStrategy):
 
         # Передаем команду на исполнение и учет
         exec_result = self.action_service.process_action(action_command)
+        if exec_result.executed and entry_result.level_type == "base":
+            self._advance_entry_tf()        
 
         # Возвращаем результат
         return ResolveResult(
@@ -148,7 +150,10 @@ class PyramidStrategy(BaseStrategy):
     def _process_profit_close(self) -> tuple[ResolveResult, bool]:
         # Проверяем HA-разворот и достаточную прибыль
         entries = self.state_store.data.stack.entries
-        if not self.profit_close_checker.check(entries):
+        if not self.profit_close_checker.check(
+            entries,
+            self.state_store.data.entry_tf,
+        ):
             return ResolveResult(executed=False, status=""), False
 
         # Закрываем только уровни пирамиды (Action.CLOSE на их суммарный qty),
@@ -222,9 +227,35 @@ class PyramidStrategy(BaseStrategy):
             f"Side: {data.side}\n"
             f"Strategy: {data.strategy}\n"
             f"Entry TF: {data.entry_tf}\n"
-            f"Open step: {data.open_step_pct}\n"
-            f"Open qty: {data.open_qty_pct}\n"
-            f"Close band width: {data.close_band_width_pct}\n"
+            f"Open step: {data.open_step_pct}%\n"
+            f"Open qty: {data.open_qty_pct}%\n"
+            f"Close band width: {data.close_band_width_pct}%\n"
             f"Sleep interval: {data.sleep_interval}\n"
         )
         self.app_ctx.logger.info(params)
+
+    def _advance_entry_tf(self) -> None:
+        # Получаем текущий тф
+        current_tf = self.state_store.data.entry_tf
+
+        # Проверяем текущий тф
+        if current_tf not in self.BASE_TIMEFRAMES:
+            raise ValueError(
+                f"Cannot advance entry_tf: {current_tf} "
+                f"is not in {self.BASE_TIMEFRAMES}"
+            )
+
+        # Получаем следующий тф
+        current_index = self.BASE_TIMEFRAMES.index(current_tf)
+        if current_index == len(self.BASE_TIMEFRAMES) - 1:
+            return
+        next_tf = self.BASE_TIMEFRAMES[current_index + 1]
+
+        # Сохраняем следующий тф
+        self.state_store.data.entry_tf = next_tf
+        self.state_store.save()
+
+        self.app_ctx.logger.info(
+            f"Base level opened: entry_tf changed "
+            f"from {current_tf} to {next_tf}"
+        )

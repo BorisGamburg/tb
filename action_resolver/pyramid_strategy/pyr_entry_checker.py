@@ -32,7 +32,6 @@ class PyrEntryChecker:
         proxy_driver,
         symbol: str,
         side: str,
-        entry_tf: str,
         step_pct: float,
         qty_pct: float,
         trading_info: TradingInfo,
@@ -40,7 +39,6 @@ class PyrEntryChecker:
         self.proxy_driver = proxy_driver
         self.symbol = symbol
         self.side = side
-        self.entry_tf = entry_tf
         self.step_ratio = step_pct / 100
         self.qty_ratio = qty_pct / 100
         self.trading_info = trading_info
@@ -65,7 +63,6 @@ class PyrEntryChecker:
 
         self.base_level_checker = PyrBaseLevelEntryChecker(
             side=side,
-            timeframe=entry_tf,
             ha_signal=self.ha_signal,
             bb_service=self.bb_service,
         )
@@ -84,12 +81,12 @@ class PyrEntryChecker:
             main_qty * self.qty_ratio
         )
 
-    def check(self, entries) -> PyrdEntryResult:
+    def check(self, entries, entry_tf: str) -> PyrdEntryResult:
         cur_price = float(self.proxy_driver.get_last_price(self.symbol))
 
-        base_result = self.base_level_checker.check(cur_price, entries)
+        base_result = self.base_level_checker.check(cur_price, entries, entry_tf)
 
-        trend_active = self.ha_trend.is_active(self.entry_tf)
+        trend_active = self.ha_trend.is_active(entry_tf)
         if not trend_active:
             return PyrdEntryResult(
                 allowed=False,
