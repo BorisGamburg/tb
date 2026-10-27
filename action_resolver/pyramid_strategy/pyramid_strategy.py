@@ -18,6 +18,8 @@ from action_resolver.pyramid_strategy.pyramid_partial_close_calculator import (
 from action_resolver.pyramid_strategy.pyramid_close_processor import (
     PyramidCloseProcessor,
 )
+from action_resolver.pyramid_strategy.pyr_tp_checker import PyrTPChecker
+
 
 
 class PyramidStrategy(BaseStrategy):
@@ -62,8 +64,22 @@ class PyramidStrategy(BaseStrategy):
             trading_info=trading_info,
         )
 
+        self.profit_close_checker = PyrTPChecker(
+            proxy_driver=app_ctx.proxy_driver,
+            symbol=state_store.data.symbol,
+            side=state_store.data.side,
+            entry_tf=state_store.data.entry_tf,
+            price_service=app_ctx.price_service,
+            fee_taker=trading_info.fee_taker,
+        )
+
     def resolve(self) -> ResolveResult:
-        # Проверяем закрытие
+        # Проверяем закрытие всей пирамиды по прибыли
+        profit_close_result, profit_close_found = self._process_profit_close()
+        if profit_close_found:
+            return profit_close_result
+
+        # Проверяем Unbind
         close_result, close_found = self._process_close()
         if close_found:
             return close_result
@@ -119,3 +135,24 @@ class PyramidStrategy(BaseStrategy):
             executed=exec_result.executed,
             status="",
         ), True
+
+    def _process_profit_close(self) -> tuple[ResolveResult, bool]:
+        # Проверяем HA-разворот и достаточную прибыль
+        entries = self.state_store.data.stack.entries
+        if not self.profit_close_checker.check(entries):
+            return ResolveResult(executed=False, status=""), False
+
+        # Закрываем всю позицию
+        action_command = ActionCommand(
+            action=Action.CLOSE_POSITION,
+            symbol=self.state_store.data.symbol,
+            side=self.state_store.data.side,
+            reason="PYRAMID_PROFIT_CLOSE",
+        )
+
+        exec_result = self.action_service.process_action(action_command)
+
+        return ResolveResult(
+            executed=exec_result.executed,
+            status="",
+        ), exec_result.executed

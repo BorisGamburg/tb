@@ -5,14 +5,14 @@ from signals.ha_reversal_signal import HAReversalSignal
 
 
 @dataclass
-class PyramidBaseLevelEntryResult:
+class PyrBaseLevelEntryResult:
     allowed: bool
     ha_reversal: bool
     bb_allowed: bool
     position_allowed: bool
 
 
-class PyramidBaseLevelEntryChecker:
+class PyrBaseLevelEntryChecker:
 
     def __init__(
         self,
@@ -44,10 +44,10 @@ class PyramidBaseLevelEntryChecker:
 
         return cur_price > bb["mid"]
 
-    def check(self, cur_price: float, entries) -> PyramidBaseLevelEntryResult:
+    def check(self, cur_price: float, entries) -> PyrBaseLevelEntryResult:
         position_allowed = self._check_position(cur_price, entries)
         if not position_allowed:
-            return PyramidBaseLevelEntryResult(
+            return PyrBaseLevelEntryResult(
                 allowed=False,
                 ha_reversal=False,
                 bb_allowed=False,
@@ -56,7 +56,7 @@ class PyramidBaseLevelEntryChecker:
 
         ha_reversal = self._check_ha_reversal()
         if not ha_reversal:
-            return PyramidBaseLevelEntryResult(
+            return PyrBaseLevelEntryResult(
                 allowed=False,
                 ha_reversal=False,
                 bb_allowed=False,
@@ -65,7 +65,7 @@ class PyramidBaseLevelEntryChecker:
 
         bb_allowed = self._check_bb(cur_price)
 
-        return PyramidBaseLevelEntryResult(
+        return PyrBaseLevelEntryResult(
             allowed=bb_allowed,
             ha_reversal=True,
             bb_allowed=bb_allowed,
