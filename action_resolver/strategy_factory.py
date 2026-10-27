@@ -9,7 +9,7 @@ class StrategyFactory:
     def _read_yaml_file(file_path: Path) -> dict:
         """Вспомогательный метод для чтения и парсинга YAML-файла."""
         with open(file_path, 'r', encoding='utf-8') as f:
-            return yaml.load(f, Loader=yaml.SafeLoader) or {}    
+            return yaml.load(f, Loader=yaml.SafeLoader) or {}
 
     @staticmethod
     def _load_trading_info(
@@ -125,7 +125,35 @@ class StrategyFactory:
             return state_store, strategy, trading_info
 
         # =========================================================
-        # --- СТРАТЕГИЯ 3: orchestrator ---
+        # --- СТРАТЕГИЯ 3: pyramid ---
+        # =========================================================
+        if strategy_name == "pyramid":
+            from action_resolver.pyramid_strategy.pyramid_schema import PyramidSchema
+            from action_resolver.pyramid_strategy.pyramid_strategy import PyramidStrategy
+
+            config_data = PyramidSchema.model_validate(parsed_data)
+
+            trading_info = cls._load_trading_info(
+                symbol=config_data.symbol,
+                proxy_driver=app_ctx.proxy_driver,
+            )
+
+            state_store = State(
+                config_file=config_file,
+                config_data=config_data,
+                logger=app_ctx.logger,
+            )
+
+            strategy = PyramidStrategy(
+                state_store=state_store,
+                app_ctx=app_ctx,
+                trading_info=trading_info,
+            )
+
+            return state_store, strategy, trading_info
+
+        # =========================================================
+        # --- СТРАТЕГИЯ 4: orchestrator ---
         # =========================================================
         if strategy_name == "orchestrator":
             from action_resolver.orchestrator_strategy.orchestrator_schema import OrchestratorSchema

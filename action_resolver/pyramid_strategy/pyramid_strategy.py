@@ -60,7 +60,7 @@ class PyramidStrategy(BaseStrategy):
             step_pct=float(state_store.data.hedge_step_pct),
             qty_pct=float(state_store.data.hedge_qty_pct),
             trading_info=trading_info,
-        )        
+        )
 
     def resolve(self) -> ResolveResult:
         # Проверяем закрытие
