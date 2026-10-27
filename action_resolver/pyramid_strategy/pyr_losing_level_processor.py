@@ -14,7 +14,7 @@ class PriceLocation(Enum):
     LOSS = "LOSS"
 
 
-class PyramidLosingLevelProcessor:
+class PyrLosingLevelProcessor:
     def __init__(
         self,
         hedge_side: str,

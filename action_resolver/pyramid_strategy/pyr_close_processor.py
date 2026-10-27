@@ -2,8 +2,8 @@ from action_processor.execution.limit_order_result import LimitOrderStatus
 from action_processor.execution.execution_result import ExecutionResult
 from action_processor.action import ActionCommand, Action
 from action_processor.action_service import ActionService
-from action_resolver.pyramid_strategy.pyramid_partial_close_calculator import (
-    PyramidPartialCloseCalculator,
+from action_resolver.pyramid_strategy.pyr_partial_close_calculator import (
+    PyrPartialCloseCalculator,
 )
 
 
@@ -12,7 +12,7 @@ class PyrCloseProcessor:
     def __init__(
         self,
         action_service: ActionService,
-        partial_close_calculator: PyramidPartialCloseCalculator,
+        partial_close_calculator: PyrPartialCloseCalculator,
         trading_info,
     ):
         self.action_service = action_service
