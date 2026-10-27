@@ -21,6 +21,8 @@ class PyrdEntryResult:
     trend_active: bool
     distance_allowed: bool
     level_type: str | None
+    ha_prev_color: str | None = None
+    ha_curr_color: str | None = None
 
 
 class PyrEntryChecker:
@@ -85,6 +87,8 @@ class PyrEntryChecker:
     def check(self, entries) -> PyrdEntryResult:
         cur_price = float(self.proxy_driver.get_last_price(self.symbol))
 
+        base_result = self.base_level_checker.check(cur_price, entries)
+
         trend_active = self.ha_trend.is_active(self.entry_tf)
         if not trend_active:
             return PyrdEntryResult(
@@ -93,6 +97,8 @@ class PyrEntryChecker:
                 trend_active=False,
                 distance_allowed=False,
                 level_type=None,
+                ha_prev_color=base_result.ha_prev_color,
+                ha_curr_color=base_result.ha_curr_color,                
             )
 
         distance_allowed = is_level_distance_allowed(
@@ -107,9 +113,10 @@ class PyrEntryChecker:
                 trend_active=True,
                 distance_allowed=False,
                 level_type=None,
+                ha_prev_color=base_result.ha_prev_color,
+                ha_curr_color=base_result.ha_curr_color,                
             )
 
-        base_result = self.base_level_checker.check(cur_price, entries)
         if base_result.allowed:
             level_type = "base"
         else:
@@ -124,6 +131,8 @@ class PyrEntryChecker:
                     trend_active=True,
                     distance_allowed=True,
                     level_type=None,
+                    ha_prev_color=base_result.ha_prev_color,
+                    ha_curr_color=base_result.ha_curr_color,
                 )
 
             level_type = "extension"
@@ -136,4 +145,6 @@ class PyrEntryChecker:
             trend_active=True,
             distance_allowed=True,
             level_type=level_type if qty > 0 else None,
+            ha_prev_color=base_result.ha_prev_color,
+            ha_curr_color=base_result.ha_curr_color,
         )

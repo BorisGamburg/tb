@@ -10,6 +10,8 @@ class PyrBaseLevelEntryResult:
     ha_reversal: bool
     bb_allowed: bool
     position_allowed: bool
+    ha_prev_color: str | None = None
+    ha_curr_color: str | None = None
 
 
 class PyrBaseLevelEntryChecker:
@@ -32,9 +34,8 @@ class PyrBaseLevelEntryChecker:
 
         return all(entry.price <= cur_price for entry in entries)
 
-    def _check_ha_reversal(self) -> bool:
-        ha_reversal, _ = self.ha_signal.is_entry(self.timeframe, self.side)
-        return ha_reversal
+    def _check_ha_reversal(self) -> tuple[bool, dict]:
+        return self.ha_signal.is_entry(self.timeframe, self.side)
 
     def _check_bb(self, cur_price: float) -> bool:
         bb = self.bb_service.get_live(self.timeframe)
@@ -45,22 +46,30 @@ class PyrBaseLevelEntryChecker:
         return cur_price > bb["mid"]
 
     def check(self, cur_price: float, entries) -> PyrBaseLevelEntryResult:
+        ha_reversal, ha_payload = self._check_ha_reversal()
+
+        ha_prev_color = ha_payload["prev_color"]
+        ha_curr_color = ha_payload["curr_color"]
+
         position_allowed = self._check_position(cur_price, entries)
         if not position_allowed:
             return PyrBaseLevelEntryResult(
                 allowed=False,
-                ha_reversal=False,
+                ha_reversal=ha_reversal,
                 bb_allowed=False,
                 position_allowed=False,
+                ha_prev_color=ha_prev_color,
+                ha_curr_color=ha_curr_color,
             )
 
-        ha_reversal = self._check_ha_reversal()
         if not ha_reversal:
             return PyrBaseLevelEntryResult(
                 allowed=False,
                 ha_reversal=False,
                 bb_allowed=False,
                 position_allowed=True,
+                ha_prev_color=ha_prev_color,
+                ha_curr_color=ha_curr_color,
             )
 
         bb_allowed = self._check_bb(cur_price)
@@ -70,4 +79,6 @@ class PyrBaseLevelEntryChecker:
             ha_reversal=True,
             bb_allowed=bb_allowed,
             position_allowed=True,
+            ha_prev_color=ha_prev_color,
+            ha_curr_color=ha_curr_color,
         )

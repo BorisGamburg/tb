@@ -74,6 +74,8 @@ class PyramidStrategy(BaseStrategy):
             fee_taker=trading_info.fee_taker,
         )
 
+        self.close_band = None        
+
     def resolve(self) -> ResolveResult:
         # Проверяем закрытие всей пирамиды по прибыли
         profit_close_result, profit_close_found = self._process_profit_close()
@@ -93,8 +95,11 @@ class PyramidStrategy(BaseStrategy):
         entry_result = self.open_checker.check(
             self.state_store.data.stack.entries
         )
+
+        status = self._build_status_line(entry_result)
+
         if not entry_result.allowed:
-            return ResolveResult(executed=False, status="")
+            return ResolveResult(executed=False, status=status)
 
         # Формируем команду
         action_command = ActionCommand(
@@ -110,12 +115,14 @@ class PyramidStrategy(BaseStrategy):
         # Возвращаем результат
         return ResolveResult(
             executed=exec_result.executed,
-            status="",
+            status=status,
         )
 
     def _process_close(self) -> tuple[ResolveResult, bool]:
         # Проверяем закрытие
         close_result = self.close_checker.check()
+        self.close_band = close_result.band
+
         if not close_result.found:
             return ResolveResult(executed=False, status=""), False
 
@@ -163,3 +170,46 @@ class PyramidStrategy(BaseStrategy):
             executed=exec_result.executed,
             status="",
         ), True
+
+    def _build_status_line(self, entry_result) -> str:
+        ticker = self.app_ctx.proxy_driver.get_ticker(
+            self.state_store.data.symbol
+        )
+
+        status = (
+            f"BID/ASK: {ticker['bid']:.6f} — {ticker['ask']:.6f} | "
+        )
+
+        color_symbols = {
+            "red": "🔴",
+            "green": "🟢",
+            "doji": "⚪",
+        }
+
+        prev_color = color_symbols.get(entry_result.ha_prev_color, "❔")
+        curr_color = color_symbols.get(entry_result.ha_curr_color, "❔")
+
+        status += (
+            f"HA({self.state_store.data.entry_tf}): "
+            f"{prev_color} → {curr_color} | "
+        )
+
+        if entry_result.allowed and entry_result.level_type == "base":
+            status += "ENTRY: BASE | "
+        elif entry_result.allowed and entry_result.level_type == "extension":
+            status += "ENTRY: EXTENSION | "
+            
+        dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
+        status += f"DIST: {dist_marker} | "
+
+        if self.close_band is not None:
+            status += (
+                f"CLOSE BAND: "
+                f"{self.close_band.low:.6f} — "
+                f"{self.close_band.high:.6f}"
+            )
+        else:
+            status += "CLOSE BAND: N/A"
+
+        return status
+    
