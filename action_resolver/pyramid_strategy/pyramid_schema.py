@@ -16,8 +16,8 @@ class PyramidSchema(BaseModel):
     strategy: str
 
     entry_tf: AllowedTimeframes
-    hedge_step_pct: Pct
-    hedge_qty_pct: Pct
+    open_step_pct: Pct
+    open_qty_pct: Pct
     close_band_width_pct: Pct
 
     sleep_interval: float

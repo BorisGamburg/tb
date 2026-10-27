@@ -57,8 +57,8 @@ class PyramidStrategy(BaseStrategy):
             symbol=state_store.data.symbol,
             side=state_store.data.side,
             entry_tf=state_store.data.entry_tf,
-            step_pct=float(state_store.data.hedge_step_pct),
-            qty_pct=float(state_store.data.hedge_qty_pct),
+            step_pct=float(state_store.data.open_step_pct),
+            qty_pct=float(state_store.data.open_qty_pct),
             trading_info=trading_info,
         )
 
