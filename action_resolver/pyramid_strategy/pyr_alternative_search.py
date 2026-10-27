@@ -1,13 +1,13 @@
 from action_processor.state.stack_schema import StackElem
-from action_resolver.pyramid_strategy.pyramid_close_result_calculator import (
-    PyramidCloseResultCalculator,
+from action_resolver.pyramid_strategy.pyr_close_result_calculator import (
+    PyrCloseResultCalculator,
 )
 
 
-class PyramidAlternativeSearchService:
+class PyrAlternativeSearchService:
     def __init__(
         self,
-        close_result_calculator: PyramidCloseResultCalculator,
+        close_result_calculator: PyrCloseResultCalculator,
         hedge_side: str,
         logger
     ):

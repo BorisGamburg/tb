@@ -1,7 +1,7 @@
 from action_processor.state.stack_schema import StackElem
 
 
-class PyramidLevelSelector:
+class PyrLevelSelector:
     def __init__(self, hedge_side: str):
         self.hedge_side = hedge_side
 

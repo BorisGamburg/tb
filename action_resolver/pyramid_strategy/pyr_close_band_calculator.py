@@ -7,7 +7,7 @@ class Band:
     high: float
 
 
-class PyramidCloseBandCalculator:
+class PyrCloseBandCalculator:
     def __init__(
         self,
         hedge_side: str,

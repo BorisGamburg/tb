@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 
-from action_resolver.pyramid_strategy.base_level_entry_checker import (
-    PyramidBaseLevelEntryChecker,
+from action_resolver.pyramid_strategy.pyr_base_level_entry_checker import (
+    PyrBaseLevelEntryChecker,
 )
-from action_resolver.pyramid_strategy.extension_level_entry_checker import (
-    PyramidExtensionLevelEntryChecker,
+from action_resolver.pyramid_strategy.pyr_extension_level_entry_checker import (
+    PyrExtensionLevelEntryChecker,
 )
 from common.trading_info import TradingInfo
 from services.bb_service import BBService
@@ -61,14 +61,14 @@ class PyramidEntryChecker:
             symbol=symbol,
         )
 
-        self.base_level_checker = PyramidBaseLevelEntryChecker(
+        self.base_level_checker = PyrBaseLevelEntryChecker(
             side=side,
             timeframe=entry_tf,
             ha_signal=self.ha_signal,
             bb_service=self.bb_service,
         )
 
-        self.extension_level_checker = PyramidExtensionLevelEntryChecker(
+        self.extension_level_checker = PyrExtensionLevelEntryChecker(
             side=side,
         )
 

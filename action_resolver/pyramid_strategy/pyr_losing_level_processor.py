@@ -1,12 +1,12 @@
 from enum import Enum
 
 from action_processor.state.stack_schema import StackElem
-from action_resolver.pyramid_strategy.pyramid_close_band_calculator import (
+from action_resolver.pyramid_strategy.pyr_close_band_calculator import (
     Band,
-    PyramidCloseBandCalculator,
+    PyrCloseBandCalculator,
 )
-from action_resolver.pyramid_strategy.pyramid_alternative_search import PyramidAlternativeSearchService
-from action_resolver.pyramid_strategy.pyramid_level_selector import PyramidLevelSelector
+from action_resolver.pyramid_strategy.pyr_alternative_search import PyrAlternativeSearchService
+from action_resolver.pyramid_strategy.pyr_level_selector import PyrLevelSelector
 
 class PriceLocation(Enum):
     PROFIT = "PROFIT"
@@ -18,9 +18,9 @@ class PyramidLosingLevelProcessor:
     def __init__(
         self,
         hedge_side: str,
-        close_band_calculator: PyramidCloseBandCalculator,
-        level_selector: PyramidLevelSelector,
-        alternative_search_service: PyramidAlternativeSearchService,
+        close_band_calculator: PyrCloseBandCalculator,
+        level_selector: PyrLevelSelector,
+        alternative_search_service: PyrAlternativeSearchService,
         logger,
     ):
         self.hedge_side = hedge_side
@@ -35,7 +35,7 @@ class PyramidLosingLevelProcessor:
         sorted_levels: list[StackElem],
         cur_price: float,
         optimization_result_cls,
-    ) -> "PyramidOptimizationResult":
+    ) -> "PyrOptimizationResult":
         # Получаем следующий по уменьшению убытка уровень
         next_less_losing_level = self.level_selector.get_next_less_losing_level(
             losing_level,

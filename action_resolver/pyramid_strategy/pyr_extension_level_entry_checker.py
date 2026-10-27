@@ -2,16 +2,16 @@ from dataclasses import dataclass
 
 
 @dataclass
-class PyramidExtensionLevelEntryResult:
+class PyrExtensionLevelEntryResult:
     allowed: bool
 
 
-class PyramidExtensionLevelEntryChecker:
+class PyrExtensionLevelEntryChecker:
 
     def __init__(self, side: str):
         self.side = side
 
-    def check(self, cur_price: float, entries) -> PyramidExtensionLevelEntryResult:
+    def check(self, cur_price: float, entries) -> PyrExtensionLevelEntryResult:
         if self.side == "Buy":
             allowed = any(
                 entry.price < cur_price
@@ -23,6 +23,6 @@ class PyramidExtensionLevelEntryChecker:
                 for entry in entries
             )
 
-        return PyramidExtensionLevelEntryResult(
+        return PyrExtensionLevelEntryResult(
             allowed=allowed,
         )

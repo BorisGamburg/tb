@@ -1,20 +1,20 @@
 from dataclasses import dataclass
 
 from action_processor.state.stack_schema import StackElem
-from action_resolver.pyramid_strategy.pyramid_close_band_calculator import (
+from action_resolver.pyramid_strategy.pyr_close_band_calculator import (
     Band,
-    PyramidCloseBandCalculator,
+    PyrCloseBandCalculator,
 )
-from action_resolver.pyramid_strategy.pyramid_close_result_calculator import (
-    PyramidCloseResultCalculator,
+from action_resolver.pyramid_strategy.pyr_close_result_calculator import (
+    PyrCloseResultCalculator,
 )
-from action_resolver.pyramid_strategy.pyramid_alternative_search import PyramidAlternativeSearchService
-from action_resolver.pyramid_strategy.pyramid_level_selector import PyramidLevelSelector
-from action_resolver.pyramid_strategy.pyramid_losing_level_processor import PyramidLosingLevelProcessor
+from action_resolver.pyramid_strategy.pyr_alternative_search import PyrAlternativeSearchService
+from action_resolver.pyramid_strategy.pyr_level_selector import PyrLevelSelector
+from action_resolver.pyramid_strategy.pyr_losing_level_processor import PyrLosingLevelProcessor
 
 
 @dataclass
-class PyramidOptimizationResult:
+class PyrOptimizationResult:
     found: bool
     continue_search: bool
     losing_level: StackElem | None
@@ -23,7 +23,7 @@ class PyramidOptimizationResult:
     band: Band | None = None
 
 
-class PyramidOptimizationMng:
+class PyrOptimizationMng:
     def __init__(
         self,
         state,
@@ -37,26 +37,26 @@ class PyramidOptimizationMng:
         self.fee_taker = fee_taker
         self.logger = logger
 
-        self.level_selector = PyramidLevelSelector(hedge_side=self.hedge_side)
+        self.level_selector = PyrLevelSelector(hedge_side=self.hedge_side)
 
-        self.close_band_calculator = PyramidCloseBandCalculator(
+        self.close_band_calculator = PyrCloseBandCalculator(
             hedge_side=self.hedge_side,
             fee_taker=self.fee_taker,
             profit_tolerance=state.data.close_band_width_pct / 100,
         )
 
-        self.close_result_calculator = PyramidCloseResultCalculator(
+        self.close_result_calculator = PyrCloseResultCalculator(
             hedge_side=self.hedge_side,
             fee_taker=self.fee_taker,
         )
 
-        self.alternative_search_service = PyramidAlternativeSearchService(
+        self.alternative_search_service = PyrAlternativeSearchService(
             close_result_calculator=self.close_result_calculator,
             hedge_side=self.hedge_side,
             logger=logger
         )
 
-        self.losing_level_processor = PyramidLosingLevelProcessor(
+        self.losing_level_processor = PyrLosingLevelProcessor(
             hedge_side=self.hedge_side,
             close_band_calculator=self.close_band_calculator,
             level_selector=self.level_selector,
@@ -64,7 +64,7 @@ class PyramidOptimizationMng:
             logger=self.logger,
         )
 
-    def check(self) -> PyramidOptimizationResult:
+    def check(self) -> PyrOptimizationResult:
         current_price, sorted_levels, losing_levels = self._prepare_data()
 
         last_band = None
@@ -73,7 +73,7 @@ class PyramidOptimizationMng:
                 losing_level=losing_level,
                 sorted_levels=sorted_levels,
                 cur_price=current_price,
-                optimization_result_cls=PyramidOptimizationResult,
+                optimization_result_cls=PyrOptimizationResult,
             )
 
             if result.band:
@@ -82,7 +82,7 @@ class PyramidOptimizationMng:
             if result.found or not result.continue_search:
                 return result
 
-        return PyramidOptimizationResult(
+        return PyrOptimizationResult(
             found=False,
             continue_search=False,
             losing_level=None,
