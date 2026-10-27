@@ -30,7 +30,7 @@ class PyramidEntryChecker:
         proxy_driver,
         symbol: str,
         side: str,
-        timeframe: str,
+        entry_tf: str,
         step_pct: float,
         qty_pct: float,
         trading_info: TradingInfo,
@@ -38,7 +38,7 @@ class PyramidEntryChecker:
         self.proxy_driver = proxy_driver
         self.symbol = symbol
         self.side = side
-        self.timeframe = timeframe
+        self.entry_tf = entry_tf
         self.step_ratio = step_pct / 100
         self.qty_ratio = qty_pct / 100
         self.trading_info = trading_info
@@ -63,7 +63,7 @@ class PyramidEntryChecker:
 
         self.base_level_checker = PyramidBaseLevelEntryChecker(
             side=side,
-            timeframe=timeframe,
+            timeframe=entry_tf,
             ha_signal=self.ha_signal,
             bb_service=self.bb_service,
         )
@@ -85,7 +85,7 @@ class PyramidEntryChecker:
     def check(self, entries) -> PyramidEntryResult:
         cur_price = float(self.proxy_driver.get_last_price(self.symbol))
 
-        trend_active = self.ha_trend.is_active(self.timeframe)
+        trend_active = self.ha_trend.is_active(self.entry_tf)
         if not trend_active:
             return PyramidEntryResult(
                 allowed=False,

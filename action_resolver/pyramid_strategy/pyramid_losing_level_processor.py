@@ -149,17 +149,6 @@ class PyramidLosingLevelProcessor:
 
         # Если цена внутри close_band -> закрываемся и выходим
         if price_location == PriceLocation.IN_BAND:
-            # Если цена внутри close_band, но в стеке осталось два уровня,
-            # закрытие запрещено.
-            if len(sorted_levels) == 2:
-                return optimization_result_cls(
-                    found=False,
-                    continue_search=False,
-                    losing_level=None,
-                    profitable_level=None,
-                    qty=0,
-                    band=close_band,
-                )
             qty = losing_level.qty + next_less_losing_level.qty
 
             self._log_normal_close(losing_level, next_less_losing_level, cur_price, close_band, qty)
