@@ -70,12 +70,14 @@ class PyrBaseLevelEntryChecker:
                 ha_curr_color=ha_curr_color,
             )
 
-        bb_allowed = self._check_bb(cur_price, entry_tf)
+        # Временно отключена проверка Bollinger Bands.
+        # bb_allowed = self._check_bb(cur_price, entry_tf)
 
         return PyrBaseLevelEntryResult(
-            allowed=bb_allowed,
+            allowed=True,
             ha_reversal=True,
-            bb_allowed=bb_allowed,
+            # bb_allowed=bb_allowed,
+            bb_allowed=True,
             position_allowed=True,
             ha_prev_color=ha_prev_color,
             ha_curr_color=ha_curr_color,
