@@ -95,7 +95,7 @@ class PyrEntryChecker:
                 distance_allowed=False,
                 level_type=None,
                 ha_prev_color=base_result.ha_prev_color,
-                ha_curr_color=base_result.ha_curr_color,                
+                ha_curr_color=base_result.ha_curr_color,
             )
 
         distance_allowed = is_level_distance_allowed(
@@ -111,7 +111,7 @@ class PyrEntryChecker:
                 distance_allowed=False,
                 level_type=None,
                 ha_prev_color=base_result.ha_prev_color,
-                ha_curr_color=base_result.ha_curr_color,                
+                ha_curr_color=base_result.ha_curr_color,
             )
 
         if base_result.allowed:
@@ -145,3 +145,6 @@ class PyrEntryChecker:
             ha_prev_color=base_result.ha_prev_color,
             ha_curr_color=base_result.ha_curr_color,
         )
+
+    def get_rearm_qty(self) -> float:
+        return self._get_pyramid_qty()

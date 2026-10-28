@@ -133,7 +133,7 @@ class PyramidStrategy(BaseStrategy):
         action_command = ActionCommand(
             action=Action.CLOSE,
             symbol=self.state_store.data.symbol,
-            side=self.state_store.data.side,
+            side=get_inverse_side(self.state_store.data.side),
             qty=close_result.qty,
             levels=[close_result.losing_level, close_result.profitable_level],
         )
@@ -141,7 +141,21 @@ class PyramidStrategy(BaseStrategy):
         # Передаем команду на исполнение и учет
         exec_result = self.close_processor.execute(action_command)
 
-        # Возвращаем результат
+        # Если пара успешно закрыта и стек пуст, открываем новый уровень
+        if exec_result.executed and not self.state_store.data.stack.entries:
+            qty = self.open_checker.get_rearm_qty()
+
+            if qty > 0:
+                rearm_command = ActionCommand(
+                    action=Action.OPEN,
+                    symbol=self.state_store.data.symbol,
+                    side=self.state_store.data.side,
+                    qty=qty,
+                    reason="PYRAMID_REARM",
+                )
+                self.action_service.process_action(rearm_command)
+
+        # Возвращаем результат закрытия пары
         return ResolveResult(
             executed=exec_result.executed,
             status="",

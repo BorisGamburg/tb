@@ -54,6 +54,7 @@ class Notifier:
 
         lines = [
             tf_info,
+            f"ENTRY TF: {getattr(self.state_store.data, 'entry_tf', 'N/A')}",
             f"STACK SIZE: {level}"
         ]
 
