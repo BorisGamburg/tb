@@ -214,13 +214,17 @@ class PyramidStrategy(BaseStrategy):
             f"{prev_color} → {curr_color} | "
         )
 
+        trend_marker = "🟢" if entry_result.trend_active else "🔴"
+        status += f"TREND: {trend_marker} | "
+
         if entry_result.allowed and entry_result.level_type == "base":
             status += "ENTRY: BASE | "
         elif entry_result.allowed and entry_result.level_type == "extension":
             status += "ENTRY: EXTENSION | "
 
-        dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
-        status += f"DIST: {dist_marker} | "
+        if self.state_store.data.stack.entries:
+            dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
+            status += f"DIST: {dist_marker} | "
 
         if self.close_band is not None:
             status += (
