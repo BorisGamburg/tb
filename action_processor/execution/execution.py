@@ -97,6 +97,13 @@ class Execution:
         )
 
         if exec_result.executed:
+            self.logger.info(
+                f"[EXECUTION] action={exec_result.action_command.action.value} "
+                f"| side={exec_result.action_command.side} "
+                f"| qty={exec_result.qty} "
+                f"| price={exec_result.price}"
+            )
+
             order_storage = self.app_ctx.order_storage
 
             if (

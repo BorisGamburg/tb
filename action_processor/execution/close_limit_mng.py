@@ -102,14 +102,14 @@ class CloseLimitMng:
             order_id=order_id,
         )
 
-        # Обрабатываем результат 
+        # Обрабатываем результат
         return self._process_order(
             symbol=symbol,
             side=side,
             qty=qty,
             order_id=order_id,
             order_data=order_data,
-        )    
+        )
 
     def _place_close_order(
         self,
@@ -118,7 +118,7 @@ class CloseLimitMng:
         qty: float,
         exit_type: ExitType
     ) -> str:
-        # Получаем цену для активного/пассивного исполнения лимитного ордера 
+        # Получаем цену для активного/пассивного исполнения лимитного ордера
         if exit_type == ExitType.ACTIVE:
             price = self.market_service.get_active_price(
                 symbol=symbol,
@@ -169,7 +169,7 @@ class CloseLimitMng:
         )
 
         # Возвращаем ID размещенного ордера
-        return order_id    
+        return order_id
 
     def _process_order(
         self,
@@ -201,12 +201,21 @@ class CloseLimitMng:
 
         # Ордер не исполнен?
         if status == "New":
-            return self._handle_unfilled_order(
+            result = self._handle_unfilled_order(
                 symbol=symbol,
                 side=side,
                 order_id=order_id,
                 order_data=order_data,
             )
+
+            if isinstance(result, dict):
+                return self._handle_filled_order(
+                    side=side,
+                    order_id=order_id,
+                    order_data=result,
+                )
+
+            return result
 
         # Неожиданный статус ордера -> выбрасываем исключение
         raise RuntimeError(
@@ -296,17 +305,25 @@ class CloseLimitMng:
         side: str,
         order_id: str,
         order_data,
-    ) -> LimitOrderResult:
+    ) -> LimitOrderResult | dict:
         # Получаем данные ордера
         filled_qty, avg_price, fee = self._get_execution_data(
             order_data
         )
 
         # Отменяем ордер
-        self._cancel_order_checked(
+        cancel_result = self._cancel_order_checked(
             symbol=symbol,
             order_id=order_id,
+            allow_110001=True,
         )
+
+        # Ордер уже мог исполниться до отмены
+        if cancel_result == 110001:
+            return self._get_filled_order_after_cancel_error(
+                symbol=symbol,
+                order_id=order_id,
+            )
 
         # Лог
         self.logger.info(
@@ -356,19 +373,54 @@ class CloseLimitMng:
         self,
         symbol: str,
         order_id: str,
-    ):
-        # Отменяем ордер 
+        allow_110001: bool = False,
+    ) -> int:
+        # Отменяем ордер
         cancel_result = self._cancel_order(
             symbol=symbol,
             order_id=order_id,
         )
 
+        # Ордер мог исполниться до попытки отмены
+        if allow_110001 and cancel_result == 110001:
+            return cancel_result
+
         # Проверяем результат отмены
-#        if cancel_result not in (0, 110001):
         if cancel_result != 0:
             raise RuntimeError(
                 f"Failed to cancel close limit order | "
                 f"symbol={symbol} | "
                 f"order_id={order_id} | "
                 f"cancel_result={cancel_result}"
-            )    
+            )
+
+        return cancel_result
+
+    def _get_filled_order_after_cancel_error(
+        self,
+        symbol: str,
+        order_id: str,
+    ) -> dict:
+        updated_order_data = self.get_order_status(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        if not updated_order_data:
+            raise RuntimeError(
+                f"Order not found after cancel result 110001 | "
+                f"symbol={symbol} | "
+                f"order_id={order_id}"
+            )
+
+        updated_status = updated_order_data.get("orderStatus")
+
+        if updated_status != "Filled":
+            raise RuntimeError(
+                f"Unexpected order status after cancel result 110001 | "
+                f"symbol={symbol} | "
+                f"order_id={order_id} | "
+                f"status={updated_status}"
+            )
+
+        return updated_order_data

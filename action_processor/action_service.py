@@ -44,9 +44,6 @@ class ActionService:
         if not exec_result.executed:
             return exec_result
 
-        # Уведомляем о фактическом исполнении
-        self.log_execution(exec_result)
-
         # Запускаем Accounter
         self.accounting.apply(
             action=exec_result.action_command.action,
@@ -58,14 +55,6 @@ class ActionService:
 
         return exec_result
 
-    def log_execution(self, exec_result):
-        self.logger.info(
-            f"[EXECUTION] action={exec_result.action_command.action.value} "
-            f"| side={exec_result.action_command.side} "
-            f"| qty={exec_result.qty} "
-            f"| price={exec_result.price}"
-        )
-    
     def notify_action(self, act_cmd: ActionCommand) -> None:
         action = act_cmd.action.value.upper()
         reason = act_cmd.reason or "N/A"
