@@ -126,7 +126,7 @@ class OpenActiveLimitMng:
         status = order_data["orderStatus"]
 
         if status == "New":
-            return self._handle_unfilled_order(
+            success, result = self._handle_unfilled_order(
                 symbol=symbol,
                 side=side,
                 qty=qty,
@@ -134,8 +134,21 @@ class OpenActiveLimitMng:
                 order_price=order_price,
             )
 
+            if success:
+                return result
+
+            # Перемещение не удалось — получаем актуальное состояние.
+            order_data = self.get_order_status(
+                symbol=symbol,
+                order_id=order_id,
+            )
+
+            status = self._check_order_data(
+                symbol, order_id, order_data, result
+            )
+
         if status == "PartiallyFilled":
-            return self._handle_partial_order(
+            success, result = self._handle_partial_order(
                 symbol=symbol,
                 side=side,
                 qty=qty,
@@ -143,6 +156,29 @@ class OpenActiveLimitMng:
                 order_price=order_price,
                 order_data=order_data,
             )
+
+            if success:
+                return result
+
+            # Отмена не состоялась — получаем актуальное состояние.
+            order_data = self.get_order_status(
+                symbol=symbol,
+                order_id=order_id,
+            )
+
+            if not order_data:
+                raise RuntimeError(
+                    f"Order not found after failed cancellation | "
+                    f"symbol={symbol} | order_id={order_id}"
+                )
+
+            status = order_data["orderStatus"]
+
+            if status == "PartiallyFilled":
+                raise RuntimeError(
+                    f"Order is still partially filled after failed cancellation | "
+                    f"symbol={symbol} | order_id={order_id}"
+                )
 
         if status == "Filled":
             return self._handle_filled_order(
@@ -157,6 +193,25 @@ class OpenActiveLimitMng:
             f"| order_id={order_id} | status={status}"
         )
 
+    def _check_order_data(self, symbol, order_id, order_data, result):
+        if not order_data:
+            raise RuntimeError(
+                    f"Order not found after failed move to pool | "
+                    f"symbol={symbol} | order_id={order_id}"
+                )
+
+        status = order_data["orderStatus"]
+
+        if status == "New":
+            raise RuntimeError(
+                    f"Failed to move unfilled order to pool | "
+                    f"symbol={symbol} | order_id={order_id} | "
+                    f"retCode={result.get('retCode')} | "
+                    f"retMsg={result.get('retMsg')}"
+                )
+        return status
+
+
     def _handle_unfilled_order(
         self,
         symbol,
@@ -165,19 +220,22 @@ class OpenActiveLimitMng:
         order_id,
         order_price,
     ):
-        self.scale_pool_mng.move_order_to_pool(
+        move_result = self.scale_pool_mng.move_order_to_pool(
             symbol=symbol,
             side=side,
             order_id=order_id,
             new_qty=self.trading_info.min_qty,
         )
 
+        if not move_result["changed"]:
+            return False, move_result
+
         self.logger.info(
             f"[LIMIT] order not filled, returned to pool | side={side} "
             f"| order_id={order_id} | price={order_price}"
         )
-        
-        return LimitOrderResult(
+
+        return True, LimitOrderResult(
             order_id=order_id,
             avg_price=0.0,
             filled_qty=0.0,
@@ -195,26 +253,31 @@ class OpenActiveLimitMng:
         order_price,
         order_data,
     ):
-        filled_qty = float(order_data["cumExecQty"])
-        avg_price = float(order_data["avgPrice"])
-        self._check_execution_price(
-            side=side,
-            order_price=order_price,
-            avg_price=avg_price,
-        )        
-        fee = float(order_data["cumFeeDetail"]["USDT"])
-
-        self._cancel_order_checked(
+        cancel_result = self._cancel_order_checked(
             symbol=symbol,
             order_id=order_id,
         )
 
-        self.logger.info(
-            f"[LIMIT] order partially filled | order_id={order_id} "
-            f"| filled_qty={filled_qty} "
+        if cancel_result == 110001:
+            return False, cancel_result
+
+        filled_qty = float(order_data["cumExecQty"])
+        avg_price = float(order_data["avgPrice"])
+
+        self._check_execution_price(
+            side=side,
+            order_price=order_price,
+            avg_price=avg_price,
         )
 
-        return LimitOrderResult(
+        fee = float(order_data["cumFeeDetail"]["USDT"])
+
+        self.logger.info(
+            f"[LIMIT] order partially filled | order_id={order_id} "
+            f"| filled_qty={filled_qty}"
+        )
+
+        return True, LimitOrderResult(
             order_id=order_id,
             avg_price=avg_price,
             filled_qty=filled_qty,
@@ -297,4 +360,6 @@ class OpenActiveLimitMng:
                 f"symbol={symbol} | "
                 f"order_id={order_id} | "
                 f"cancel_result={cancel_result}"
-            )            
+            )      
+
+        return cancel_result
