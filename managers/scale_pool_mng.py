@@ -102,35 +102,43 @@ class ScalePoolMng:
         return random.choice(candidates)    
     
     def _try_to_move_order(self, symbol, side, order_id, new_price, new_qty, sl_ratio=None):
-        res = self.proxy_driver.execute("change_order_price",
-            symbol=symbol, 
-            side=side, 
-            orderId=order_id, 
-            new_price=new_price, 
-            new_qty=new_qty, 
-            sl_ratio=sl_ratio
+        res = self.proxy_driver.execute(
+            "change_order_price",
+            symbol=symbol,
+            side=side,
+            orderId=order_id,
+            new_price=new_price,
+            new_qty=new_qty,
+            sl_ratio=sl_ratio,
         )
 
         if res is None:
             raise Exception(f"❌ Не удалось получить ответ при перемещении ордера {order_id}")
-        
-        status = res.get("status") 
 
-        if status == "ORDER_FILLED":
+        status = res.get("status")
+
+        # Биржа приняла изменение
+        if status == "ORDER_CHANGED":
             return {
-                "retCode": "OK", 
-                "orderId": order_id, 
-                "newPrice": new_price, 
-                "filled": True
+                "retCode": "OK",
+                "orderId": order_id,
+                "newPrice": new_price,
+                "changed": True,
             }
-        
-        if status != "ORDER_CHANGED":
-            raise Exception(f"❌ Не удалось переместить ордер из пула: {res}")
-        
-        return {"retCode": "OK", 
-                "orderId": order_id, 
-                "newPrice": new_price
-                }
+
+        # Биржа отказала штатной ошибкой (ордер уже не активен, частично
+        # исполнен и т.п.). Это не исключение: вызывающий код решает сам.
+        if status == "ORDER_NOT_CHANGED":
+            return {
+                "retCode": res.get("retCode"),
+                "retMsg": res.get("retMsg"),
+                "orderId": order_id,
+                "newPrice": new_price,
+                "changed": False,
+            }
+
+        # Всё остальное (в том числе "failed" после таймаутов прокси) - сбой
+        raise Exception(f"❌ Не удалось переместить ордер {order_id}: {res}")
 
     def move_order_from_pool(
         self,
@@ -162,13 +170,16 @@ class ScalePoolMng:
         new_qty,
         sl_ratio=None,
     ):
+        # Получаем ордер из пула
         pool_order = self._get_pool_order(
             symbol=symbol,
             side=side,
         )
 
+        # Получаем цену ордера из пула
         pool_price = float(pool_order["price"])
 
+        #
         return self._try_to_move_order(
             symbol=symbol,
             side=side,

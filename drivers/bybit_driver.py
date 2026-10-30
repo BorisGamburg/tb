@@ -249,24 +249,37 @@ class BybitDriver:
 
     def change_order_price(self, symbol, side, orderId, new_price, new_qty=None, sl_ratio=None):
         """
-        Изменяет цену существующего ордера.
+        Amend ордера (цена и количество).
+        side и sl_ratio оставлены для совместимости, не используются.
+
+        Возвращает {"status": ...}:
+          ORDER_CHANGED     - биржа приняла изменение
+          ORDER_NOT_CHANGED - биржа отказала штатной ошибкой (retCode, retMsg
+                              в ответе); состояние ордера нужно перечитать
+        Любые другие ошибки биржи пробрасываются исключением.
         """
         params = {
             "category": "linear",
             "symbol": symbol,
             "orderId": orderId,
             "price": str(new_price),
-            "qty": str(new_qty)
+            "qty": str(new_qty),
         }
 
-        # --- вычисляем стоп-лосс ---
-        sl_price = self._calc_sl(side, new_price, sl_ratio)
-        if sl_price:
-            params["stopLoss"] = str(sl_price)
-            params["slTriggerBy"] = "LastPrice"
-            params["tpslMode"] = "Partial"
+        try:
+            self.http_client.amend_order(**params)
+        except InvalidRequestError as e:
+            # 110001: ордер уже не активен (исполнен или отменён)
+            # 10001: общий код; здесь ожидаем "cannot replace qty ... cumQty"
+            #        (ордер частично исполнен), но под ним бывают и другие отказы
+            if e.status_code in (110001, 10001):
+                return {
+                    "status": "ORDER_NOT_CHANGED",
+                    "retCode": e.status_code,
+                    "retMsg": str(e),
+                }
+            raise
 
-        self.http_client.amend_order(**params)
         return {"status": "ORDER_CHANGED"}
 
     def get_symbol_info(self, symbol):
