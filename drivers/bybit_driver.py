@@ -263,8 +263,10 @@ class BybitDriver:
             "symbol": symbol,
             "orderId": orderId,
             "price": str(new_price),
-            "qty": str(new_qty),
         }
+        # Без new_qty количество не меняем
+        if new_qty is not None:
+            params["qty"] = str(new_qty)
 
         try:
             self.http_client.amend_order(**params)

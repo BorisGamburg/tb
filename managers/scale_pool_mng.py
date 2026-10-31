@@ -17,30 +17,6 @@ class ScalePoolMng:
         self.price_service = price_service
         self.logger = logger
 
-    # Перемещаем лим ордер из пула
-    def move_chase_order_from_pool(self, symbol, side, qty, sl_ratio=None):
-        order = self._get_pool_order(
-            symbol=symbol,
-            side=side,
-        )
-        # Получаем текущую цену с нужной стороны стакана
-        orderbook_side_price = self.price_service.get_limit_price(
-            symbol=symbol,
-            side=side,
-        )
-
-        # Перемещаем ордер из пула на новую цену и количество
-        move_result = self.move_order_from_pool(
-            symbol=symbol, 
-            side=side, 
-            new_price=orderbook_side_price, 
-            new_qty=qty,
-            sl_ratio=sl_ratio,
-        )
-
-        # Успешный выход
-        return move_result
-
     def _get_pool_order(self, symbol, side):
         """
         Получает подходящий ордер из пула для перемещения.
@@ -153,14 +129,23 @@ class ScalePoolMng:
             side=side,
         )
 
-        return self._try_to_move_order(
+        result = self._try_to_move_order(
             symbol=symbol,
             side=side,
             order_id=order["orderId"],
             new_price=new_price,
             new_qty=new_qty,
             sl_ratio=sl_ratio,
-        )    
+        )
+
+        # Ордер пула должен быть активным: отказ amend здесь - ошибка
+        if not result["changed"]:
+            raise Exception(
+                f"❌ Ордер пула не перемещён | orderId={result['orderId']} "
+                f"| retCode={result['retCode']} | retMsg={result['retMsg']}"
+            )
+
+        return result
 
     def move_order_to_pool(
         self,
@@ -179,7 +164,7 @@ class ScalePoolMng:
         # Получаем цену ордера из пула
         pool_price = float(pool_order["price"])
 
-        #
+        # Возвращаем ордер в пул: цена из пула, минимальное количество
         return self._try_to_move_order(
             symbol=symbol,
             side=side,

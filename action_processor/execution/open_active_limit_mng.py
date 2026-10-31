@@ -261,16 +261,19 @@ class OpenActiveLimitMng:
         if cancel_result == 110001:
             return False, cancel_result
 
-        filled_qty = float(order_data["cumExecQty"])
-        avg_price = float(order_data["avgPrice"])
+        # order_data - снимок до отмены. Пока шла отмена, ордер мог
+        # доисполниться, поэтому итоговые данные читаем после отмены.
+        filled_qty, avg_price, fee = self._get_final_execution_data(
+            symbol=symbol,
+            order_id=order_id,
+            snapshot_qty=float(order_data["cumExecQty"]),
+        )
 
         self._check_execution_price(
             side=side,
             order_price=order_price,
             avg_price=avg_price,
         )
-
-        fee = float(order_data["cumFeeDetail"]["USDT"])
 
         self.logger.info(
             f"[LIMIT] order partially filled | order_id={order_id} "
@@ -363,3 +366,57 @@ class OpenActiveLimitMng:
             )      
 
         return cancel_result
+
+    def _get_final_execution_data(
+        self,
+        symbol,
+        order_id,
+        snapshot_qty,
+    ):
+        """
+        Итоговые (qty, avg_price, fee) отменённого ордера.
+        После успешной отмены ордер больше не исполняется, поэтому
+        данные, прочитанные после неё, финальные.
+        """
+        order_data = self.get_order_status(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        if not order_data:
+            raise RuntimeError(
+                f"Order not found after successful cancel | "
+                f"symbol={symbol} | order_id={order_id}"
+            )
+
+        status = order_data.get("orderStatus")
+
+        # Отмена вернула 0, но ордер всё ещё активен - так быть не должно
+        if status not in ("Cancelled", "PartiallyFilledCanceled", "Filled"):
+            raise RuntimeError(
+                f"Unexpected order status after successful cancel | "
+                f"symbol={symbol} | order_id={order_id} | status={status} "
+                f"| cumExecQty={order_data.get('cumExecQty')}"
+            )
+
+        fee_detail = order_data.get("cumFeeDetail") or {}
+        filled_qty = float(order_data["cumExecQty"])
+        avg_price = float(order_data["avgPrice"])
+        fee = float(fee_detail.get("USDT", 0) or 0)
+
+        # Исполненное количество после отмены не может быть меньше снимка
+        if filled_qty < snapshot_qty - 1e-9:
+            raise RuntimeError(
+                f"Final filled qty is less than snapshot | symbol={symbol} "
+                f"| order_id={order_id} | status={status} "
+                f"| final_qty={filled_qty} | snapshot_qty={snapshot_qty}"
+            )
+
+        if filled_qty > snapshot_qty + 1e-9:
+            self.logger.warning(
+                f"[LIMIT] order filled more during cancel | order_id={order_id} "
+                f"| snapshot_qty={snapshot_qty} | final_qty={filled_qty}"
+            )
+
+        return filled_qty, avg_price, fee
+
