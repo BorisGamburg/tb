@@ -179,10 +179,9 @@ class CloseLimitMng:
         order_id: str,
         order_data,
     ) -> LimitOrderResult:
-
         status = order_data["orderStatus"]
 
-        # Ордер исполнен?
+        # Ордер исполнен полностью: отмена не нужна
         if status == "Filled":
             return self._handle_filled_order(
                 side=side,
@@ -190,32 +189,39 @@ class CloseLimitMng:
                 order_data=order_data,
             )
 
-        # Ордер частично исполнен?
-        if status == "PartiallyFilled":
-            return self._handle_partial_order(
+        # Ордер ещё активен (не исполнен или исполнен частично):
+        # отменяем остаток и смотрим, чем ордер закончился
+        if status in ("New", "PartiallyFilled"):
+            # Отменяем ордер и получаем его окончательное состояние
+            final_data = self._cancel_and_get_final_order(
                 symbol=symbol,
-                side=side,
                 order_id=order_id,
-                order_data=order_data,
             )
 
-        # Ордер не исполнен?
-        if status == "New":
-            result = self._handle_unfilled_order(
-                symbol=symbol,
-                side=side,
-                order_id=order_id,
-                order_data=order_data,
-            )
+            final_qty, _, _ = self._get_execution_data(final_data)
 
-            if isinstance(result, dict):
+            # Ордер успел исполниться полностью до отмены
+            if final_data["orderStatus"] == "Filled":
                 return self._handle_filled_order(
                     side=side,
                     order_id=order_id,
-                    order_data=result,
+                    order_data=final_data,
                 )
 
-            return result
+            # Ордер отменён, но часть успела исполниться
+            if final_qty > 0:
+                return self._handle_partial_order(
+                    side=side,
+                    order_id=order_id,
+                    order_data=final_data,
+                )
+
+            # Ордер отменён целиком, ничего не исполнено
+            return self._handle_unfilled_order(
+                side=side,
+                order_id=order_id,
+                order_data=final_data,
+            )
 
         # Неожиданный статус ордера -> выбрасываем исключение
         raise RuntimeError(
@@ -227,6 +233,65 @@ class CloseLimitMng:
             f"status={status}"
         )
 
+    def _cancel_and_get_final_order(
+        self,
+        symbol: str,
+        order_id: str,
+    ):
+        """
+        Отменяет активный ордер и возвращает его окончательное состояние.
+        Допустимые исходы:
+          - отмена прошла (0): ордер Cancelled / PartiallyFilledCanceled;
+          - ордер уже не активен (110001): ордер Filled.
+        Всё остальное - исключение.
+        """
+        # Отменяем ордер
+        cancel_result = self._cancel_order_checked(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        # Получаем данные ордера
+        order_data = self.get_order_status(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        # Исключение если нет данных
+        if not order_data:
+            raise RuntimeError(
+                f"Order not found after cancel | "
+                f"symbol={symbol} | "
+                f"order_id={order_id} | "
+                f"cancel_result={cancel_result}"
+            )
+
+        # Получаен статус ордера
+        status = order_data.get("orderStatus")
+
+        # Обрабатываем разные статусы
+        if cancel_result == 110001:
+            # Ордер не был отменен
+            if status != "Filled":
+                # Если статус не Filled, то это странно -> исключение
+                raise RuntimeError(
+                    f"Unexpected order status after cancel result 110001 | "
+                    f"symbol={symbol} | "
+                    f"order_id={order_id} | "
+                    f"status={status} | "
+                    f"cumExecQty={order_data.get('cumExecQty')}"
+                )
+        elif status not in ("Cancelled", "PartiallyFilledCanceled"):
+            # Странные статусы -> исключение
+            raise RuntimeError(
+                f"Unexpected order status after successful cancel | "
+                f"symbol={symbol} | "
+                f"order_id={order_id} | "
+                f"status={status} | "
+                f"cumExecQty={order_data.get('cumExecQty')}"
+            )
+
+        return order_data
 
     def _handle_filled_order(
         self,
@@ -259,23 +324,15 @@ class CloseLimitMng:
             filled=True,
         )
 
-
     def _handle_partial_order(
         self,
-        symbol: str,
         side: str,
         order_id: str,
         order_data,
     ) -> LimitOrderResult:
-        # Получаем данные ордера
+        # Получаем данные ордера (окончательные, ордер уже отменён)
         filled_qty, avg_price, fee = self._get_execution_data(
             order_data
-        )
-
-        # Отменяем оставшуюся часть ордера
-        self._cancel_order_checked(
-            symbol=symbol,
-            order_id=order_id,
         )
 
         # Лог
@@ -298,32 +355,16 @@ class CloseLimitMng:
             filled=False,
         )
 
-
     def _handle_unfilled_order(
         self,
-        symbol: str,
         side: str,
         order_id: str,
         order_data,
-    ) -> LimitOrderResult | dict:
-        # Получаем данные ордера
+    ) -> LimitOrderResult:
+        # Получаем данные ордера (ордер отменён, исполнено 0)
         filled_qty, avg_price, fee = self._get_execution_data(
             order_data
         )
-
-        # Отменяем ордер
-        cancel_result = self._cancel_order_checked(
-            symbol=symbol,
-            order_id=order_id,
-            allow_110001=True,
-        )
-
-        # Ордер уже мог исполниться до отмены
-        if cancel_result == 110001:
-            return self._get_filled_order_after_cancel_error(
-                symbol=symbol,
-                order_id=order_id,
-            )
 
         # Лог
         self.logger.info(
@@ -344,7 +385,6 @@ class CloseLimitMng:
             status=LimitOrderStatus.NOT_FILLED,
             filled=False,
         )
-
 
     def _get_execution_data(self, order_data):
 
@@ -373,7 +413,6 @@ class CloseLimitMng:
         self,
         symbol: str,
         order_id: str,
-        allow_110001: bool = False,
     ) -> int:
         # Отменяем ордер
         cancel_result = self._cancel_order(
@@ -381,12 +420,9 @@ class CloseLimitMng:
             order_id=order_id,
         )
 
-        # Ордер мог исполниться до попытки отмены
-        if allow_110001 and cancel_result == 110001:
-            return cancel_result
-
-        # Проверяем результат отмены
-        if cancel_result != 0:
+        # 110001: ордер уже не активен (мог исполниться до отмены),
+        # разбор делает вызывающий код. Любой другой код, кроме 0, - сбой.
+        if cancel_result not in (0, 110001):
             raise RuntimeError(
                 f"Failed to cancel close limit order | "
                 f"symbol={symbol} | "
@@ -395,32 +431,3 @@ class CloseLimitMng:
             )
 
         return cancel_result
-
-    def _get_filled_order_after_cancel_error(
-        self,
-        symbol: str,
-        order_id: str,
-    ) -> dict:
-        updated_order_data = self.get_order_status(
-            symbol=symbol,
-            order_id=order_id,
-        )
-
-        if not updated_order_data:
-            raise RuntimeError(
-                f"Order not found after cancel result 110001 | "
-                f"symbol={symbol} | "
-                f"order_id={order_id}"
-            )
-
-        updated_status = updated_order_data.get("orderStatus")
-
-        if updated_status != "Filled":
-            raise RuntimeError(
-                f"Unexpected order status after cancel result 110001 | "
-                f"symbol={symbol} | "
-                f"order_id={order_id} | "
-                f"status={updated_status}"
-            )
-
-        return updated_order_data
