@@ -192,35 +192,10 @@ class CloseLimitMng:
         # Ордер ещё активен (не исполнен или исполнен частично):
         # отменяем остаток и смотрим, чем ордер закончился
         if status in ("New", "PartiallyFilled"):
-            # Отменяем ордер и получаем его окончательное состояние
-            final_data = self._cancel_and_get_final_order(
+            return self._handle_active_order(
                 symbol=symbol,
-                order_id=order_id,
-            )
-
-            final_qty, _, _ = self._get_execution_data(final_data)
-
-            # Ордер успел исполниться полностью до отмены
-            if final_data["orderStatus"] == "Filled":
-                return self._handle_filled_order(
-                    side=side,
-                    order_id=order_id,
-                    order_data=final_data,
-                )
-
-            # Ордер отменён, но часть успела исполниться
-            if final_qty > 0:
-                return self._handle_partial_order(
-                    side=side,
-                    order_id=order_id,
-                    order_data=final_data,
-                )
-
-            # Ордер отменён целиком, ничего не исполнено
-            return self._handle_unfilled_order(
                 side=side,
                 order_id=order_id,
-                order_data=final_data,
             )
 
         # Неожиданный статус ордера -> выбрасываем исключение
@@ -233,16 +208,52 @@ class CloseLimitMng:
             f"status={status}"
         )
 
-    def _cancel_and_get_final_order(
+    def _handle_active_order(
+        self,
+        symbol: str,
+        side: str,
+        order_id: str,
+    ) -> LimitOrderResult:
+        # Отменяем ордер и получаем его исход
+        outcome, final_data = self._cancel_and_get_outcome(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        # Ордер успел исполниться полностью до отмены
+        if outcome == LimitOrderStatus.FILLED:
+            return self._handle_filled_order(
+                side=side,
+                order_id=order_id,
+                order_data=final_data,
+            )
+
+        # Ордер отменён, но часть успела исполниться
+        if outcome == LimitOrderStatus.PARTIALLY_FILLED:
+            return self._handle_partial_order(
+                side=side,
+                order_id=order_id,
+                order_data=final_data,
+            )
+
+        # Ордер отменён целиком, ничего не исполнено
+        return self._handle_unfilled_order(
+            side=side,
+            order_id=order_id,
+            order_data=final_data,
+        )
+
+    def _cancel_and_get_outcome(
         self,
         symbol: str,
         order_id: str,
     ):
         """
-        Отменяет активный ордер и возвращает его окончательное состояние.
-        Допустимые исходы:
-          - отмена прошла (0): ордер Cancelled / PartiallyFilledCanceled;
-          - ордер уже не активен (110001): ордер Filled.
+        Отменяет активный ордер и возвращает пару (исход, данные ордера).
+        Исход (LimitOrderStatus):
+          - FILLED: ордер уже исполнился полностью (отмена вернула 110001);
+          - PARTIALLY_FILLED: ордер отменён, часть успела исполниться;
+          - NOT_FILLED: ордер отменён целиком, ничего не исполнено.
         Всё остальное - исключение.
         """
         # Отменяем ордер
@@ -291,7 +302,17 @@ class CloseLimitMng:
                 f"cumExecQty={order_data.get('cumExecQty')}"
             )
 
-        return order_data
+        # Ордер исполнен полностью
+        if status == "Filled":
+            return LimitOrderStatus.FILLED, order_data
+
+        # Ордер отменён, но часть успела исполниться
+        filled_qty, _, _ = self._get_execution_data(order_data)
+        if filled_qty > 0:
+            return LimitOrderStatus.PARTIALLY_FILLED, order_data
+
+        # Ордер отменён целиком
+        return LimitOrderStatus.NOT_FILLED, order_data
 
     def _handle_filled_order(
         self,
