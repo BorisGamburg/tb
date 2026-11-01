@@ -1,7 +1,7 @@
-import time
 import logging
 
 from managers.scale_pool_mng import ScalePoolMng
+from action_processor.execution.limit_order_base import LimitOrderBase
 from action_processor.execution.limit_order_result import LimitOrderResult, LimitOrderStatus
 from common.market_service import MarketService
 from proxy_server.proxy_driver import ProxyDriver
@@ -9,7 +9,9 @@ from action_processor.bootstrap import AppContext
 from common.trading_info import TradingInfo
 
 
-class OpenActiveLimitMng:
+class OpenActiveLimitMng(LimitOrderBase):
+    order_label = "open limit"
+
     proxy_driver: ProxyDriver
     price_service: MarketService
     logger: logging.Logger
@@ -19,10 +21,12 @@ class OpenActiveLimitMng:
         app_ctx: AppContext,
         trading_info: TradingInfo,
     ):
+        super().__init__(
+            proxy_driver=app_ctx.proxy_driver,
+            logger=app_ctx.logger,
+        )
         self.app_ctx = app_ctx
-        self.proxy_driver = app_ctx.proxy_driver
         self.price_service = app_ctx.price_service
-        self.logger = app_ctx.logger
         self.trading_info = trading_info
 
         self.scale_pool_mng = ScalePoolMng(
@@ -30,35 +34,6 @@ class OpenActiveLimitMng:
             price_service=self.price_service,
             logger=self.logger,
         )
-
-    def get_order_status(self, symbol: str, order_id: str):
-        """
-        Получение текущего состояния ордера.
-        """
-        return self.proxy_driver.execute(
-            "get_order_status",
-            symbol=symbol,
-            order_id=order_id,
-        )
-
-    def _wait_limit_order(
-        self,
-        symbol,
-        order_id,
-    ):
-        time.sleep(0.2)
-
-        order_data = self.get_order_status(
-            symbol=symbol,
-            order_id=order_id,
-        )
-
-        if not order_data:
-            raise RuntimeError(
-                f"Order not found | symbol={symbol} | order_id={order_id}"
-            )
-
-        return order_data
 
     def move_order_from_pool(self, symbol, side, qty, sl_ratio=None):
         # Получаем цену для быстрого исполнения лимитного ордера 
@@ -74,7 +49,7 @@ class OpenActiveLimitMng:
             new_price=fast_execution_limit_price,
             new_qty=qty,
             sl_ratio=sl_ratio,
-        )          
+        )
 
     def wait_limit_order(
         self,
@@ -125,61 +100,7 @@ class OpenActiveLimitMng:
     ):
         status = order_data["orderStatus"]
 
-        if status == "New":
-            success, result = self._handle_unfilled_order(
-                symbol=symbol,
-                side=side,
-                qty=qty,
-                order_id=order_id,
-                order_price=order_price,
-            )
-
-            if success:
-                return result
-
-            # Перемещение не удалось — получаем актуальное состояние.
-            order_data = self.get_order_status(
-                symbol=symbol,
-                order_id=order_id,
-            )
-
-            status = self._check_order_data(
-                symbol, order_id, order_data, result
-            )
-
-        if status == "PartiallyFilled":
-            success, result = self._handle_partial_order(
-                symbol=symbol,
-                side=side,
-                qty=qty,
-                order_id=order_id,
-                order_price=order_price,
-                order_data=order_data,
-            )
-
-            if success:
-                return result
-
-            # Отмена не состоялась — получаем актуальное состояние.
-            order_data = self.get_order_status(
-                symbol=symbol,
-                order_id=order_id,
-            )
-
-            if not order_data:
-                raise RuntimeError(
-                    f"Order not found after failed cancellation | "
-                    f"symbol={symbol} | order_id={order_id}"
-                )
-
-            status = order_data["orderStatus"]
-
-            if status == "PartiallyFilled":
-                raise RuntimeError(
-                    f"Order is still partially filled after failed cancellation | "
-                    f"symbol={symbol} | order_id={order_id}"
-                )
-
+        # Ордер исполнен полностью: ничего делать не нужно
         if status == "Filled":
             return self._handle_filled_order(
                 side=side,
@@ -188,31 +109,32 @@ class OpenActiveLimitMng:
                 order_data=order_data,
             )
 
+        # Ордер исполнен частично: отменяем остаток
+        if status == "PartiallyFilled":
+            return self._cancel_and_handle_order(
+                symbol=symbol,
+                side=side,
+                order_id=order_id,
+                order_price=order_price,
+            )
+
+        # Ордер не исполнен: возвращаем его в пул
+        if status == "New":
+            return self._handle_new_order(
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                order_id=order_id,
+                order_price=order_price,
+            )
+
+        # Неожиданный статус ордера -> выбрасываем исключение
         raise RuntimeError(
             f"Unexpected order status | symbol={symbol} "
-            f"| order_id={order_id} | status={status}"
+            f"| qty={qty} | order_id={order_id} | status={status}"
         )
 
-    def _check_order_data(self, symbol, order_id, order_data, result):
-        if not order_data:
-            raise RuntimeError(
-                    f"Order not found after failed move to pool | "
-                    f"symbol={symbol} | order_id={order_id}"
-                )
-
-        status = order_data["orderStatus"]
-
-        if status == "New":
-            raise RuntimeError(
-                    f"Failed to move unfilled order to pool | "
-                    f"symbol={symbol} | order_id={order_id} | "
-                    f"retCode={result.get('retCode')} | "
-                    f"retMsg={result.get('retMsg')}"
-                )
-        return status
-
-
-    def _handle_unfilled_order(
+    def _handle_new_order(
         self,
         symbol,
         side,
@@ -220,6 +142,7 @@ class OpenActiveLimitMng:
         order_id,
         order_price,
     ):
+        # Пробуем вернуть ордер в пул
         move_result = self.scale_pool_mng.move_order_to_pool(
             symbol=symbol,
             side=side,
@@ -227,15 +150,97 @@ class OpenActiveLimitMng:
             new_qty=self.trading_info.min_qty,
         )
 
-        if not move_result["changed"]:
-            return False, move_result
+        # Ордер вернулся в пул
+        if move_result["changed"]:
+            return self._handle_unfilled_order(
+                side=side,
+                order_id=order_id,
+                order_price=order_price,
+            )
 
+        # Биржа отказала в перемещении: смотрим, что с ордером
+        order_data = self.get_order_status(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        if not order_data:
+            raise RuntimeError(
+                f"Order not found after failed move to pool | "
+                f"symbol={symbol} | order_id={order_id}"
+            )
+
+        # Ордер всё ещё не исполнен, но переместить его не удалось -> исключение
+        if order_data["orderStatus"] == "New":
+            raise RuntimeError(
+                f"Failed to move unfilled order to pool | "
+                f"symbol={symbol} | order_id={order_id} | "
+                f"retCode={move_result.get('retCode')} | "
+                f"retMsg={move_result.get('retMsg')}"
+            )
+
+        # Ордер исполнен или исполнен частично: обрабатываем по статусу.
+        # Повторного входа сюда не будет: статус New исключён выше.
+        return self._process_limit_order(
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            order_id=order_id,
+            order_price=order_price,
+            order_data=order_data,
+        )
+
+    def _cancel_and_handle_order(
+        self,
+        symbol,
+        side,
+        order_id,
+        order_price,
+    ):
+        # Отменяем ордер и получаем его исход
+        outcome, final_data = self._cancel_and_get_outcome(
+            symbol=symbol,
+            order_id=order_id,
+        )
+
+        # Ордер успел исполниться полностью до отмены
+        if outcome == LimitOrderStatus.FILLED:
+            return self._handle_filled_order(
+                side=side,
+                order_id=order_id,
+                order_price=order_price,
+                order_data=final_data,
+            )
+
+        # Ордер отменён, но часть успела исполниться
+        if outcome == LimitOrderStatus.PARTIALLY_FILLED:
+            return self._handle_partial_order(
+                side=side,
+                order_id=order_id,
+                order_price=order_price,
+                order_data=final_data,
+            )
+
+        # Ордер был частично исполнен, а отменён с нулевым исполнением:
+        # так быть не может, ордер потерян -> исключение
+        raise RuntimeError(
+            f"Partially filled order cancelled with zero fill | "
+            f"order_id={order_id} | "
+            f"status={final_data.get('orderStatus')}"
+        )
+
+    def _handle_unfilled_order(
+        self,
+        side,
+        order_id,
+        order_price,
+    ):
         self.logger.info(
             f"[LIMIT] order not filled, returned to pool | side={side} "
             f"| order_id={order_id} | price={order_price}"
         )
 
-        return True, LimitOrderResult(
+        return LimitOrderResult(
             order_id=order_id,
             avg_price=0.0,
             filled_qty=0.0,
@@ -246,28 +251,13 @@ class OpenActiveLimitMng:
 
     def _handle_partial_order(
         self,
-        symbol,
         side,
-        qty,
         order_id,
         order_price,
         order_data,
     ):
-        cancel_result = self._cancel_order_checked(
-            symbol=symbol,
-            order_id=order_id,
-        )
-
-        if cancel_result == 110001:
-            return False, cancel_result
-
-        # order_data - снимок до отмены. Пока шла отмена, ордер мог
-        # доисполниться, поэтому итоговые данные читаем после отмены.
-        filled_qty, avg_price, fee = self._get_final_execution_data(
-            symbol=symbol,
-            order_id=order_id,
-            snapshot_qty=float(order_data["cumExecQty"]),
-        )
+        # Данные окончательные: ордер уже отменён
+        filled_qty, avg_price, fee = self._get_execution_data(order_data)
 
         self._check_execution_price(
             side=side,
@@ -280,7 +270,7 @@ class OpenActiveLimitMng:
             f"| filled_qty={filled_qty}"
         )
 
-        return True, LimitOrderResult(
+        return LimitOrderResult(
             order_id=order_id,
             avg_price=avg_price,
             filled_qty=filled_qty,
@@ -296,14 +286,13 @@ class OpenActiveLimitMng:
         order_price,
         order_data,
     ):
-        filled_qty = float(order_data["cumExecQty"])
-        avg_price = float(order_data["avgPrice"])
+        filled_qty, avg_price, fee = self._get_execution_data(order_data)
+
         self._check_execution_price(
             side=side,
             order_price=order_price,
             avg_price=avg_price,
-        )        
-        fee = float(order_data["cumFeeDetail"]["USDT"])
+        )
 
         return LimitOrderResult(
             order_id=order_id,
@@ -312,7 +301,7 @@ class OpenActiveLimitMng:
             fee=fee,
             filled=True,
             status=LimitOrderStatus.FILLED,
-        )    
+        )
 
     def _check_execution_price(
         self,
@@ -334,89 +323,4 @@ class OpenActiveLimitMng:
                 f"| order_price={order_price} | avg_price={avg_price}"
             )
             self.logger.error(message)
-            self.app_ctx.telegram.send_telegram_message(message)    
-
-    def _cancel_order(
-        self,
-        symbol: str,
-        order_id: str,
-    ):
-        return self.proxy_driver.execute(
-            "cancel_lim_order",
-            symbol=symbol,
-            order_id=order_id,
-        )
-
-    def _cancel_order_checked(
-        self,
-        symbol: str,
-        order_id: str,
-    ):
-        cancel_result = self._cancel_order(
-            symbol=symbol,
-            order_id=order_id,
-        )
-
-        if cancel_result not in (0, 110001):
-            raise RuntimeError(
-                f"Failed to cancel open limit order | "
-                f"symbol={symbol} | "
-                f"order_id={order_id} | "
-                f"cancel_result={cancel_result}"
-            )      
-
-        return cancel_result
-
-    def _get_final_execution_data(
-        self,
-        symbol,
-        order_id,
-        snapshot_qty,
-    ):
-        """
-        Итоговые (qty, avg_price, fee) отменённого ордера.
-        После успешной отмены ордер больше не исполняется, поэтому
-        данные, прочитанные после неё, финальные.
-        """
-        order_data = self.get_order_status(
-            symbol=symbol,
-            order_id=order_id,
-        )
-
-        if not order_data:
-            raise RuntimeError(
-                f"Order not found after successful cancel | "
-                f"symbol={symbol} | order_id={order_id}"
-            )
-
-        status = order_data.get("orderStatus")
-
-        # Отмена вернула 0, но ордер всё ещё активен - так быть не должно
-        if status not in ("Cancelled", "PartiallyFilledCanceled", "Filled"):
-            raise RuntimeError(
-                f"Unexpected order status after successful cancel | "
-                f"symbol={symbol} | order_id={order_id} | status={status} "
-                f"| cumExecQty={order_data.get('cumExecQty')}"
-            )
-
-        fee_detail = order_data.get("cumFeeDetail") or {}
-        filled_qty = float(order_data["cumExecQty"])
-        avg_price = float(order_data["avgPrice"])
-        fee = float(fee_detail.get("USDT", 0) or 0)
-
-        # Исполненное количество после отмены не может быть меньше снимка
-        if filled_qty < snapshot_qty - 1e-9:
-            raise RuntimeError(
-                f"Final filled qty is less than snapshot | symbol={symbol} "
-                f"| order_id={order_id} | status={status} "
-                f"| final_qty={filled_qty} | snapshot_qty={snapshot_qty}"
-            )
-
-        if filled_qty > snapshot_qty + 1e-9:
-            self.logger.warning(
-                f"[LIMIT] order filled more during cancel | order_id={order_id} "
-                f"| snapshot_qty={snapshot_qty} | final_qty={filled_qty}"
-            )
-
-        return filled_qty, avg_price, fee
-
+            self.app_ctx.telegram.send_telegram_message(message)
