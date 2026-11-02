@@ -8,7 +8,6 @@ class BuildResult:
     allowed: bool
     side: str
     qty: float
-    report: str
     trend_active: bool
     distance_allowed: bool
 
@@ -54,23 +53,16 @@ def check_build(
             allowed=False,
             side=hedge_side,
             qty=hedge_qty,
-            report="Hedge qty below minimum. Build: denied ",
             trend_active=trend_active,
             distance_allowed=distance_allowed,
         )
 
     # Без активного тренда новые уровни защиты не строим
     if not trend_active:
-        report = (
-            "Trend: inactive "
-            "Build: denied "
-        )
-
         return BuildResult(
             allowed=False,
             side=hedge_side,
             qty=hedge_qty,
-            report=report,
             trend_active=trend_active,
             distance_allowed=distance_allowed,
         )
@@ -80,7 +72,6 @@ def check_build(
             allowed=False,
             side=hedge_side,
             qty=hedge_qty,
-            report="",
             trend_active=trend_active,
             distance_allowed=distance_allowed,
         )
@@ -89,7 +80,6 @@ def check_build(
         allowed=True,
         side=hedge_side,
         qty=hedge_qty,
-        report="Build: allowed ",
         trend_active=trend_active,
         distance_allowed=distance_allowed,
     )
