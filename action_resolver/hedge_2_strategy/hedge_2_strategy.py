@@ -59,7 +59,7 @@ class Hedge2Strategy(BaseStrategy):
 
         self._log_parameters()
 
-    def _build_status_line(
+    def __build_status_line(
         self,
         status: HedgeStatus,
         build_trend_active: bool = False,
@@ -184,24 +184,16 @@ class Hedge2Strategy(BaseStrategy):
         )
 
         # Формируем статусную строку
-        build_trend_active = (
-            mode_result.trend_active
-            if status.mode.name == "BUILD"
-            else False
-        )
+        status_line = self._build_status_line(mode_result, status)
 
-        build_distance_allowed = (
-            mode_result.distance_allowed
-            if status.mode.name == "BUILD"
-            else False
-        )
+        # Получаем ResolveResult и возвращаем его
+        return self._get_resolve_result(action_command, status_line)
 
-        status_line = self._build_status_line(
-            status=status,
-            build_trend_active=build_trend_active,
-            build_distance_allowed=build_distance_allowed,
-        )
-
+    def _get_resolve_result(
+        self,
+        action_command: ActionCommand,
+        status_line: str,
+    ) -> ResolveResult:
         if action_command.action == Action.NO_ACTION:
             return ResolveResult(
                 executed=False,
@@ -228,7 +220,27 @@ class Hedge2Strategy(BaseStrategy):
 
         raise ValueError(
             f"Unsupported action in Hedge2Strategy: {action_command.action}"
-        )    
+        ) 
+
+    def _build_status_line(self, mode_result, status):
+        build_trend_active = (
+            mode_result.trend_active
+            if status.mode.name == "BUILD"
+            else False
+        )
+
+        build_distance_allowed = (
+            mode_result.distance_allowed
+            if status.mode.name == "BUILD"
+            else False
+        )
+
+        status_line = self.__build_status_line(
+            status=status,
+            build_trend_active=build_trend_active,
+            build_distance_allowed=build_distance_allowed,
+        )
+        return status_line   
 
     def _check_level_distance(
         self,
