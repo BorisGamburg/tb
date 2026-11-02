@@ -10,7 +10,7 @@ from action_resolver.hedge_2_strategy.build_mng import (
     BuildResult,
 )
 from action_resolver.hedge_2_strategy.optimization_mng import (
-    OptimizationMng, Band
+    OptimizationMng,
 )
 from action_resolver.hedge_2_strategy.hedge_status import HedgeStatus
 from action_resolver.hedge_2_strategy.position_info import (
@@ -55,7 +55,6 @@ class HedgeModeMng:
         self.hedge_qty_ratio = state_store.data.hedge_qty_pct / 100
         self.max_hedge_ratio = 0.5
         self.prev_work_price: float | None = None
-        self.mode: HedgeMode | None = None
         self.trend_active: bool
 
         self.ha_trend = HATrendChecker(
@@ -144,31 +143,17 @@ class HedgeModeMng:
         curr_ratio = protect.curr_ratio
         required_ratio = protect.required_ratio
 
-        # Пока режим работы выводим из потребности в защите
-        if protect.needed:
-            mode = HedgeMode.BUILD
+        # Оптимизацию проверяем в первую очередь, на каждом шаге
+        optimization_result = self.optimization_mng.check()
+
+        # Если есть что закрыть или защита не нужна — работаем в режиме оптимизации,
+        # иначе (оптимизировать нечего, защиты не хватает) — проверяем билд
+        if optimization_result.found or not protect.needed:
+            mode = HedgeMode.OPTIMIZATION
+            result = optimization_result
         else:
-            mode = HedgeMode.OPTIMIZATION
-
-        # Свеча против хеджа: защиту не наращиваем, только оптимизируем
-        if not ctx.trend_active and mode == HedgeMode.BUILD:
-            mode = HedgeMode.OPTIMIZATION
-
-        self.mode = mode
-
-        status = HedgeStatus(
-            bid=ctx.bid,
-            ask=ctx.ask,
-            protection_current=curr_ratio,
-            protection_required=required_ratio,
-            pnl=ctx.main_unrealised_pnl,
-            mode=mode,
-            band=Band(low=0.0, high=0.0),
-        )
-
-        # Если защита еще не набрана — проверяем, можно ли добавить следующий уровень
-        if mode == HedgeMode.BUILD:
-            build_result = check_build(
+            mode = HedgeMode.BUILD
+            result = check_build(
                 trend_active=ctx.trend_active,
                 work_price=ctx.work_price,
                 entries=ctx.entries,
@@ -178,20 +163,19 @@ class HedgeModeMng:
                 hedge_qty_ratio=ctx.hedge_qty_ratio,
                 hedge_side=self.hedge_side,
                 trading_info=self.trading_info,
-            )            
-            return build_result, status        
+            )
 
-        # Если защита уже набрана — проверяем, можно ли выполнить оптимизацию
-        if mode == HedgeMode.OPTIMIZATION:
-            optimization_result = self.optimization_mng.check()
-
-            status.band = optimization_result.band
-
-            return optimization_result, status           
-
-        raise Exception(
-            f"Unsupported hedge mode: {mode}"
+        status = HedgeStatus(
+            bid=ctx.bid,
+            ask=ctx.ask,
+            protection_current=curr_ratio,
+            protection_required=required_ratio,
+            pnl=ctx.main_unrealised_pnl,
+            mode=mode,
+            band=optimization_result.band,
         )
+
+        return result, status
 
     def _get_positions_data(self):
         main_pos = self.proxy_driver.get_position(
@@ -240,4 +224,3 @@ class HedgeModeMng:
         return (
             main_position.entry_price - market_price
         ) * main_position.qty
-        
