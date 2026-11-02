@@ -30,7 +30,7 @@ class PyrCloseBandCalculator:
         )
 
         # Добавляем к цене безубытка запас на прибыль
-        min_profit_buffer = 0.001
+        min_profit_buffer = 0.0005
         fee_min_profit_price = self._adjust_breakeven_for_profit_buffer(
             breakeven_price,
             min_profit_buffer,
