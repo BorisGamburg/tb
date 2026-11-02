@@ -217,6 +217,15 @@ class PyramidStrategy(BaseStrategy):
         trend_marker = "🟢" if entry_result.trend_active else "🔴"
         status += f"TREND: {trend_marker} | "
 
+        if entry_result.qty_checked:
+            status += (
+                f"QTY: {entry_result.raw_qty:g} → "
+                f"{entry_result.qty:g}"
+            )
+            if entry_result.qty == 0:
+                status += f" (MIN: {self.trading_info.min_qty})"
+            status += " | "
+
         if entry_result.allowed and entry_result.level_type == "base":
             status += "ENTRY: BASE | "
         elif entry_result.allowed and entry_result.level_type == "extension":

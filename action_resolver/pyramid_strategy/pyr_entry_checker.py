@@ -23,7 +23,8 @@ class PyrdEntryResult:
     level_type: str | None
     ha_prev_color: str | None = None
     ha_curr_color: str | None = None
-
+    qty_checked: bool = False
+    raw_qty: float = 0.0    
 
 class PyrEntryChecker:
 
@@ -84,18 +85,27 @@ class PyrEntryChecker:
     def check(self, entries, entry_tf: str) -> PyrdEntryResult:
         cur_price = float(self.proxy_driver.get_last_price(self.symbol))
 
+        main_position = self.proxy_driver.get_position(
+            self.symbol,
+            self.main_side,
+        )
+        raw_qty = float(main_position["size"]) * self.qty_ratio
+        qty = self.trading_info.get_valid_order_qty(raw_qty)        
+
         base_result = self.base_level_checker.check(cur_price, entries, entry_tf)
 
         trend_active = self.ha_trend.is_active(entry_tf)
         if not trend_active:
             return PyrdEntryResult(
                 allowed=False,
-                qty=0.0,
                 trend_active=False,
                 distance_allowed=False,
                 level_type=None,
                 ha_prev_color=base_result.ha_prev_color,
                 ha_curr_color=base_result.ha_curr_color,
+                qty=qty,
+                qty_checked=True,
+                raw_qty=raw_qty,                
             )
 
         distance_allowed = is_level_distance_allowed(
@@ -106,12 +116,14 @@ class PyrEntryChecker:
         if not distance_allowed:
             return PyrdEntryResult(
                 allowed=False,
-                qty=0.0,
                 trend_active=True,
                 distance_allowed=False,
                 level_type=None,
                 ha_prev_color=base_result.ha_prev_color,
                 ha_curr_color=base_result.ha_curr_color,
+                qty=qty,
+                qty_checked=True,
+                raw_qty=raw_qty,                
             )
 
         if base_result.allowed:
@@ -124,17 +136,17 @@ class PyrEntryChecker:
             if not extension_result.allowed:
                 return PyrdEntryResult(
                     allowed=False,
-                    qty=0.0,
                     trend_active=True,
                     distance_allowed=True,
                     level_type=None,
                     ha_prev_color=base_result.ha_prev_color,
                     ha_curr_color=base_result.ha_curr_color,
+                    qty=qty,
+                    qty_checked=True,
+                    raw_qty=raw_qty,                    
                 )
 
             level_type = "extension"
-
-        qty = self._get_pyramid_qty()
 
         return PyrdEntryResult(
             allowed=qty > 0,
@@ -144,6 +156,8 @@ class PyrEntryChecker:
             level_type=level_type if qty > 0 else None,
             ha_prev_color=base_result.ha_prev_color,
             ha_curr_color=base_result.ha_curr_color,
+            qty_checked=True,
+            raw_qty=raw_qty,            
         )
 
     def get_rearm_qty(self) -> float:
