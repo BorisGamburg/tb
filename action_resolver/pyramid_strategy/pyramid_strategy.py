@@ -162,6 +162,11 @@ class PyramidStrategy(BaseStrategy):
         ), True
 
     def _process_profit_close(self) -> tuple[ResolveResult, bool]:
+        # Если стек пуст, то закрытие по прибыли не проверяем
+        entries = self.state_store.data.stack.entries
+        if len(entries) == 0:
+            return ResolveResult(executed=False, status=""), False
+
         # Определяем таймфрейм предыдущего уровня
         current_tf = self.state_store.data.entry_tf
         current_index = self.BASE_TIMEFRAMES.index(current_tf)
@@ -174,8 +179,7 @@ class PyramidStrategy(BaseStrategy):
 
         close_tf = self.BASE_TIMEFRAMES[current_index - 1]
 
-        # Проверяем HA-разворот и достаточную прибыль
-        entries = self.state_store.data.stack.entries
+        # Проверяем пересечение границы HA свечи и достаточную прибыль
         if not self.profit_close_checker.check(
             entries,
             close_tf,
