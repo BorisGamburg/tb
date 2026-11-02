@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from action_resolver.hedge_2_strategy.hedge_mode_selector import (
-    HedgeModeSelector,
+    HedgeProtectCheck,
     HedgeMode,
 )
 from common.ha_trend_checker import HATrendChecker
@@ -71,7 +71,7 @@ class HedgeModeMng:
             logger=app_ctx.logger
         )
 
-        self.mode_selector = HedgeModeSelector(
+        self.protect_check = HedgeProtectCheck(
             hedge_side=self.hedge_side,
             max_hedge_ratio=self.max_hedge_ratio,
         )
@@ -135,17 +135,17 @@ class HedgeModeMng:
         ctx: HedgeContext,
     ):
         # Проверяем, нужна ли защита
-        protection = self.mode_selector.check_protection(
+        protect = self.protect_check.check_protect(
             unrealised_pnl=ctx.main_unrealised_pnl,
             main_pos_size=ctx.main_position.qty,
             hedge_pos_size=ctx.hedge_position.qty,
             entry_price=ctx.main_position.entry_price,
         )
-        curr_ratio = protection.curr_ratio
-        required_ratio = protection.required_ratio
+        curr_ratio = protect.curr_ratio
+        required_ratio = protect.required_ratio
 
         # Пока режим работы выводим из потребности в защите
-        if protection.needed:
+        if protect.needed:
             mode = HedgeMode.BUILD
         else:
             mode = HedgeMode.OPTIMIZATION

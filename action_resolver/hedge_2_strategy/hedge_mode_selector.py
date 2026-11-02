@@ -16,7 +16,7 @@ class ProtectionCheck:
     required_ratio: float
 
 
-class HedgeModeSelector:
+class HedgeProtectCheck:
     def __init__(
         self,
         hedge_side: str,
@@ -55,7 +55,7 @@ class HedgeModeSelector:
     ) -> float:
         return hedge_qty / main_qty
     
-    def check_protection(
+    def check_protect(
         self,
         unrealised_pnl: float,
         main_pos_size: float,
