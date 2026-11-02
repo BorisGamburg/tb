@@ -146,9 +146,9 @@ class HedgeModeMng:
         # Оптимизацию проверяем в первую очередь, на каждом шаге
         optimization_result = self.optimization_mng.check()
 
-        # Если есть что закрыть или защита не нужна — работаем в режиме оптимизации,
-        # иначе (оптимизировать нечего, защиты не хватает) — проверяем билд
-        if optimization_result.found or not protect.needed:
+        # Если защиты не хватает — закрывать уровни нельзя, работаем только в BUILD.
+        # Если защиты достаточно — работаем в режиме оптимизации.
+        if not protect.needed:
             mode = HedgeMode.OPTIMIZATION
             result = optimization_result
         else:
@@ -164,6 +164,7 @@ class HedgeModeMng:
                 hedge_side=self.hedge_side,
                 trading_info=self.trading_info,
             )
+
 
         status = HedgeStatus(
             bid=ctx.bid,
