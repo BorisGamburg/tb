@@ -22,21 +22,37 @@ class PyrTPChecker:
         )
 
     def check(self, entries, entry_tf: str) -> bool:
-        # Проверяем HA-разворот
-        if not self.ha_signal.is_exit(tf=entry_tf, side=self.side):
-            return False
-
         # Уровней нет — закрывать нечего
         if not entries:
             return False
 
-        return self.calc_total_pnl(entries) > self.calc_min_profit(entries)
-
-    def calc_total_pnl(self, entries) -> float:
-        close_price = self.price_service.get_market_close_price(
-            symbol=self.symbol,
-            side=self.side,
+        close_price = float(
+            self.price_service.get_market_close_price(
+                symbol=self.symbol,
+                side=self.side,
+            )
         )
+
+        # Buy: цена ниже минимума последней закрытой HA свечи
+        # Sell: цена выше максимума последней закрытой HA свечи
+        if not self.ha_signal.is_exit_by_price(
+            tf=entry_tf,
+            side=self.side,
+            price=close_price,
+        ):
+            return False
+
+        return (
+            self.calc_total_pnl(entries, close_price)
+            > self.calc_min_profit(entries)
+        )
+
+    def calc_total_pnl(self, entries, close_price: float | None = None) -> float:
+        if close_price is None:
+            close_price = self.price_service.get_market_close_price(
+                symbol=self.symbol,
+                side=self.side,
+            )
         total_pnl = 0.0
 
         for entry in entries:

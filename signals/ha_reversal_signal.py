@@ -44,6 +44,30 @@ class HAReversalSignal:
 
         return signal           
 
+    def is_exit_by_price(self, tf: str, side: str, price: float) -> bool:
+        """
+        Выход по пересечению ценой границы последней закрытой HA свечи:
+        - Buy:  цена опустилась ниже минимума свечи (price < HA_low)
+        - Sell: цена поднялась выше максимума свечи (price > HA_high)
+        """
+        ha = self.proxy_driver.get_ha(
+            symbol=self.symbol,
+            tf=tf
+        )
+
+        if not ha or "prev1" not in ha:
+            raise RuntimeError("Invalid HA data")
+
+        prev_candle = ha["prev1"]  # последняя закрытая HA свеча
+
+        if side == "Buy":
+            return price < float(prev_candle["HA_low"])
+
+        if side == "Sell":
+            return price > float(prev_candle["HA_high"])
+
+        raise RuntimeError(f"Invalid side: {side}")
+
     def _get_closed_ha_color(self, tf: str):
 
         ha = self.proxy_driver.get_ha(
@@ -62,4 +86,4 @@ class HAReversalSignal:
         if prev not in VALID or curr not in VALID:
             raise RuntimeError(f"Invalid HA colors: prev={prev}, curr={curr}")
 
-        return prev, curr        
+        return prev, curr
