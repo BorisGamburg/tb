@@ -162,11 +162,23 @@ class PyramidStrategy(BaseStrategy):
         ), True
 
     def _process_profit_close(self) -> tuple[ResolveResult, bool]:
+        # Определяем таймфрейм предыдущего уровня
+        current_tf = self.state_store.data.entry_tf
+        current_index = self.BASE_TIMEFRAMES.index(current_tf)
+
+        if current_index == 0:
+            raise ValueError(
+                f"Cannot determine close timeframe: "
+                f"entry_tf is already at minimum ({current_tf})"
+            )
+
+        close_tf = self.BASE_TIMEFRAMES[current_index - 1]
+
         # Проверяем HA-разворот и достаточную прибыль
         entries = self.state_store.data.stack.entries
         if not self.profit_close_checker.check(
             entries,
-            self.state_store.data.entry_tf,
+            close_tf,
         ):
             return ResolveResult(executed=False, status=""), False
 
