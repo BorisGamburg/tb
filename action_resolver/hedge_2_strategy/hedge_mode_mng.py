@@ -143,6 +143,12 @@ class HedgeModeMng:
                 entry_price=ctx.main_position.entry_price,
             )
         )
+
+        # Свеча против хеджа: защиту не наращиваем, только оптимизируем
+        if not ctx.trend_active and mode == HedgeMode.BUILD:
+            mode = HedgeMode.OPTIMIZATION
+            report += "Trend: inactive -> Mode: OPTIMIZATION "
+
         self.mode = mode
 
         status = HedgeStatus(
