@@ -134,20 +134,25 @@ class HedgeModeMng:
         self,
         ctx: HedgeContext,
     ):
-        # В зависимости от того, нужна защита или нет, выбираем режим работы
-        mode, report, curr_ratio, required_ratio = (
-            self.mode_selector.select_mode(
-                unrealised_pnl=ctx.main_unrealised_pnl,
-                main_pos_size=ctx.main_position.qty,
-                hedge_pos_size=ctx.hedge_position.qty,
-                entry_price=ctx.main_position.entry_price,
-            )
+        # Проверяем, нужна ли защита
+        protection = self.mode_selector.check_protection(
+            unrealised_pnl=ctx.main_unrealised_pnl,
+            main_pos_size=ctx.main_position.qty,
+            hedge_pos_size=ctx.hedge_position.qty,
+            entry_price=ctx.main_position.entry_price,
         )
+        curr_ratio = protection.curr_ratio
+        required_ratio = protection.required_ratio
+
+        # Пока режим работы выводим из потребности в защите
+        if protection.needed:
+            mode = HedgeMode.BUILD
+        else:
+            mode = HedgeMode.OPTIMIZATION
 
         # Свеча против хеджа: защиту не наращиваем, только оптимизируем
         if not ctx.trend_active and mode == HedgeMode.BUILD:
             mode = HedgeMode.OPTIMIZATION
-            report += "Trend: inactive -> Mode: OPTIMIZATION "
 
         self.mode = mode
 
@@ -174,7 +179,6 @@ class HedgeModeMng:
                 hedge_side=self.hedge_side,
                 trading_info=self.trading_info,
             )            
-            build_result.report = report + build_result.report
             return build_result, status        
 
         # Если защита уже набрана — проверяем, можно ли выполнить оптимизацию

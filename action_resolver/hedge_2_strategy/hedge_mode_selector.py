@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from action_resolver.hedge_2_strategy.protect_calc import (
     calc_required_protect_ratio,
@@ -7,6 +8,13 @@ from action_resolver.hedge_2_strategy.protect_calc import (
 class HedgeMode(Enum):
     BUILD = "build"
     OPTIMIZATION = "optimization"
+
+@dataclass
+class ProtectionCheck:
+    needed: bool
+    curr_ratio: float
+    required_ratio: float
+
 
 class HedgeModeSelector:
     def __init__(
@@ -47,27 +55,19 @@ class HedgeModeSelector:
     ) -> float:
         return hedge_qty / main_qty
     
-    def select_mode(
+    def check_protection(
         self,
         unrealised_pnl: float,
         main_pos_size: float,
         hedge_pos_size: float,
         entry_price: float,
-    ):
-        report = ""
-
+    ) -> ProtectionCheck:
         # Если основной позиции нет — защита не требуется
         if main_pos_size <= 0:
-            report += (
-                "Mode: OPTIMIZATION "
-                "(main position absent). "
-            )
-
-            return (
-                HedgeMode.OPTIMIZATION,
-                report,
-                0.0,
-                0.0,
+            return ProtectionCheck(
+                needed=False,
+                curr_ratio=0.0,
+                required_ratio=0.0,
             )
 
         # Рассчитываем текущий и требуемый уровень защиты
@@ -78,35 +78,8 @@ class HedgeModeSelector:
             entry_price=entry_price,
         )
 
-        report += (
-            "Protection: "
-            f"current={curr_ratio:.3f}, "
-            f"required={required_ratio:.3f} "
-            f"({'достаточно' if curr_ratio >= required_ratio else 'недостаточно'}) "
-            f"Unrealised PnL: {unrealised_pnl:.6f} "
-        )
-
-        # Защиты недостаточно
-        if curr_ratio < required_ratio:
-            report += (
-                "Mode: BUILD "
-            )
-
-            return (
-                HedgeMode.BUILD,
-                report,
-                curr_ratio,
-                required_ratio,
-            )
-
-        # Защиты достаточно
-        report += (
-            "Mode: OPTIMIZATION "
-        )
-
-        return (
-            HedgeMode.OPTIMIZATION,
-            report,
-            curr_ratio,
-            required_ratio,
+        return ProtectionCheck(
+            needed=curr_ratio < required_ratio,
+            curr_ratio=curr_ratio,
+            required_ratio=required_ratio,
         )
