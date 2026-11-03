@@ -101,8 +101,12 @@ class OptimizationMng:
             self.state.stack_mng.data.entries
         )
 
+        if sorted_levels:
+            sorted_levels = sorted_levels[:-1]
+
         losing_levels = self.level_selector.get_losing_levels(
             sorted_levels,
             current_price,
         )
+        
         return current_price, sorted_levels, losing_levels
