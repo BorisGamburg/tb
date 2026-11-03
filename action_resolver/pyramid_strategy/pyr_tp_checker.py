@@ -3,6 +3,8 @@ from signals.ha_reversal_signal import HAReversalSignal
 
 class PyrTPChecker:
 
+    PROFIT_BUFFER_PCT = 0.001
+
     def __init__(
         self,
         proxy_driver,
@@ -21,10 +23,9 @@ class PyrTPChecker:
             symbol=symbol,
         )
 
-    def check(self, entries, entry_tf: str) -> bool:
-        # Уровней нет — закрывать нечего
+    def check(self, entries, entry_tf: str) -> list:
         if not entries:
-            return False
+            return []
 
         close_price = float(
             self.price_service.get_market_close_price(
@@ -33,47 +34,56 @@ class PyrTPChecker:
             )
         )
 
-        # Buy: цена ниже минимума последней закрытой HA свечи
-        # Sell: цена выше максимума последней закрытой HA свечи
         if not self.ha_signal.is_exit_by_price(
             tf=entry_tf,
             side=self.side,
             price=close_price,
         ):
-            return False
+            return []
 
-        return (
-            self.calc_total_pnl(entries, close_price)
-            > self.calc_min_profit(entries)
-        )
-
-    def calc_total_pnl(self, entries, close_price: float | None = None) -> float:
-        if close_price is None:
-            close_price = self.price_service.get_market_close_price(
-                symbol=self.symbol,
-                side=self.side,
-            )
-        total_pnl = 0.0
+        profitable_levels = []
 
         for entry in entries:
             if entry.qty <= 0:
                 continue
 
             if self.side == "Buy":
+                breakeven_price = (
+                    entry.price * (1 + self.fee_taker)
+                    / (1 - self.fee_taker)
+                )
+                min_close_price = (
+                    breakeven_price * (1 + self.PROFIT_BUFFER_PCT)
+                )
+
+                if close_price < min_close_price:
+                    continue
+
                 gross_pnl = (close_price - entry.price) * entry.qty
+
             elif self.side == "Sell":
+                breakeven_price = (
+                    entry.price * (1 - self.fee_taker)
+                    / (1 + self.fee_taker)
+                )
+                max_close_price = (
+                    breakeven_price * (1 - self.PROFIT_BUFFER_PCT)
+                )
+
+                if close_price > max_close_price:
+                    continue
+
                 gross_pnl = (entry.price - close_price) * entry.qty
+
             else:
                 raise ValueError(f"Unsupported side: {self.side}")
 
             entry_fee = entry.price * entry.qty * self.fee_taker
             close_fee = close_price * entry.qty * self.fee_taker
 
-            total_pnl += gross_pnl - entry_fee - close_fee
+            net_pnl = gross_pnl - entry_fee - close_fee
 
-        return total_pnl
+            if net_pnl > 0:
+                profitable_levels.append(entry)
 
-    def calc_min_profit(self, entries) -> float:
-        MIN_PROFIT_PCT = 0.1
-        entries_value = sum(entry.price * entry.qty for entry in entries)
-        return entries_value * MIN_PROFIT_PCT / 100
+        return profitable_levels

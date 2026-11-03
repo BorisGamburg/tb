@@ -179,17 +179,20 @@ class PyramidStrategy(BaseStrategy):
 
         close_tf = self.BASE_TIMEFRAMES[current_index - 1]
 
-        # Проверяем пересечение границы HA свечи и достаточную прибыль
-        if not self.profit_close_checker.check(
+        # Получаем уровни, достигшие безубыточности с учётом комиссий
+        # и дополнительного порога прибыли 0.1%.
+        profitable_levels = self.profit_close_checker.check(
             entries,
             close_tf,
-        ):
+        )
+
+        if not profitable_levels:
             return ResolveResult(executed=False, status=""), False
 
         # Закрываем только уровни пирамиды (Action.CLOSE на их суммарный qty),
         # а не всю биржевую позицию: в ней могут быть позиции других стратегий.
         # levels — копия: Accounting удаляет уровни из того же списка entries.
-        levels = list(entries)
+        levels = profitable_levels
         action_command = ActionCommand(
             action=Action.CLOSE,
             symbol=self.state_store.data.symbol,
