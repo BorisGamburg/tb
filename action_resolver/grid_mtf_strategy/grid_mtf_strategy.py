@@ -139,7 +139,8 @@ class GridMTFStrategy(BaseStrategy):
             f"Min rearm distance: {data.min_rearm_distance_pct}\n"
             f"Min profit: {data.min_profit_pct}\n"
             f"Max profit BB: {data.max_profit_bb_pct}%\n"
-            f"Merge threshold: {data.merge_threshold_pct}%\n"            
+            f"Merge threshold: {data.merge_threshold_pct}%\n"       
+            f"Exit Guard Enabled: {data.exit_guard_enabled}\n"                 
             f"Sleep interval: {data.sleep_interval}\n"
         )
         self.app_ctx.logger.info(params)

@@ -75,15 +75,16 @@ class Hedge2Strategy(BaseStrategy):
 
         build_indicator = ""
         if status.mode.name == "BUILD":
-            ha_marker = "🟢" if build_trend_active else "🔴"
+            ha_status = "ALLOW" if build_trend_active else "BLOCK"
             dist_marker = "🟢" if build_distance_allowed else "🔴"
             build_indicator = (
-                f"  HA: {ha_marker} DIST: {dist_marker}"
+                f"  HA({self.state_store.data.start_tf}m): {ha_status} "
+                f" DIST: {dist_marker}"
             )
 
         return (
             f"BID/ASK: {status.bid:.6f} — {status.ask:.6f} | "
-            f"PROTECTION: cur={status.protection_current:.3f} | "
+            f"PROTECTION: cur={status.protection_current:.3f} "
             f"req={status.protection_required:.3f} {protection_mark} | "
             f"PNL: {status.pnl:+.6f} | "
              f"MODE: {status.mode.name}"

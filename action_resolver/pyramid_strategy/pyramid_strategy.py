@@ -24,7 +24,7 @@ from utils.utils import get_inverse_side
 
 
 class PyramidStrategy(BaseStrategy):
-    BASE_TIMEFRAMES = ["1", "5", "15", "60", "240"]    
+    BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]    
     def __init__(
         self,
         state_store: State,
