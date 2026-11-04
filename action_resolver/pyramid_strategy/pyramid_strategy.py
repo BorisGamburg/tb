@@ -20,7 +20,9 @@ from action_resolver.pyramid_strategy.pyr_close_processor import (
 )
 from action_resolver.pyramid_strategy.pyr_tp_checker import PyrTPChecker
 from utils.utils import get_inverse_side
-
+from action_resolver.pyramid_strategy.pyr_dust_cleaner import (
+    PyrDustCleaner,
+)
 
 
 class PyramidStrategy(BaseStrategy):
@@ -73,10 +75,23 @@ class PyramidStrategy(BaseStrategy):
             fee_taker=trading_info.fee_taker,
         )
 
+        self.dust_cleaner = PyrDustCleaner(
+            symbol=state_store.data.symbol,
+            side=state_store.data.side,
+            price_service=app_ctx.price_service,
+            trading_info=trading_info,
+            logger=app_ctx.logger,
+        )
+
         self.close_band = None
         self._log_parameters()
 
     def resolve(self) -> ResolveResult:
+        # Проверяем закрытие dust-уровня
+        dust_result, dust_found = self._process_dust_close()
+        if dust_found:
+            return dust_result
+
         # Проверяем закрытие всей пирамиды по прибыли
         profit_close_result, profit_close_found = self._process_profit_close()
         if profit_close_found:
@@ -310,3 +325,34 @@ class PyramidStrategy(BaseStrategy):
             f"Base level opened: entry_tf changed "
             f"from {current_tf} to {next_tf}"
         )
+
+    def _process_dust_close(self) -> tuple[ResolveResult, bool]:
+
+        entries = self.state_store.data.stack.entries
+
+        level, close_qty = self.dust_cleaner.find_closeable_level(
+            entries
+        )
+
+        if level is None:
+            return ResolveResult(executed=False, status=""), False
+
+        action_command = ActionCommand(
+            action=Action.CLOSE,
+            symbol=self.state_store.data.symbol,
+            side=get_inverse_side(self.state_store.data.side),
+            qty=close_qty,
+            levels=[level],
+            reason="PYRAMID_DUST_CLOSE",
+        )
+
+        self.action_service.notify_action(action_command)
+
+        exec_result = self.close_processor.execute_profit_close(
+            action_command
+        )
+
+        return ResolveResult(
+            executed=exec_result.executed,
+            status="",
+        ), True
