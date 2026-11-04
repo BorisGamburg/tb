@@ -82,7 +82,7 @@ class PyramidStrategy(BaseStrategy):
         if profit_close_found:
             return profit_close_result
 
-        # Проверяем Unbind
+        # Проверяем Unwind
         close_result, close_found = self._process_close()
         if close_found:
             return close_result
@@ -153,7 +153,12 @@ class PyramidStrategy(BaseStrategy):
                     qty=qty,
                     reason="PYRAMID_REARM",
                 )
-                self.action_service.process_action(rearm_command)
+
+                while True:
+                    rearm_result = self.action_service.process_action(rearm_command)
+
+                    if rearm_result.executed:
+                        break
 
         # Возвращаем результат закрытия пары
         return ResolveResult(
