@@ -167,8 +167,9 @@ class StatusLine:
         text.append(" | HA: ", style="cyan")
         if entry_check_result is not None:
             ha = entry_check_result.ha_revers_result.details
+            sign = "<" if ha.side == "Sell" else ">"
             text.append(
-                f"({ha.tf}m) [{ha.prev}→{ha.curr}]"
+                f"({ha.tf}m) [{ha.price:.6g}{sign}{ha.level:.6g}]"
             )
 
             self._append_status_circle(
@@ -248,4 +249,4 @@ class StatusLine:
         else:
             text.append("N/A", style="dim")
 
-        return text    
+        return text

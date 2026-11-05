@@ -119,8 +119,13 @@ class EntryChecker:
         level = len(entries)
         tf = self.map_mng.get_tf_for_level(level)
 
-        # Проверяем разворот по ha
-        return self.ha_signal.is_entry(tf, self.side)
+        # Получаем текущую цену
+        price = self.proxy_driver.get_last_price(
+            self.symbol
+        )
+
+        # Проверяем пробой границы последней закрытой ha свечи
+        return self.ha_signal.is_entry(tf, self.side, price)
 
     def _is_distance_ok(
         self,
