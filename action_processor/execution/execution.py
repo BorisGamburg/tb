@@ -64,7 +64,11 @@ class Execution:
 
         return res
 
-    def execute(self, act_cmd: ActionCommand) -> ExecutionResult:
+    def execute(
+        self,
+        act_cmd: ActionCommand,
+        exit_type: ExitType = ExitType.ACTIVE,
+    ) -> ExecutionResult:
         action = act_cmd.action
 
         if action == Action.OPEN:
@@ -75,6 +79,7 @@ class Execution:
         elif action == Action.CLOSE:
             price, qty, fee, executed, status, order_id = self._exec_close(
                 act_cmd,
+                exit_type,
             )
 
         elif action == Action.CLOSE_POSITION:
@@ -195,12 +200,16 @@ class Execution:
             order_result.order_id,
         )
 
-    def _exec_close(self, result):
+    def _exec_close(
+        self,
+        result,
+        exit_type: ExitType,
+    ):
         order_result = self.close_limit_mng.wait_limit_order(
             symbol=result.symbol,
             side=result.side,
             qty=result.qty,
-            exit_type=ExitType.ACTIVE,
+            exit_type=exit_type,
         )
 
         if order_result.status == LimitOrderStatus.PARTIALLY_FILLED:
