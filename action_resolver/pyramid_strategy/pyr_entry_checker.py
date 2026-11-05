@@ -12,6 +12,7 @@ from signals.ha_reversal_signal import HAReversalSignal
 
 from common.ha_trend_checker import HATrendChecker
 from common.level_distance_checker import is_level_distance_allowed
+from action_resolver.pyramid_strategy.pyr_qty_calculator import PyrQtyCalculator
 
 
 @dataclass
@@ -41,10 +42,13 @@ class PyrEntryChecker:
         self.symbol = symbol
         self.side = side
         self.step_ratio = step_pct / 100
-        self.qty_ratio = qty_pct / 100
-        self.trading_info = trading_info
 
-        self.main_side = "Sell" if side == "Buy" else "Buy"
+        self.qty_calculator = PyrQtyCalculator(
+            proxy_driver=proxy_driver,
+            symbol=symbol,
+            qty_pct=qty_pct,
+            trading_info=trading_info,
+        )
 
         self.ha_trend = HATrendChecker(
             proxy_driver=proxy_driver,
@@ -73,24 +77,12 @@ class PyrEntryChecker:
         )
 
     def _get_pyramid_qty(self) -> float:
-        main_position = self.proxy_driver.get_position(
-            self.symbol,
-            self.main_side,
-        )
-        main_qty = float(main_position["size"])
-        return self.trading_info.get_valid_order_qty(
-            main_qty * self.qty_ratio
-        )
+        _, qty = self.qty_calculator.calculate()
+        return qty
 
     def check(self, entries, entry_tf: str) -> PyrdEntryResult:
         cur_price = float(self.proxy_driver.get_last_price(self.symbol))
-
-        main_position = self.proxy_driver.get_position(
-            self.symbol,
-            self.main_side,
-        )
-        raw_qty = float(main_position["size"]) * self.qty_ratio
-        qty = self.trading_info.get_valid_order_qty(raw_qty)        
+        raw_qty, qty = self.qty_calculator.calculate()
 
         base_result = self.base_level_checker.check(cur_price, entries, entry_tf)
 
