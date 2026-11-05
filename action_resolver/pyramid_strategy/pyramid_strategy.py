@@ -23,6 +23,9 @@ from utils.utils import get_inverse_side
 from action_resolver.pyramid_strategy.pyr_dust_cleaner import (
     PyrDustCleaner,
 )
+from action_resolver.pyramid_strategy.pyr_position_limit_checker import (
+    is_position_limit_allowed,
+)
 
 
 class PyramidStrategy(BaseStrategy):
@@ -156,8 +159,16 @@ class PyramidStrategy(BaseStrategy):
         # Передаем команду на исполнение и учет
         exec_result = self.close_processor.execute(action_command)
 
-        # Если пара успешно закрыта и стек пуст, открываем новый уровень
-        if exec_result.executed and not self.state_store.data.stack.entries:
+        # Если пара успешно закрыта, стек пуст и размер позиции в норме -> открываем новый уровень
+        if (
+            exec_result.executed
+            and not self.state_store.data.stack.entries
+            and is_position_limit_allowed(
+                self.app_ctx.proxy_driver,
+                self.state_store.data.symbol,
+                self.state_store.data.side,
+            )
+        ):
             qty = self.open_checker.get_rearm_qty()
 
             if qty > 0:

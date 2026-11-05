@@ -13,6 +13,9 @@ from signals.ha_reversal_signal import HAReversalSignal
 from common.ha_trend_checker import HATrendChecker
 from common.level_distance_checker import is_level_distance_allowed
 from action_resolver.pyramid_strategy.pyr_qty_calculator import PyrQtyCalculator
+from action_resolver.pyramid_strategy.pyr_position_limit_checker import (
+    is_position_limit_allowed,
+)
 
 
 @dataclass
@@ -140,12 +143,18 @@ class PyrEntryChecker:
 
             level_type = "extension"
 
+        allowed = qty > 0 and is_position_limit_allowed(
+            self.proxy_driver,
+            self.symbol,
+            self.side,
+        )
+
         return PyrdEntryResult(
-            allowed=qty > 0,
+            allowed=allowed,
             qty=qty,
             trend_active=True,
             distance_allowed=True,
-            level_type=level_type if qty > 0 else None,
+            level_type=level_type if allowed else None,
             ha_prev_color=base_result.ha_prev_color,
             ha_curr_color=base_result.ha_curr_color,
             qty_checked=True,
@@ -154,3 +163,4 @@ class PyrEntryChecker:
 
     def get_rearm_qty(self) -> float:
         return self._get_pyramid_qty()
+
