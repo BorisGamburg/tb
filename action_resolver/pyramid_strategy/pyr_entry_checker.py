@@ -8,7 +8,9 @@ from action_resolver.pyramid_strategy.pyr_extension_level_entry_checker import (
 )
 from common.trading_info import TradingInfo
 from services.bb_service import BBService
-from signals.ha_reversal_signal import HAReversalSignal
+from action_resolver.pyramid_strategy.pyr_ha_breakout_signal import (
+    HAReversalSignal,
+)
 
 from common.ha_trend_checker import HATrendChecker
 from common.level_distance_checker import is_level_distance_allowed
@@ -25,11 +27,10 @@ class PyrdEntryResult:
     trend_active: bool
     distance_allowed: bool
     level_type: str | None
-    ha_prev_color: str | None = None
-    ha_curr_color: str | None = None
     qty_checked: bool = False
-    raw_qty: float = 0.0    
-    position_limit_blocked: bool = False    
+    raw_qty: float = 0.0
+    position_limit_blocked: bool = False
+    ha_breakout: bool = False
 
 class PyrEntryChecker:
 
@@ -97,11 +98,10 @@ class PyrEntryChecker:
                 trend_active=False,
                 distance_allowed=False,
                 level_type=None,
-                ha_prev_color=base_result.ha_prev_color,
-                ha_curr_color=base_result.ha_curr_color,
                 qty=qty,
                 qty_checked=True,
-                raw_qty=raw_qty,                
+                raw_qty=raw_qty,
+                ha_breakout=base_result.ha_breakout,
             )
 
         distance_allowed = is_level_distance_allowed(
@@ -115,11 +115,10 @@ class PyrEntryChecker:
                 trend_active=True,
                 distance_allowed=False,
                 level_type=None,
-                ha_prev_color=base_result.ha_prev_color,
-                ha_curr_color=base_result.ha_curr_color,
                 qty=qty,
                 qty_checked=True,
-                raw_qty=raw_qty,                
+                raw_qty=raw_qty,
+                ha_breakout=base_result.ha_breakout,
             )
 
         if base_result.allowed:
@@ -135,11 +134,10 @@ class PyrEntryChecker:
                     trend_active=True,
                     distance_allowed=True,
                     level_type=None,
-                    ha_prev_color=base_result.ha_prev_color,
-                    ha_curr_color=base_result.ha_curr_color,
                     qty=qty,
                     qty_checked=True,
-                    raw_qty=raw_qty,                    
+                    raw_qty=raw_qty,
+                    ha_breakout=base_result.ha_breakout,
                 )
 
             level_type = "extension"
@@ -161,11 +159,10 @@ class PyrEntryChecker:
             trend_active=True,
             distance_allowed=True,
             level_type=level_type if allowed else None,
-            ha_prev_color=base_result.ha_prev_color,
-            ha_curr_color=base_result.ha_curr_color,
             qty_checked=True,
-            raw_qty=raw_qty,         
-            position_limit_blocked=position_limit_blocked,               
+            raw_qty=raw_qty,
+            position_limit_blocked=position_limit_blocked,
+            ha_breakout=base_result.ha_breakout,
         )
 
     def get_rearm_qty(self) -> float:

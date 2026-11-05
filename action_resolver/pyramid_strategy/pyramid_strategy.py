@@ -250,18 +250,11 @@ class PyramidStrategy(BaseStrategy):
             f"BID/ASK: {ticker['bid']:.6f} — {ticker['ask']:.6f} | "
         )
 
-        color_symbols = {
-            "red": "🔴",
-            "green": "🟢",
-            "doji": "⚪",
-        }
-
-        prev_color = color_symbols.get(entry_result.ha_prev_color, "❔")
-        curr_color = color_symbols.get(entry_result.ha_curr_color, "❔")
+        ha_marker = "🟢" if entry_result.ha_breakout else "🔴"
 
         status += (
-            f"HA({self.state_store.data.entry_tf}): "
-            f"{prev_color} → {curr_color} | "
+            f"HA BREAKOUT({self.state_store.data.entry_tf}): "
+            f"{ha_marker} | "
         )
 
         trend_marker = "🟢" if entry_result.trend_active else "🔴"

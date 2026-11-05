@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 
 from services.bb_service import BBService
-from signals.ha_reversal_signal import HAReversalSignal
+from action_resolver.pyramid_strategy.pyr_ha_breakout_signal import (
+    HAReversalSignal,
+)
 
 
 @dataclass
 class PyrBaseLevelEntryResult:
     allowed: bool
-    ha_reversal: bool
+    ha_breakout: bool
     bb_allowed: bool
     position_allowed: bool
-    ha_prev_color: str | None = None
-    ha_curr_color: str | None = None
 
 
 class PyrBaseLevelEntryChecker:
@@ -32,8 +32,9 @@ class PyrBaseLevelEntryChecker:
 
         return all(entry.price <= cur_price for entry in entries)
 
-    def _check_ha_reversal(self, entry_tf: str) -> tuple[bool, dict]:
-        return self.ha_signal.is_entry(entry_tf, self.side)
+    def _check_ha_breakout(self, entry_tf: str, cur_price: float) -> bool:
+        result = self.ha_signal.is_entry(entry_tf, self.side, cur_price)
+        return result.ok
 
     def _check_bb(self, cur_price: float, entry_tf: str) -> bool:
         bb = self.bb_service.get_live(entry_tf)
@@ -44,30 +45,23 @@ class PyrBaseLevelEntryChecker:
         return cur_price > bb["mid"]
 
     def check(self, cur_price: float, entries, entry_tf: str) -> PyrBaseLevelEntryResult:
-        ha_reversal, ha_payload = self._check_ha_reversal(entry_tf)
-
-        ha_prev_color = ha_payload["prev_color"]
-        ha_curr_color = ha_payload["curr_color"]
+        ha_breakout = self._check_ha_breakout(entry_tf, cur_price)
 
         position_allowed = self._check_position(cur_price, entries)
         if not position_allowed:
             return PyrBaseLevelEntryResult(
                 allowed=False,
-                ha_reversal=ha_reversal,
+                ha_breakout=ha_breakout,
                 bb_allowed=False,
                 position_allowed=False,
-                ha_prev_color=ha_prev_color,
-                ha_curr_color=ha_curr_color,
             )
 
-        if not ha_reversal:
+        if not ha_breakout:
             return PyrBaseLevelEntryResult(
                 allowed=False,
-                ha_reversal=False,
+                ha_breakout=False,
                 bb_allowed=False,
                 position_allowed=True,
-                ha_prev_color=ha_prev_color,
-                ha_curr_color=ha_curr_color,
             )
 
         # Временно отключена проверка Bollinger Bands.
@@ -75,10 +69,8 @@ class PyrBaseLevelEntryChecker:
 
         return PyrBaseLevelEntryResult(
             allowed=True,
-            ha_reversal=True,
+            ha_breakout=True,
             # bb_allowed=bb_allowed,
             bb_allowed=True,
             position_allowed=True,
-            ha_prev_color=ha_prev_color,
-            ha_curr_color=ha_curr_color,
         )
