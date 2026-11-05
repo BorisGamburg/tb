@@ -5,6 +5,7 @@ from action_processor.state.state import State
 from action_processor.execution.execution_result import ExecutionResult
 from action_processor.action import ActionCommand
 from common.trading_info import TradingInfo
+from action_processor.execution.close_limit_mng import ExitType
 
 
 class ActionService:
@@ -34,12 +35,16 @@ class ActionService:
     def process_action(
         self,
         action_command: ActionCommand,
+        exit_type: ExitType = ExitType.ACTIVE,
     ) -> ExecutionResult:
         # Логируем команду
         self.notify_action(action_command)
 
         # Запускаем Executor
-        exec_result = self.execution.execute(action_command)
+        exec_result = self.execution.execute(
+            action_command,
+            exit_type=exit_type,
+        )
 
         if not exec_result.executed:
             return exec_result

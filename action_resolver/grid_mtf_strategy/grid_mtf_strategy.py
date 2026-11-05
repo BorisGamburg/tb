@@ -20,6 +20,7 @@ from action_processor.action_guard import ActionGuard, GuardResult
 from action_resolver.grid_mtf_strategy.status_line import StatusLine
 from action_processor.execution.execution_result import ExecutionResult
 from action_resolver.resolve_result import ResolveResult
+from action_processor.execution.close_limit_mng import ExitType
 
 @dataclass
 class BBWExitResult:
@@ -206,8 +207,9 @@ class GridMTFStrategy(BaseStrategy):
             )
 
         return self.action_service.process_action(
-                action_command,
-            )
+            action_command,
+            exit_type=ExitType.PASSIVE,
+        )
 
     def _resolve_exit_cross(
         self,
