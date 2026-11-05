@@ -275,6 +275,8 @@ class PyramidStrategy(BaseStrategy):
             if entry_result.qty == 0:
                 status += f" (MIN: {self.trading_info.min_qty})"
             status += " | "
+        if entry_result.position_limit_blocked:
+            status += "POSITION LIMIT: 🔴 | "            
 
         if entry_result.allowed and entry_result.level_type == "base":
             status += "ENTRY: BASE | "

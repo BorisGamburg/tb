@@ -29,6 +29,7 @@ class PyrdEntryResult:
     ha_curr_color: str | None = None
     qty_checked: bool = False
     raw_qty: float = 0.0    
+    position_limit_blocked: bool = False    
 
 class PyrEntryChecker:
 
@@ -143,11 +144,16 @@ class PyrEntryChecker:
 
             level_type = "extension"
 
-        allowed = qty > 0 and is_position_limit_allowed(
-            self.proxy_driver,
-            self.symbol,
-            self.side,
+        position_limit_blocked = (
+            qty > 0
+            and not is_position_limit_allowed(
+                self.proxy_driver,
+                self.symbol,
+                self.side,
+            )
         )
+
+        allowed = qty > 0 and not position_limit_blocked
 
         return PyrdEntryResult(
             allowed=allowed,
@@ -158,7 +164,8 @@ class PyrEntryChecker:
             ha_prev_color=base_result.ha_prev_color,
             ha_curr_color=base_result.ha_curr_color,
             qty_checked=True,
-            raw_qty=raw_qty,            
+            raw_qty=raw_qty,         
+            position_limit_blocked=position_limit_blocked,               
         )
 
     def get_rearm_qty(self) -> float:
