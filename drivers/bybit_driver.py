@@ -63,33 +63,30 @@ class BybitDriver:
         return self.retry_api_call(call)
 
     def cancel_lim_order(self, symbol, order_id):
-        """Отменяет указанный ордер бота напрямую через API Bybit с повторными попытками."""
+        """Отменяет указанный ордер бота через API Bybit (без повторных попыток)."""
         # Проверка параметров
         if not symbol or not order_id:
             self.logger.error(f"Некорректные параметры: symbol={symbol}, orderId={order_id}")
             return -1
 
-        def call():
-            try:
-                response: Any = self.http_client.cancel_order(
-                    category="linear",
-                    symbol=symbol,
-                    orderId=order_id
-                )
-                if "retCode" in response and response["retCode"] in (0, 110001):
-                    return response["retCode"]
-                return -1
-            except InvalidRequestError as e:
-                if e.status_code == 110001:  # Ордер не существует или уже отменён
-                    return 110001
-                self.logger.error(f"Ошибка в cancel_order: {e}", exc_info=True)
-                raise  # Пробрасываем другие ошибки InvalidRequestError
-            except Exception as e:
-                self.logger.error(f"Ошибка в cancel_order: {e}", exc_info=True)
-                raise  # Пробрасываем исключение в retry_api_call
+        try:
+            response: Any = self.http_client.cancel_order(
+                category="linear",
+                symbol=symbol,
+                orderId=order_id,
+            )
+        except InvalidRequestError as e:
+            if e.status_code == 110001:  # Ордер не активен (исполнен или уже отменён)
+                return 110001
+            self.logger.error(f"Ошибка в cancel_order: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            self.logger.error(f"Ошибка в cancel_order: {e}", exc_info=True)
+            raise
 
-        result = self.retry_api_call(call)
-        return result
+        if "retCode" in response and response["retCode"] in (0, 110001):
+            return response["retCode"]
+        return -1
     
     def place_limit_order(self, symbol, side, mode, qty, price, orderLinkId=None):
         """Выставляет лимитный ордер с поддержкой orderLinkId."""
