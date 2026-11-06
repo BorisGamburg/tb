@@ -143,15 +143,8 @@ class HedgeModeMng:
         curr_ratio = protect.curr_ratio
         required_ratio = protect.required_ratio
 
-        # Всегда проверяем оптимизацию
-        optimization_result = self.optimization_mng.check()
-        band = optimization_result.band
-
-        if optimization_result.found:
-            mode = HedgeMode.OPTIMIZATION
-            result = optimization_result
-
-        elif protect.needed:
+        if protect.needed:
+            # Защита нужна, проверяем BUILD
             mode = HedgeMode.BUILD
             result = check_build(
                 trend_active=ctx.trend_active,
@@ -164,8 +157,12 @@ class HedgeModeMng:
                 hedge_side=self.hedge_side,
                 trading_info=self.trading_info,
             )
+            band = None
 
         else:
+            # Защита не нужна, проверяем OPTIMIZATION
+            optimization_result = self.optimization_mng.check()
+            band = optimization_result.band
             mode = HedgeMode.OPTIMIZATION
             result = optimization_result
 
