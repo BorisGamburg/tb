@@ -10,7 +10,6 @@ from action_resolver.pyramid_2_strategy.pyr_close_result_calculator import (
 )
 from action_resolver.pyramid_2_strategy.pyr_alternative_search import PyrAlternativeSearchService
 from action_resolver.pyramid_2_strategy.pyr_level_selector import PyrLevelSelector
-from action_resolver.pyramid_2_strategy.pyr_losing_level_processor import PyrLosingLevelProcessor
 from action_resolver.pyramid_2_strategy.pyr_pair_close_calculator import (
     PyrPairCloseCalculator,
     PyrBandCrossCloseResult,
@@ -68,52 +67,28 @@ class PyrOptimizationMng:
             logger=logger
         )
 
-        self.losing_level_processor = PyrLosingLevelProcessor(
-            hedge_side=self.hedge_side,
-            close_band_calculator=self.close_band_calculator,
-            band_cross_calculator=self.pair_close_calculator,
-            level_selector=self.level_selector,
-            logger=self.logger,
-        )
-
     def check(self) -> PyrOptimizationResult:
-        current_price, sorted_levels, losing_levels = self._prepare_data()
+        current_price, sorted_levels = self._prepare_data()
 
-        # Проверяем, находится ли текущая цена внутри одного из Close Bands.
+        previous_price = self.previous_price
+        self.previous_price = current_price
+
+        # Проверяем, находится ли текущая цена внутри Close Band.
         inside_band_result = self._check_price_inside_close_band(
             current_price,
             sorted_levels,
         )
-
         if inside_band_result is not None:
             return inside_band_result
 
-        # Проверяем возможно ли закрытие
-        close_result = self._check_close_band_within(
+        # Проверяем пересечение Close Band между предыдущей и текущей ценой.
+        close_band_within_result = self._check_close_band_within(
+            previous_price,
             current_price,
             sorted_levels,
         )
-
-        # Если закрытие возможно, возвращаем результат.
-        if close_result is not None:
-            return close_result
-
-
-        last_band = None
-
-        for losing_level in losing_levels:
-            result = self.losing_level_processor.process(
-                losing_level=losing_level,
-                sorted_levels=sorted_levels,
-                cur_price=current_price,
-                optimization_result_cls=PyrOptimizationResult,
-            )
-
-            if result.band:
-                last_band = result.band
-
-            if result.found or not result.continue_search:
-                return result
+        if close_band_within_result is not None:
+            return close_band_within_result
 
         return PyrOptimizationResult(
             found=False,
@@ -121,10 +96,9 @@ class PyrOptimizationMng:
             losing_level=None,
             profitable_level=None,
             qty=0,
-            band=last_band,
         )
 
-    def _prepare_data(self):
+    def _prepare_data(self) -> tuple[float, list[StackElem]]:
         current_price = self.price_service.get_active_price(
             self.state.data.symbol,
             self.hedge_side,
@@ -134,19 +108,14 @@ class PyrOptimizationMng:
             self.state.stack_mng.data.entries
         )
 
-        losing_levels = self.level_selector.get_losing_levels(
-            sorted_levels,
-            current_price,
-        )
-        return current_price, sorted_levels, losing_levels
+        return current_price, sorted_levels
 
     def _check_close_band_within(
         self,
+        previous_price: float | None,
         current_price: float,
         sorted_levels: list[StackElem],
     ) -> PyrOptimizationResult | None:
-        previous_price = self.previous_price
-        self.previous_price = current_price
         if previous_price is None:
             return None
 
