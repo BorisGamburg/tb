@@ -55,8 +55,7 @@ class PyrOptimizationMng:
             trading_info=trading_info,
         )
 
-        self.previous_price = None
-        self.previous_pair_key = None        
+        self.previous_price: float | None = None
 
         self.close_result_calculator = PyrCloseResultCalculator(
             hedge_side=self.hedge_side,
@@ -134,56 +133,63 @@ class PyrOptimizationMng:
         current_price: float,
         sorted_levels: list[StackElem],
     ) -> PyrOptimizationResult | None:
-        # Проверяем только пару из двух уровней
-        if len(sorted_levels) != 2:
-            self.previous_price = None
-            self.previous_pair_key = None
-            return None
-
-        # Для Buy: первый уровень убыточный, второй прибыльный.
-        # Для Sell: первый уровень убыточный, второй прибыльный.
-        losing_level, profitable_level = sorted_levels
-
-        # Идентификатор текущей пары.
-        # Любое изменение уровней сбрасывает предыдущую цену.
-        pair_key = tuple(
-            (level.price, level.qty, level.fee, level.initial_qty)
-            for level in sorted_levels
-        )
-
-        band = self.close_band_calculator.calculate(
-            losing_level,
-            profitable_level,
-        )
-
-        # Новая пара: только устанавливаем начальную цену
-        if pair_key != self.previous_pair_key:
-            self.previous_pair_key = pair_key
-            self.previous_price = current_price
-            return None
-
         previous_price = self.previous_price
         self.previous_price = current_price
 
         if previous_price is None:
             return None
 
-        # Проверяем полное пересечение Close Band
-        if self.hedge_side == "Buy":
-            crossed = (
-                previous_price > band.high
-                and current_price < band.low
-            )
-        else:
-            crossed = (
-                previous_price < band.low
-                and current_price > band.high
+        crossed_close_bands = []
+
+        # Проверяем Close Band всех соседних пар уровней.
+        for losing_level, profitable_level in zip(
+            sorted_levels,
+            sorted_levels[1:],
+        ):
+            # Рассчитываем Close Band для текущей пары уровней.
+            band = self.close_band_calculator.calculate(
+                losing_level,
+                profitable_level,
             )
 
-        if not crossed:
+            # Проверяем, находится ли  close_band между предыдущей и текущей ценой.
+            if self.hedge_side == "Buy":
+                within = (
+                    previous_price > band.high
+                    and current_price < band.low
+                )
+            elif self.hedge_side == "Sell":
+                within = (
+                    previous_price < band.low
+                    and current_price > band.high
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported side: {self.hedge_side}"
+                )
+
+            # Если close_band  внутри, то добавляем его в список 
+            if within:
+                crossed_close_bands.append(
+                    (losing_level, profitable_level, band)
+                )
+
+        if not crossed_close_bands:
             return None
 
-        # Рассчитываем безопасный план закрытия
+        # Если пересечено несколько полос, выбираем крайнюю.
+        if self.hedge_side == "Buy":
+            losing_level, profitable_level, band = min(
+                crossed_close_bands,
+                key=lambda pair: pair[2].low,
+            )
+        else:
+            losing_level, profitable_level, band = max(
+                crossed_close_bands,
+                key=lambda pair: pair[2].high,
+            )
+
+        # Рассчитываем безопасный план закрытия выбранной пары.
         plan = self.band_cross_calculator.calculate(
             profitable_level=profitable_level,
             losing_level=losing_level,
@@ -196,11 +202,13 @@ class PyrOptimizationMng:
             f"previous={previous_price:.8f} | "
             f"current={current_price:.8f} | "
             f"band=[{band.low:.8f}, {band.high:.8f}] | "
+            f"losing={losing_level.price:.8f} | "
+            f"profitable={profitable_level.price:.8f} | "
+            f"crossed_bands={len(crossed_close_bands)} | "
             f"plan_found={plan.found}"
         )
 
-        # Пересечение обнаружено, но безопасное закрытие невозможно.
-        # Возвращаем found=False, чтобы обычное закрытие не выполнялось.
+        # Если безопасный план не найден, используем альтернативный поиск.
         if not plan.found:
             alternative_level = (
                 self.alternative_search_service.find_alternative_profitable_level(
@@ -237,4 +245,5 @@ class PyrOptimizationMng:
             qty=plan.total_qty,
             band=band,
             band_cross_plan=plan,
-        )    
+        )
+    
