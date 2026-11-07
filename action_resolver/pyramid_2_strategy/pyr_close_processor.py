@@ -5,6 +5,9 @@ from action_processor.action_service import ActionService
 from action_resolver.pyramid_2_strategy.pyr_partial_close_calculator import (
     PyrPartialCloseCalculator,
 )
+from action_resolver.pyramid_2_strategy.pyr_band_cross_close_calculator import (
+    PyrBandCrossCloseResult,
+)
 
 
 class PyrCloseProcessor:
@@ -175,3 +178,66 @@ class PyrCloseProcessor:
             side=exec_result.action_command.side,
         )
         accounting.reduce_levels(levels, reductions)
+
+    def execute_band_cross_close(
+        self,
+        action_command: ActionCommand,
+        plan: PyrBandCrossCloseResult,
+    ) -> ExecutionResult:
+        exec_result = self.action_service.execution.execute(action_command)
+
+        if not exec_result.executed:
+            return exec_result
+
+        if exec_result.status not in (
+            LimitOrderStatus.FILLED,
+            LimitOrderStatus.PARTIALLY_FILLED,
+        ):
+            raise ValueError(
+                f"Unexpected BAND CROSS CLOSE status: {exec_result.status}"
+            )
+
+        if exec_result.qty <= 0:
+            raise ValueError(
+                f"BAND CROSS CLOSE executed with non-positive qty: "
+                f"{exec_result.qty}"
+            )
+
+        tolerance = self.trading_info.qty_step / 2
+
+        if exec_result.qty > plan.total_qty + tolerance:
+            raise RuntimeError(
+                f"BAND CROSS CLOSE filled more than planned | "
+                f"filled={exec_result.qty} | planned={plan.total_qty}"
+            )
+
+        filled_qty = min(exec_result.qty, plan.total_qty)
+
+        profitable_reduction = min(
+            filled_qty,
+            plan.profitable_qty,
+        )
+        losing_reduction = max(
+            0.0,
+            filled_qty - plan.profitable_qty,
+        )
+
+        if losing_reduction > plan.losing_qty + tolerance:
+            raise RuntimeError(
+                f"BAND CROSS CLOSE losing reduction exceeds plan | "
+                f"reduction={losing_reduction} | "
+                f"planned={plan.losing_qty}"
+            )
+
+        self.action_service.accounting.reduce_levels(
+            levels=[
+                plan.profitable_level,
+                plan.losing_level,
+            ],
+            reductions=[
+                profitable_reduction,
+                losing_reduction,
+            ],
+        )
+
+        return exec_result        

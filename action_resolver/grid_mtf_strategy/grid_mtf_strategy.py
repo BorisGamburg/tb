@@ -318,6 +318,7 @@ class GridMTFStrategy(BaseStrategy):
         bbw_check_details = None
         rearm_check_result = None
 
+        # Проверка выхода
         if allow_exit:
             # Выход по пересечению предыдущего уровня
             cross_exit_result = self._resolve_exit_cross()

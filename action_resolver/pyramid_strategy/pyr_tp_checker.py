@@ -86,4 +86,18 @@ class PyrTPChecker:
             if net_pnl > 0:
                 profitable_levels.append(entry)
 
+        if profitable_levels:
+            if self.side == "Buy":
+                protected_level = min(
+                    profitable_levels,
+                    key=lambda level: level.price,
+                )
+            else:
+                protected_level = max(
+                    profitable_levels,
+                    key=lambda level: level.price,
+                )
+
+            profitable_levels.remove(protected_level)
+            
         return profitable_levels

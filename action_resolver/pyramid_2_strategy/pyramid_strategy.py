@@ -26,7 +26,9 @@ from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
 from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
     is_position_limit_allowed,
 )
-
+from action_resolver.pyramid_2_strategy.pyr_band_cross_close_calculator import (
+    PyrBandCrossCloseResult,
+)
 
 class PyramidStrategy(BaseStrategy):
     BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]    
@@ -46,6 +48,7 @@ class PyramidStrategy(BaseStrategy):
             state=state_store,
             price_service=app_ctx.price_service,
             fee_taker=trading_info.fee_taker,
+            trading_info=trading_info,
             logger=app_ctx.logger,
         )
         self.action_service = ActionService(
@@ -147,7 +150,33 @@ class PyramidStrategy(BaseStrategy):
         if not close_result.found:
             return ResolveResult(executed=False, status=""), False
 
-        # Формируем команду
+        # Проверяем пересечение Close Band насквозь
+        if close_result.band_cross_plan is not None:
+            plan = close_result.band_cross_plan
+
+            action_command = ActionCommand(
+                action=Action.CLOSE,
+                symbol=self.state_store.data.symbol,
+                side=get_inverse_side(self.state_store.data.side),
+                qty=plan.total_qty,
+                levels=[
+                    plan.profitable_level,
+                    plan.losing_level,
+                ],
+                reason="PYRAMID_BAND_CROSS_CLOSE",
+            )
+
+            exec_result = self.close_processor.execute_band_cross_close(
+                action_command,
+                plan,
+            )
+
+            return ResolveResult(
+                executed=exec_result.executed,
+                status="",
+            ), True
+
+        # Формируем обычную команду закрытия пары
         action_command = ActionCommand(
             action=Action.CLOSE,
             symbol=self.state_store.data.symbol,
