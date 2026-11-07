@@ -83,7 +83,7 @@ class PyrBandCrossCloseCalculator:
         # Округляем количество убыточного уровня вниз
         # до допустимого шага биржи.
         losing_qty = self.trading_info.get_valid_order_qty(
-            required_losing_qty
+            min(required_losing_qty, losing_level.qty)
         )
         if losing_qty <= 0:
             return PyrBandCrossCloseResult(found=False)
