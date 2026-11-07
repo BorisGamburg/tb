@@ -153,7 +153,35 @@ class StrategyFactory:
             return state_store, strategy, trading_info
 
         # =========================================================
-        # --- СТРАТЕГИЯ 4: orchestrator ---
+        # --- СТРАТЕГИЯ 4: pyramid_2 ---
+        # =========================================================
+        if strategy_name == "pyramid_2":
+            from action_resolver.pyramid_2_strategy.pyr_schema import PyrSchema
+            from action_resolver.pyramid_2_strategy.pyramid_strategy import PyramidStrategy
+
+            config_data = PyrSchema.model_validate(parsed_data)
+
+            trading_info = cls._load_trading_info(
+                symbol=config_data.symbol,
+                proxy_driver=app_ctx.proxy_driver,
+            )
+
+            state_store = State(
+                config_file=config_file,
+                config_data=config_data,
+                logger=app_ctx.logger,
+            )
+
+            strategy = PyramidStrategy(
+                state_store=state_store,
+                app_ctx=app_ctx,
+                trading_info=trading_info,
+            )
+
+            return state_store, strategy, trading_info   
+
+        # =========================================================
+        # --- СТРАТЕГИЯ 5: orchestrator ---
         # =========================================================
         if strategy_name == "orchestrator":
             from action_resolver.orchestrator_strategy.orchestrator_schema import OrchestratorSchema
