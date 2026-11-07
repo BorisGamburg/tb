@@ -5,8 +5,11 @@ from action_resolver.pyramid_2_strategy.pyr_close_band_calculator import (
     Band,
     PyrCloseBandCalculator,
 )
-from action_resolver.pyramid_2_strategy.pyr_alternative_search import PyrAlternativeSearchService
 from action_resolver.pyramid_2_strategy.pyr_level_selector import PyrLevelSelector
+from action_resolver.pyramid_2_strategy.pyr_band_cross_close_calculator import (
+    PyrBandCrossCloseCalculator,
+)
+
 
 class PriceLocation(Enum):
     PROFIT = "PROFIT"
@@ -19,14 +22,14 @@ class PyrLosingLevelProcessor:
         self,
         hedge_side: str,
         close_band_calculator: PyrCloseBandCalculator,
+        band_cross_calculator: PyrBandCrossCloseCalculator,
         level_selector: PyrLevelSelector,
-        alternative_search_service: PyrAlternativeSearchService,
         logger,
     ):
         self.hedge_side = hedge_side
         self.close_band_calculator = close_band_calculator
+        self.band_cross_calculator = band_cross_calculator
         self.level_selector = level_selector
-        self.alternative_search_service = alternative_search_service
         self.logger = logger
 
     def process(
@@ -80,7 +83,6 @@ class PyrLosingLevelProcessor:
             price_location,
             losing_level,
             next_less_losing_level,
-            sorted_levels,
             cur_price,
             close_band,
             optimization_result_cls,
@@ -130,13 +132,11 @@ class PyrLosingLevelProcessor:
         price_location: PriceLocation,
         losing_level: StackElem,
         next_less_losing_level: StackElem,
-        sorted_levels: list[StackElem],
         cur_price: float,
         close_band: Band,
         optimization_result_cls,
-    ) -> "PyramidOptimizationResult":
+    ) -> "PyrOptimizationResult":
 
-        # Если цена в прибыли -> прекращаем поиск
         if price_location == PriceLocation.PROFIT:
             return optimization_result_cls(
                 found=False,
@@ -147,96 +147,48 @@ class PyrLosingLevelProcessor:
                 band=close_band,
             )
 
-        # Если цена внутри close_band -> закрываемся и выходим
         if price_location == PriceLocation.IN_BAND:
-            qty = losing_level.qty + next_less_losing_level.qty
+            plan = self.band_cross_calculator.calculate(
+                profitable_level=next_less_losing_level,
+                losing_level=losing_level,
+                close_price=cur_price,
+            )
 
-            self._log_normal_close(losing_level, next_less_losing_level, cur_price, close_band, qty)
+            self.logger.info(
+                f"[OPT] IN BAND | "
+                f"price={cur_price:.8f} | "
+                f"band=[{close_band.low:.8f}, {close_band.high:.8f}] | "
+                f"plan_found={plan.found}"
+            )
+
+            if not plan.found:
+                return optimization_result_cls(
+                    found=False,
+                    continue_search=True,
+                    losing_level=None,
+                    profitable_level=None,
+                    qty=0,
+                    band=close_band,
+                )
 
             return optimization_result_cls(
                 found=True,
                 continue_search=False,
                 losing_level=losing_level,
                 profitable_level=next_less_losing_level,
-                qty=qty,
+                qty=plan.total_qty,
                 band=close_band,
+                band_cross_plan=plan,
             )
 
-        # Если цена в убытке -> ищем альтернативное закрытие
         if price_location == PriceLocation.LOSS:
-            res = self._find_alternative_close(
-                losing_level,
-                sorted_levels,
-                cur_price,
-                optimization_result_cls,
-            )
-
-            res.band = close_band
-
-            self._log_alternative_close(cur_price, close_band, res)
-
-            return res
-
-        raise ValueError(f"Unsupported price location: {price_location}")
-
-    def _find_alternative_close(
-        self,
-        losing_level: StackElem,
-        sorted_levels: list[StackElem],
-        current_price: float,
-        optimization_result_cls,
-    ) -> "PyramidOptimizationResult":
-        alternative_profitable_level = (
-            self.alternative_search_service.find_alternative_profitable_level(
-                losing_level,
-                sorted_levels,
-                current_price,
-            )
-        )
-
-        if alternative_profitable_level is None:
             return optimization_result_cls(
                 found=False,
                 continue_search=True,
                 losing_level=None,
                 profitable_level=None,
                 qty=0,
-                band=None,
+                band=close_band,
             )
 
-        qty = losing_level.qty + alternative_profitable_level.qty
-
-        return optimization_result_cls(
-            found=True,
-            continue_search=False,
-            losing_level=losing_level,
-            profitable_level=alternative_profitable_level,
-            qty=qty,
-            band=None,
-        )
-
-    def _log_alternative_close(self, cur_price, close_band, res):
-        if res.found:
-            self.logger.info(
-                f"[OPT] CLOSE DECISION | "
-                f"branch=ALTERNATIVE | "
-                f"price={cur_price:.8f} | "
-                f"band=[{close_band.low:.8f}, {close_band.high:.8f}] | "
-                f"losing={res.losing_level.price:.8f}/"
-                f"{res.losing_level.qty} | "
-                f"profitable={res.profitable_level.price:.8f}/"
-                f"{res.profitable_level.qty} | "
-                f"qty={res.qty}"
-            )
-
-    def _log_normal_close(self, losing_level, next_less_losing_level, cur_price, close_band, qty):
-        self.logger.info(
-            f"[OPT] CLOSE DECISION | "
-            f"branch=IN_BAND | "
-            f"price={cur_price:.8f} | "
-            f"band=[{close_band.low:.8f}, {close_band.high:.8f}] | "
-            f"losing={losing_level.price:.8f}/{losing_level.qty} | "
-            f"profitable={next_less_losing_level.price:.8f}/"
-            f"{next_less_losing_level.qty} | "
-            f"qty={qty}"
-        )
+        raise ValueError(f"Unsupported price location: {price_location}")

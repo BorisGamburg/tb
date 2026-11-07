@@ -72,8 +72,8 @@ class PyrOptimizationMng:
         self.losing_level_processor = PyrLosingLevelProcessor(
             hedge_side=self.hedge_side,
             close_band_calculator=self.close_band_calculator,
+            band_cross_calculator=self.band_cross_calculator,
             level_selector=self.level_selector,
-            alternative_search_service=self.alternative_search_service,
             logger=self.logger,
         )
 
@@ -202,12 +202,30 @@ class PyrOptimizationMng:
         # Пересечение обнаружено, но безопасное закрытие невозможно.
         # Возвращаем found=False, чтобы обычное закрытие не выполнялось.
         if not plan.found:
+            alternative_level = (
+                self.alternative_search_service.find_alternative_profitable_level(
+                    losing_level,
+                    sorted_levels,
+                    current_price,
+                )
+            )
+
+            if alternative_level is None:
+                return PyrOptimizationResult(
+                    found=False,
+                    continue_search=False,
+                    losing_level=None,
+                    profitable_level=None,
+                    qty=0,
+                    band=band,
+                )
+
             return PyrOptimizationResult(
-                found=False,
+                found=True,
                 continue_search=False,
-                losing_level=None,
-                profitable_level=None,
-                qty=0,
+                losing_level=losing_level,
+                profitable_level=alternative_level,
+                qty=losing_level.qty + alternative_level.qty,
                 band=band,
             )
 
