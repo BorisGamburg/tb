@@ -79,13 +79,16 @@ class PyrOptimizationMng:
     def check(self) -> PyrOptimizationResult:
         current_price, sorted_levels, losing_levels = self._prepare_data()
 
-        band_cross_result = self._check_band_cross(
+        # Проверяем возможно ли закрытие
+        close_result = self._check_close_band_within(
             current_price,
             sorted_levels,
         )
 
-        if band_cross_result is not None:
-            return band_cross_result
+        # Если закрытие возможно, возвращаем результат.
+        if close_result is not None:
+            return close_result
+
 
         last_band = None
 
@@ -128,17 +131,144 @@ class PyrOptimizationMng:
         )
         return current_price, sorted_levels, losing_levels
 
-    def _check_band_cross(
+    def _check_close_band_within(
         self,
         current_price: float,
         sorted_levels: list[StackElem],
     ) -> PyrOptimizationResult | None:
         previous_price = self.previous_price
         self.previous_price = current_price
-
         if previous_price is None:
             return None
 
+        # Ищем Close Band, который находится между предыдущей и текущей ценой.
+        close_band_within = self._get_close_band_within(
+            previous_price,
+            current_price,
+            sorted_levels,
+        )
+        if close_band_within is None:
+            # Close Band не найден -> выходим
+            return None
+
+        # Рассчитываем безопасный план закрытия выбранной пары.
+        (losing_level, profitable_level, band), crossed_bands_count = (
+            close_band_within
+        )
+        plan = self.band_cross_calculator.calculate(
+            profitable_level=profitable_level,
+            losing_level=losing_level,
+            close_price=current_price,
+        )
+
+        # Если безопасный план не найден, пробуем альтернативное закрытие.
+        if not plan.found:
+            return self._try_alternative_close(
+                losing_level=losing_level,
+                sorted_levels=sorted_levels,
+                current_price=current_price,
+                band=band,
+            )
+
+        # Лог
+        self.logger.info(
+            f"[OPT] BAND CROSS | "
+            f"side={self.hedge_side} | "
+            f"previous={previous_price:.8f} | "
+            f"current={current_price:.8f} | "
+            f"band=[{band.low:.8f}, {band.high:.8f}] | "
+            f"losing={losing_level.price:.8f} | "
+            f"profitable={profitable_level.price:.8f} | "
+            f"crossed_bands={crossed_bands_count} | "
+            f"plan_found={plan.found}"
+        )
+
+        # Безопасный план найден -> возвращаем результат.
+        return PyrOptimizationResult(
+            found=True,
+            continue_search=False,
+            losing_level=losing_level,
+            profitable_level=profitable_level,
+            qty=plan.total_qty,
+            band=band,
+            band_cross_plan=plan,
+        )
+
+    def _try_alternative_close(
+        self,
+        losing_level: StackElem,
+        sorted_levels: list[StackElem],
+        current_price: float,
+        band: Band,
+    ) -> PyrOptimizationResult:
+        alternative_level = (
+            self.alternative_search_service.find_alternative_profitable_level(
+                losing_level,
+                sorted_levels,
+                current_price,
+            )
+        )
+
+        if alternative_level is None:
+            return PyrOptimizationResult(
+                found=False,
+                continue_search=False,
+                losing_level=None,
+                profitable_level=None,
+                qty=0,
+                band=band,
+            )
+
+        return PyrOptimizationResult(
+            found=True,
+            continue_search=False,
+            losing_level=losing_level,
+            profitable_level=alternative_level,
+            qty=losing_level.qty + alternative_level.qty,
+            band=band,
+        )
+
+    def _get_close_band_within(
+        self,
+        previous_price: float,
+        current_price: float,
+        sorted_levels: list[StackElem],
+    ) -> tuple[tuple[StackElem, StackElem, Band], int] | None:
+        close_bands_within = self._find_close_bands_within(
+            previous_price,
+            current_price,
+            sorted_levels,
+        )
+
+        if not close_bands_within:
+            return None
+
+        return (
+            self._select_outermost_close_band(close_bands_within),
+            len(close_bands_within),
+        )
+
+    def _select_outermost_close_band(
+        self,
+        crossed_close_bands: list[tuple[StackElem, StackElem, Band]],
+    ) -> tuple[StackElem, StackElem, Band]:
+        if self.hedge_side == "Buy":
+            return min(
+                crossed_close_bands,
+                key=lambda pair: pair[2].low,
+            )
+
+        return max(
+            crossed_close_bands,
+            key=lambda pair: pair[2].high,
+        )
+
+    def _find_close_bands_within(
+        self,
+        previous_price: float,
+        current_price: float,
+        sorted_levels: list[StackElem],
+    ) -> list[tuple[StackElem, StackElem, Band]]:
         crossed_close_bands = []
 
         # Проверяем Close Band всех соседних пар уровней.
@@ -174,76 +304,5 @@ class PyrOptimizationMng:
                     (losing_level, profitable_level, band)
                 )
 
-        if not crossed_close_bands:
-            return None
-
-        # Если пересечено несколько полос, выбираем крайнюю.
-        if self.hedge_side == "Buy":
-            losing_level, profitable_level, band = min(
-                crossed_close_bands,
-                key=lambda pair: pair[2].low,
-            )
-        else:
-            losing_level, profitable_level, band = max(
-                crossed_close_bands,
-                key=lambda pair: pair[2].high,
-            )
-
-        # Рассчитываем безопасный план закрытия выбранной пары.
-        plan = self.band_cross_calculator.calculate(
-            profitable_level=profitable_level,
-            losing_level=losing_level,
-            close_price=current_price,
-        )
-
-        self.logger.info(
-            f"[OPT] BAND CROSS | "
-            f"side={self.hedge_side} | "
-            f"previous={previous_price:.8f} | "
-            f"current={current_price:.8f} | "
-            f"band=[{band.low:.8f}, {band.high:.8f}] | "
-            f"losing={losing_level.price:.8f} | "
-            f"profitable={profitable_level.price:.8f} | "
-            f"crossed_bands={len(crossed_close_bands)} | "
-            f"plan_found={plan.found}"
-        )
-
-        # Если безопасный план не найден, используем альтернативный поиск.
-        if not plan.found:
-            alternative_level = (
-                self.alternative_search_service.find_alternative_profitable_level(
-                    losing_level,
-                    sorted_levels,
-                    current_price,
-                )
-            )
-
-            if alternative_level is None:
-                return PyrOptimizationResult(
-                    found=False,
-                    continue_search=False,
-                    losing_level=None,
-                    profitable_level=None,
-                    qty=0,
-                    band=band,
-                )
-
-            return PyrOptimizationResult(
-                found=True,
-                continue_search=False,
-                losing_level=losing_level,
-                profitable_level=alternative_level,
-                qty=losing_level.qty + alternative_level.qty,
-                band=band,
-            )
-
-        return PyrOptimizationResult(
-            found=True,
-            continue_search=False,
-            losing_level=losing_level,
-            profitable_level=profitable_level,
-            qty=plan.total_qty,
-            band=band,
-            band_cross_plan=plan,
-        )
+        return crossed_close_bands
     

@@ -35,20 +35,13 @@ class PyrBandCrossCloseCalculator:
         close_price: float,
     ) -> PyrBandCrossCloseResult:
         """
-        Рассчитывает полный план закрытия пары уровней при пересечении
-        Close Band насквозь.
+        Рассчитывает план закрытия пары уровней при пересечении Close Band.
 
         Прибыльный уровень закрывается полностью.
-        Убыточный уровень закрывается частично, в количестве,
-        необходимом для компенсации убытка от закрытия прибыльного.
+        Убыточный уровень закрывается частично или полностью.
 
-        В расчёте учитываются входные и выходные комиссии обоих уровней.
-
-        Количество убыточного уровня округляется вниз до qty_step.
-        Это гарантирует, что округление не увеличит планируемый убыток.
-
-        Если безубыточное закрытие невозможно либо после него
-        не останется убыточного уровня, план не формируется.
+        В расчёте учитываются входные и выходные комиссии.
+        Количество закрытия округляется вниз до qty_step.
         """
         self._validate_levels(
             profitable_level,
@@ -56,57 +49,31 @@ class PyrBandCrossCloseCalculator:
             close_price,
         )
 
-        # Рассчитываем чистый PnL закрытия прибыльного уровня с учётом комиссий.
+        # Рассчитываем чистую прибыль от закрытия прибыльного уровня.
         profitable_net = self._calculate_profitable_net(
             profitable_level,
             close_price,
         )
-
         if profitable_net <= 0:
+            # Прибыль не положительная -> выходим
             return PyrBandCrossCloseResult(found=False)
 
-        # Определяем чистый результат закрытия одной единицы
-        # убыточного уровня с учётом входной и выходной комиссий.
-        losing_net_per_unit = self._calculate_losing_net_per_unit(
+        # Рассчитываем количество убыточного уровня, которое можно закрыть без убытка.
+        losing_qty = self._calculate_losing_qty(
             losing_level,
             close_price,
-        )
-        if losing_net_per_unit >= 0:
-            return PyrBandCrossCloseResult(found=False)
-
-        # Определяем количество убыточного уровня,
-        # необходимое для компенсации прибыли прибыльного уровня.
-        required_losing_qty = (
-            profitable_net / abs(losing_net_per_unit)
-        )
-
-        # Округляем количество убыточного уровня вниз
-        # до допустимого шага биржи.
-        losing_qty = self.trading_info.get_valid_order_qty(
-            min(required_losing_qty, losing_level.qty)
+            profitable_net,
         )
         if losing_qty <= 0:
+            # Ничего закрыть не получится -> выходим
             return PyrBandCrossCloseResult(found=False)
 
-        # Проверяем, что полный объём прибыльного уровня
-        # допустим для выставления биржевого ордера.
-        valid_profitable_qty = self.trading_info.get_valid_order_qty(
-            profitable_level.qty
+        return self._build_result(
+            profitable_level,
+            losing_level,
+            losing_qty,
         )
-        if valid_profitable_qty != profitable_level.qty:
-            return PyrBandCrossCloseResult(found=False)
 
-        # Формируем полный план закрытия.
-        total_qty = profitable_level.qty + losing_qty
-
-        return PyrBandCrossCloseResult(
-            found=True,
-            profitable_level=profitable_level,
-            losing_level=losing_level,
-            profitable_qty=profitable_level.qty,
-            losing_qty=losing_qty,
-            total_qty=total_qty,
-        )
 
     def _calculate_profitable_net(
         self,
@@ -209,3 +176,42 @@ class PyrBandCrossCloseCalculator:
             raise ValueError(
                 "Invalid losing level initial_qty"
             )
+
+    def _calculate_losing_qty(
+        self,
+        level: StackElem,
+        close_price: float,
+        profitable_net: float,
+    ) -> float:
+        # Чистый результат закрытия одной единицы убыточного уровня.
+        losing_net_per_unit = self._calculate_losing_net_per_unit(
+            level,
+            close_price,
+        )
+        if losing_net_per_unit >= 0:
+            return 0.0
+
+        # Количество, необходимое для компенсации прибыли.
+        required_qty = profitable_net / abs(losing_net_per_unit)
+
+        # Не превышаем доступное количество уровня.
+        return self.trading_info.get_valid_order_qty(
+            min(required_qty, level.qty)
+        )
+
+    @staticmethod
+    def _build_result(
+        profitable_level: StackElem,
+        losing_level: StackElem,
+        losing_qty: float,
+    ) -> PyrBandCrossCloseResult:
+        total_qty = profitable_level.qty + losing_qty
+
+        return PyrBandCrossCloseResult(
+            found=True,
+            profitable_level=profitable_level,
+            losing_level=losing_level,
+            profitable_qty=profitable_level.qty,
+            losing_qty=losing_qty,
+            total_qty=total_qty,
+        )            
