@@ -6,8 +6,8 @@ from action_resolver.pyramid_2_strategy.pyr_close_band_calculator import (
     PyrCloseBandCalculator,
 )
 from action_resolver.pyramid_2_strategy.pyr_level_selector import PyrLevelSelector
-from action_resolver.pyramid_2_strategy.pyr_band_cross_close_calculator import (
-    PyrBandCrossCloseCalculator,
+from action_resolver.pyramid_2_strategy.pyr_pair_close_calculator import (
+    PyrPairCloseCalculator,
 )
 
 
@@ -22,7 +22,7 @@ class PyrLosingLevelProcessor:
         self,
         hedge_side: str,
         close_band_calculator: PyrCloseBandCalculator,
-        band_cross_calculator: PyrBandCrossCloseCalculator,
+        band_cross_calculator: PyrPairCloseCalculator,
         level_selector: PyrLevelSelector,
         logger,
     ):

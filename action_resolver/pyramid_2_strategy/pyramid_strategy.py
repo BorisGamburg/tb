@@ -26,7 +26,7 @@ from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
 from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
     is_position_limit_allowed,
 )
-from action_resolver.pyramid_2_strategy.pyr_band_cross_close_calculator import (
+from action_resolver.pyramid_2_strategy.pyr_pair_close_calculator import (
     PyrBandCrossCloseResult,
 )
 

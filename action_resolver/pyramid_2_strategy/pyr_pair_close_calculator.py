@@ -14,8 +14,7 @@ class PyrBandCrossCloseResult:
     total_qty: float = 0.0
 
 
-class PyrBandCrossCloseCalculator:
-
+class PyrPairCloseCalculator:
     def __init__(
         self,
         hedge_side: str,
@@ -35,7 +34,7 @@ class PyrBandCrossCloseCalculator:
         close_price: float,
     ) -> PyrBandCrossCloseResult:
         """
-        Рассчитывает план закрытия пары уровней при пересечении Close Band.
+        Рассчитывает план закрытия пары уровней.
 
         Прибыльный уровень закрывается полностью.
         Убыточный уровень закрывается частично или полностью.
@@ -163,14 +162,14 @@ class PyrBandCrossCloseCalculator:
                 f"losing={losing_level.qty}"
             )
 
-        if PyrBandCrossCloseCalculator._get_initial_qty(
+        if PyrPairCloseCalculator._get_initial_qty(
             profitable_level
         ) <= 0:
             raise ValueError(
                 "Invalid profitable level initial_qty"
             )
 
-        if PyrBandCrossCloseCalculator._get_initial_qty(
+        if PyrPairCloseCalculator._get_initial_qty(
             losing_level
         ) <= 0:
             raise ValueError(

@@ -11,8 +11,8 @@ from action_resolver.pyramid_2_strategy.pyr_close_result_calculator import (
 from action_resolver.pyramid_2_strategy.pyr_alternative_search import PyrAlternativeSearchService
 from action_resolver.pyramid_2_strategy.pyr_level_selector import PyrLevelSelector
 from action_resolver.pyramid_2_strategy.pyr_losing_level_processor import PyrLosingLevelProcessor
-from action_resolver.pyramid_2_strategy.pyr_band_cross_close_calculator import (
-    PyrBandCrossCloseCalculator,
+from action_resolver.pyramid_2_strategy.pyr_pair_close_calculator import (
+    PyrPairCloseCalculator,
     PyrBandCrossCloseResult,
 )
 
@@ -50,7 +50,7 @@ class PyrOptimizationMng:
             profit_tolerance=state.data.close_band_width_pct / 100,
         )
 
-        self.band_cross_calculator = PyrBandCrossCloseCalculator(
+        self.pair_close_calculator = PyrPairCloseCalculator(
             hedge_side=self.hedge_side,
             trading_info=trading_info,
         )
@@ -71,13 +71,22 @@ class PyrOptimizationMng:
         self.losing_level_processor = PyrLosingLevelProcessor(
             hedge_side=self.hedge_side,
             close_band_calculator=self.close_band_calculator,
-            band_cross_calculator=self.band_cross_calculator,
+            band_cross_calculator=self.pair_close_calculator,
             level_selector=self.level_selector,
             logger=self.logger,
         )
 
     def check(self) -> PyrOptimizationResult:
         current_price, sorted_levels, losing_levels = self._prepare_data()
+
+        # Проверяем, находится ли текущая цена внутри одного из Close Bands.
+        inside_band_result = self._check_price_inside_close_band(
+            current_price,
+            sorted_levels,
+        )
+
+        if inside_band_result is not None:
+            return inside_band_result
 
         # Проверяем возможно ли закрытие
         close_result = self._check_close_band_within(
@@ -155,7 +164,7 @@ class PyrOptimizationMng:
         (losing_level, profitable_level, band), crossed_bands_count = (
             close_band_within
         )
-        plan = self.band_cross_calculator.calculate(
+        plan = self.pair_close_calculator.calculate(
             profitable_level=profitable_level,
             losing_level=losing_level,
             close_price=current_price,
@@ -298,11 +307,59 @@ class PyrOptimizationMng:
                     f"Unsupported side: {self.hedge_side}"
                 )
 
-            # Если close_band  внутри, то добавляем его в список 
+            # Если close_band  внутри, то добавляем его в список
             if within:
                 crossed_close_bands.append(
                     (losing_level, profitable_level, band)
                 )
 
         return crossed_close_bands
-    
+
+    def _check_price_inside_close_band(
+        self,
+        current_price: float,
+        sorted_levels: list[StackElem],
+    ) -> PyrOptimizationResult | None:
+        # Проверяем Close Bands всех соседних пар уровней.
+        for losing_level, profitable_level in zip(
+            sorted_levels,
+            sorted_levels[1:],
+        ):
+            # Рассчитываем Close Band для текущей пары.
+            band = self.close_band_calculator.calculate(
+                losing_level,
+                profitable_level,
+            )
+
+            # Если цена вне Close Band, переходим к следующей паре.
+            if not band.low <= current_price <= band.high:
+                continue
+
+            plan = self.pair_close_calculator.calculate(
+                profitable_level=profitable_level,
+                losing_level=losing_level,
+                close_price=current_price,
+            )
+
+            if not plan.found:
+                return PyrOptimizationResult(
+                    found=False,
+                    continue_search=False,
+                    losing_level=None,
+                    profitable_level=None,
+                    qty=0,
+                    band=band,
+                    band_cross_plan=plan,
+                )
+
+            return PyrOptimizationResult(
+                found=True,
+                continue_search=False,
+                losing_level=losing_level,
+                profitable_level=profitable_level,
+                qty=plan.total_qty,
+                band=band,
+                band_cross_plan=plan,
+            )
+
+        return None
