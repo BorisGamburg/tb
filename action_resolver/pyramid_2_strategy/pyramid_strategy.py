@@ -146,11 +146,11 @@ class PyramidStrategy(BaseStrategy):
         # Проверяем закрытие
         close_result = self.close_checker.check()
         self.close_band = close_result.band
-
         if not close_result.found:
+            # Закрывать нечего -> выходим
             return ResolveResult(executed=False, status=""), False
 
-        # Проверяем пересечение Close Band насквозь
+        # Проверяем наличие плана закрытия 
         if close_result.band_cross_plan is not None:
             plan = close_result.band_cross_plan
 

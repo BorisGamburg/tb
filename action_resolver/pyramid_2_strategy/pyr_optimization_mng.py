@@ -304,6 +304,7 @@ class PyrOptimizationMng:
             if not band.low <= current_price <= band.high:
                 continue
 
+            # Делаем расчёт плана закрытия пары уровней.
             plan = self.pair_close_calculator.calculate(
                 profitable_level=profitable_level,
                 losing_level=losing_level,
