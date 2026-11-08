@@ -20,6 +20,12 @@ class PyrSchema(BaseModel):
     open_qty_pct: Pct
     close_band_width_pct: Pct
 
+    # --- Свёртывание стека по порогу L/P ---
+    trigger_pct: Pct = 10.0      # запуск, если L/P выше
+    target_pct: Pct = 5.0        # цель возврата L/P
+    min_pnl: float = 0.0         # минимальный итог закрытия, USDT
+    min_stack_pct: Pct           # минимальный размер стека, % от баланса    
+
     sleep_interval: float
 
     # Уведомления в Telegram об открытии/закрытии ордеров
