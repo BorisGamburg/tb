@@ -5,9 +5,6 @@ from action_processor.action_service import ActionService
 from action_resolver.pyramid_2_strategy.pyr_partial_close_calculator import (
     PyrPartialCloseCalculator,
 )
-from action_resolver.pyramid_2_strategy.pyr_pair_close_calculator import (
-    PyrBandCrossCloseResult,
-)
 
 
 class PyrCloseProcessor:
