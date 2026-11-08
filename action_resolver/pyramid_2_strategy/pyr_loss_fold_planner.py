@@ -2,18 +2,14 @@
 
 L - суммарный убыток убыточных уровней, P - суммарная прибыль прибыльных
 (оба по цене закрытия, с комиссиями). Чистая функция plan(), без зависимостей от бота.
+
+levels - список StackElem (нужны атрибуты price, qty, fee, initial_qty) в порядке
+стека; level_idx в кусках плана - позиция в этом списке.
 """
 from dataclasses import dataclass, field
 from math import floor, ceil
 
 EPS = 1e-9
-
-
-@dataclass
-class Level:
-    price: float          # цена входа
-    qty: float            # текущий объём уровня
-    fee: float = 0.0      # входная комиссия всего уровня (на текущий qty)
 
 
 @dataclass
@@ -58,18 +54,25 @@ def _ceil_step(q, step):
 
 
 def _per_coin(lv, price, side, fee_taker):
+    """Чистый результат закрытия одной монеты уровня (комиссия входа
+    считается на initial_qty, как в боте; если он не задан - на qty)."""
     sign = 1.0 if side == "Buy" else -1.0
-    return sign * (price - lv.price) - lv.fee / lv.qty - price * fee_taker
+    base = lv.initial_qty if getattr(lv, "initial_qty", 0) > 0 else lv.qty
+    return sign * (price - lv.price) - lv.fee / base - price * fee_taker
 
 
-def _stats(levels, price, side, fee_taker):
+def _stats(levels, price, side, fee_taker, left=None):
+    """left - необязательный словарь {индекс: сколько qty остаётся}."""
     L = P = 0.0
-    for lv in levels:
+    for i, lv in enumerate(levels):
+        q = lv.qty if left is None else left.get(i, lv.qty)
+        if q <= EPS:
+            continue
         u = _per_coin(lv, price, side, fee_taker)
         if u < 0:
-            L += -u * lv.qty
+            L += -u * q
         elif u > 0:
-            P += u * lv.qty
+            P += u * q
     ratio = (L / P) if P > 0 else (float("inf") if L > 0 else 0.0)
     return L, P, ratio
 
@@ -136,15 +139,10 @@ def plan(levels, price, side, p: Params) -> Plan:
         return res
 
     # состояние после плана
-    left = {}
+    left = {i: lv.qty for i, lv in enumerate(levels)}
     for pc in pieces:
-        left[pc.level_idx] = left.get(pc.level_idx, 0.0) + pc.qty
-    after = []
-    for i, lv in enumerate(levels):
-        q_left = lv.qty - left.get(i, 0.0)
-        if q_left > EPS:
-            after.append(Level(lv.price, q_left, lv.fee * q_left / lv.qty))
-    _, _, res.ratio_after = _stats(after, price, side, p.fee_taker)
+        left[pc.level_idx] -= pc.qty
+    _, _, res.ratio_after = _stats(levels, price, side, p.fee_taker, left)
 
     res.pieces = pieces
     res.total_qty = sum(pc.qty for pc in pieces)
