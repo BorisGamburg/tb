@@ -16,7 +16,6 @@ EPS = 1e-9
 class Params:
     trigger: float = 0.10   # запуск, если L/P выше
     target: float = 0.05    # цель возврата L/P
-    l_min: float = 0.0      # минимальный L в USDT для запуска (защита от шума)
     min_pnl: float = 0.0    # итог ордера не ниже
     fee_taker: float = 0.00055
     qty_step: float = 0.001
@@ -82,9 +81,6 @@ def plan(levels, price, side, p: Params) -> Plan:
     L, P, ratio = _stats(levels, price, side, p.fee_taker)
     res = Plan(False, "", L, P, ratio, ratio_after=ratio)
 
-    if L < p.l_min:
-        res.reason = f"L={L:.4f} меньше L_min={p.l_min}"
-        return res
     if ratio <= p.trigger:
         res.reason = f"L/P={ratio:.3f} не выше порога {p.trigger}"
         return res
