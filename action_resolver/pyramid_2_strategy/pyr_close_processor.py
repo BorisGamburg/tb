@@ -22,26 +22,6 @@ class PyrCloseProcessor:
         self.partial_close_calculator = partial_close_calculator
         self.trading_info = trading_info
 
-    def execute(
-        self,
-        action_command: ActionCommand,
-    ) -> ExecutionResult:
-        exec_result = self.action_service.execution.execute(action_command)
-        if not exec_result.executed:
-            return exec_result
-
-        if exec_result.status == LimitOrderStatus.PARTIALLY_FILLED:
-            self._execute_partial(exec_result)
-            return exec_result
-
-        if exec_result.status == LimitOrderStatus.FILLED:
-            self._execute_filled(exec_result)
-            return exec_result
-
-        raise ValueError(
-            f"Unexpected CLOSE execution status: {exec_result.status}"
-        )
-
     def _execute_filled(self, exec_result):
         self.action_service.accounting.apply(
             action=exec_result.action_command.action,
@@ -179,65 +159,3 @@ class PyrCloseProcessor:
         )
         accounting.reduce_levels(levels, reductions)
 
-    def execute_band_cross_close(
-        self,
-        action_command: ActionCommand,
-        plan: PyrBandCrossCloseResult,
-    ) -> ExecutionResult:
-        exec_result = self.action_service.execution.execute(action_command)
-
-        if not exec_result.executed:
-            return exec_result
-
-        if exec_result.status not in (
-            LimitOrderStatus.FILLED,
-            LimitOrderStatus.PARTIALLY_FILLED,
-        ):
-            raise ValueError(
-                f"Unexpected BAND CROSS CLOSE status: {exec_result.status}"
-            )
-
-        if exec_result.qty <= 0:
-            raise ValueError(
-                f"BAND CROSS CLOSE executed with non-positive qty: "
-                f"{exec_result.qty}"
-            )
-
-        tolerance = self.trading_info.qty_step / 2
-
-        if exec_result.qty > plan.total_qty + tolerance:
-            raise RuntimeError(
-                f"BAND CROSS CLOSE filled more than planned | "
-                f"filled={exec_result.qty} | planned={plan.total_qty}"
-            )
-
-        filled_qty = min(exec_result.qty, plan.total_qty)
-
-        profitable_reduction = min(
-            filled_qty,
-            plan.profitable_qty,
-        )
-        losing_reduction = max(
-            0.0,
-            filled_qty - plan.profitable_qty,
-        )
-
-        if losing_reduction > plan.losing_qty + tolerance:
-            raise RuntimeError(
-                f"BAND CROSS CLOSE losing reduction exceeds plan | "
-                f"reduction={losing_reduction} | "
-                f"planned={plan.losing_qty}"
-            )
-
-        self.action_service.accounting.reduce_levels(
-            levels=[
-                plan.profitable_level,
-                plan.losing_level,
-            ],
-            reductions=[
-                profitable_reduction,
-                losing_reduction,
-            ],
-        )
-
-        return exec_result        

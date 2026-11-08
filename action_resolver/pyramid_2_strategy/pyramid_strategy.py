@@ -2,8 +2,8 @@ from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
 from common.trading_info import TradingInfo
-from action_resolver.pyramid_2_strategy.pyr_optimization_mng import (
-    PyrOptimizationMng,
+from action_resolver.pyramid_2_strategy.pyr_fold_launcher import (
+    PyrFoldLauncher,
 )
 from action_processor.action import Action
 from action_processor.action import ActionCommand
@@ -23,12 +23,6 @@ from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
     PyrDustCleaner,
 )
-from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
-    is_position_limit_allowed,
-)
-from action_resolver.pyramid_2_strategy.pyr_pair_close_calculator import (
-    PyrBandCrossCloseResult,
-)
 
 class PyramidStrategy(BaseStrategy):
     BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]    
@@ -44,13 +38,6 @@ class PyramidStrategy(BaseStrategy):
         self.app_ctx = app_ctx
         self.trading_info = trading_info
 
-        self.close_checker = PyrOptimizationMng(
-            state=state_store,
-            price_service=app_ctx.price_service,
-            fee_taker=trading_info.fee_taker,
-            trading_info=trading_info,
-            logger=app_ctx.logger,
-        )
         self.action_service = ActionService(
             app_ctx=app_ctx,
             state_store=state_store,
@@ -89,7 +76,14 @@ class PyramidStrategy(BaseStrategy):
             logger=app_ctx.logger,
         )
 
-        self.close_band = None
+        self.fold_launcher = PyrFoldLauncher(
+            state=state_store,
+            proxy_driver=app_ctx.proxy_driver,
+            action_service=self.action_service,
+            trading_info=trading_info,
+            logger=app_ctx.logger,
+        )
+
         self._log_parameters()
 
     def resolve(self) -> ResolveResult:
@@ -143,79 +137,12 @@ class PyramidStrategy(BaseStrategy):
         )
 
     def _process_close(self) -> tuple[ResolveResult, bool]:
-        # Проверяем закрытие
-        close_result = self.close_checker.check()
-        self.close_band = close_result.band
-        if not close_result.found:
-            # Закрывать нечего -> выходим
+        # Свёртывание стека по порогу L/P
+        exec_result = self.fold_launcher.run()
+        if exec_result is None:
+            # Запускать нечего -> выходим
             return ResolveResult(executed=False, status=""), False
 
-        # Проверяем наличие плана закрытия 
-        if close_result.band_cross_plan is not None:
-            plan = close_result.band_cross_plan
-
-            action_command = ActionCommand(
-                action=Action.CLOSE,
-                symbol=self.state_store.data.symbol,
-                side=get_inverse_side(self.state_store.data.side),
-                qty=plan.total_qty,
-                levels=[
-                    plan.profitable_level,
-                    plan.losing_level,
-                ],
-                reason="PYRAMID_BAND_CROSS_CLOSE",
-            )
-
-            exec_result = self.close_processor.execute_band_cross_close(
-                action_command,
-                plan,
-            )
-
-            return ResolveResult(
-                executed=exec_result.executed,
-                status="",
-            ), True
-
-        # Формируем обычную команду закрытия пары
-        action_command = ActionCommand(
-            action=Action.CLOSE,
-            symbol=self.state_store.data.symbol,
-            side=get_inverse_side(self.state_store.data.side),
-            qty=close_result.qty,
-            levels=[close_result.losing_level, close_result.profitable_level],
-        )
-
-        # Передаем команду на исполнение и учет
-        exec_result = self.close_processor.execute(action_command)
-
-        # Если пара успешно закрыта, стек пуст и размер позиции в норме -> открываем новый уровень
-        if (
-            exec_result.executed
-            and not self.state_store.data.stack.entries
-            and is_position_limit_allowed(
-                self.app_ctx.proxy_driver,
-                self.state_store.data.symbol,
-                self.state_store.data.side,
-            )
-        ):
-            qty = self.open_checker.get_rearm_qty()
-
-            if qty > 0:
-                rearm_command = ActionCommand(
-                    action=Action.OPEN,
-                    symbol=self.state_store.data.symbol,
-                    side=self.state_store.data.side,
-                    qty=qty,
-                    reason="PYRAMID_REARM",
-                )
-
-                while True:
-                    rearm_result = self.action_service.process_action(rearm_command)
-
-                    if rearm_result.executed:
-                        break
-
-        # Возвращаем результат закрытия пары
         return ResolveResult(
             executed=exec_result.executed,
             status="",
@@ -309,16 +236,7 @@ class PyramidStrategy(BaseStrategy):
             dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
             status += f"DIST: {dist_marker} | "
 
-        if self.close_band is not None:
-            status += (
-                f"CLOSE BAND: "
-                f"{self.close_band.low:.6f} — "
-                f"{self.close_band.high:.6f}"
-            )
-        else:
-            status += "CLOSE BAND: N/A"
-
-        return status
+        return status.rstrip(" |")
 
     def _log_parameters(self) -> None:
         data = self.state_store.data
@@ -330,7 +248,10 @@ class PyramidStrategy(BaseStrategy):
             f"Entry TF: {data.entry_tf}\n"
             f"Open step: {data.open_step_pct}%\n"
             f"Open qty: {data.open_qty_pct}%\n"
-            f"Close band width: {data.close_band_width_pct}%\n"
+            f"Fold trigger L/P: {data.trigger_pct}%\n"
+            f"Fold target L/P: {data.target_pct}%\n"
+            f"Fold min pnl: {data.min_pnl}\n"
+            f"Min stack: {data.min_stack_pct}% of balance\n"
             f"Sleep interval: {data.sleep_interval}\n"
         )
         self.app_ctx.logger.info(params)
