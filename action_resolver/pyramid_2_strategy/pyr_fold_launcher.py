@@ -46,11 +46,14 @@ class PyrFoldLauncher:
         if not entries:
             return None
 
+        # Проверяем, что размер стека достаточен для свёртывания.
         if not self._is_stack_big_enough(entries, data.min_stack_pct):
             return None
 
+        # Получаем текущую цену 
         price = self._get_exec_price(data.symbol, side)
 
+        # Формируем план свёртывания стека.
         params = Params(
             trigger=data.trigger_pct / 100,
             target=data.target_pct / 100,
@@ -61,11 +64,12 @@ class PyrFoldLauncher:
         )
         plan = make_plan(entries, price, side, params)
         if not plan.triggered or not plan.pieces:
+            # Ничего свертывать не нужно -> выходим
             return None
 
+        # Формируем команду на исполнение ордера свёртывания
         levels = [entries[pc.level_idx] for pc in plan.pieces]
         caps = [pc.qty for pc in plan.pieces]
-
         command = ActionCommand(
             action=Action.CLOSE,
             symbol=data.symbol,
@@ -75,12 +79,15 @@ class PyrFoldLauncher:
             reason="PYRAMID_FOLD_CLOSE",
         )
 
+        # Исполняем ордер свёртывания стека.
         exec_result = self.action_service.execution.execute(command)
         if not exec_result.executed:
             return exec_result
 
+        # Проверяем корректность результата исполнения ордера.
         self._check_exec_result(exec_result, plan)
 
+        #
         try:
             self._account(side, levels, caps, exec_result)
         except Exception as e:
