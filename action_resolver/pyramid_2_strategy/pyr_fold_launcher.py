@@ -39,10 +39,13 @@ class PyrFoldLauncher:
 
     def run(self) -> ExecutionResult | None:
         """None - запускать нечего (размер стека мал или плана нет)."""
+
+        # Получаем данные 
         data = self.state.data
         side = data.side
         entries = self.state.stack_mng.data.entries
 
+        # Стек пустой -> выходим
         if not entries:
             return None
 
@@ -67,29 +70,17 @@ class PyrFoldLauncher:
             # Ничего свертывать не нужно -> выходим
             return None
 
-        # Формируем команду на исполнение ордера свёртывания
-        levels = [entries[pc.level_idx] for pc in plan.pieces]
-        caps = [pc.qty for pc in plan.pieces]
-        command = ActionCommand(
-            action=Action.CLOSE,
-            symbol=data.symbol,
-            side=get_inverse_side(side),
-            qty=plan.total_qty,
-            levels=levels,
-            reason="PYRAMID_FOLD_CLOSE",
-        )
-
         # Исполняем ордер свёртывания стека.
-        exec_result = self.action_service.execution.execute(command)
+        exec_result = self._execute_plan(plan, entries, side)
         if not exec_result.executed:
             return exec_result
-
+        
         # Проверяем корректность результата исполнения ордера.
         self._check_exec_result(exec_result, plan)
 
-        #
+        # Проводим оптимальное списание уровней стека 
         try:
-            self._account(side, levels, caps, exec_result)
+            self._account(side, entries, exec_result)
         except Exception as e:
             raise RuntimeError(
                 f"FOLD CLOSE accounting failed after execution | "
@@ -132,35 +123,26 @@ class PyrFoldLauncher:
                 f"filled={exec_result.qty} | planned={plan.total_qty}"
             )
 
-    def _account(self, side, levels, caps, exec_result: ExecutionResult):
+    def _account(self, side, entries, exec_result: ExecutionResult):
+        # Копия: reduce_levels удаляет закрытые уровни из списка стека.
+        levels = list(entries)
         step = self.trading_info.qty_step
-        sign = 1.0 if side == "Buy" else -1.0
 
-        # Реальные цена и комиссия исполнения (комиссия ордера на монету).
-        fee_per_coin = exec_result.fee / exec_result.qty
+        # Преобразуем уровни стека в целые уровни для оптимизатора
+        int_levels = self._to_int_levels(side, levels, exec_result)
 
-        group = []
-        for lv, cap in zip(levels, caps):
-            base = lv.initial_qty if lv.initial_qty > 0 else lv.qty
-            per_coin = (
-                sign * (exec_result.price - lv.price)
-                - lv.fee / base
-                - fee_per_coin
-            )
-            # Консервативно: PnL на шаг округляем вниз.
-            coef = floor(per_coin * step * PNL_SCALE)
-            group.append((coef, round(cap / step)))
+        # Преобразуем qty и min_pnl в целые для оптимизатора
+        int_close_qty = round(exec_result.qty / step)
+        int_min_pnl = ceil(self.state.data.min_pnl * PNL_SCALE)
 
-        q_units = round(exec_result.qty / step)
-        min_pnl = ceil(self.state.data.min_pnl * PNL_SCALE)
-
+        # Вызываем оптимизатор
         res = optimize_reductions(
-            group, q_units, min_pnl, loss_order="most_first"
+            int_levels, int_close_qty, int_min_pnl, loss_order="most_first"
         )
         if res is None:
             raise RuntimeError(
-                f"Executed qty exceeds planned levels qty | "
-                f"q_units={q_units} | caps={[u for _, u in group]}"
+                f"Executed qty exceeds stack qty | "
+                f"q_units={int_close_qty} | units={[u for _, u in int_levels]}"
             )
         if not res.breakeven:
             self.logger.warning(
@@ -169,7 +151,10 @@ class PyrFoldLauncher:
                 f"price={exec_result.price} | qty={exec_result.qty}"
             )
 
+        # Преобразуем обратно целые списания в реальные величины
         reductions = [round(u * step, 12) for u in res.reductions]
+
+        # Применяем списания к уровням стека 
         self.action_service.accounting.reduce_levels(levels, reductions)
 
         self.logger.info(
@@ -177,3 +162,47 @@ class PyrFoldLauncher:
             f"qty={exec_result.qty} | pnl={res.pnl / PNL_SCALE:.8f} | "
             f"reductions={reductions}"
         )
+
+    def _to_int_levels(
+        self,
+        side: str,
+        levels: list,
+        exec_result: ExecutionResult,
+    ) -> list[tuple[int, int]]:
+        """Описывает уровни стека целыми числами для оптимизатора:
+        (PnL одного шага qty_step в 1e-8 USDT, число шагов на уровне).
+        PnL считается по реальным цене и комиссии исполнения."""
+        step = self.trading_info.qty_step
+        sign = 1.0 if side == "Buy" else -1.0
+
+        # Комиссия закрытия на монету (ордер один, одинакова для всех уровней).
+        close_fee_per_coin = exec_result.fee / exec_result.qty
+
+        int_levels = []
+        for lv in levels:
+            base = lv.initial_qty if lv.initial_qty > 0 else lv.qty
+            open_fee_per_coin = lv.fee / base
+            pnl_per_coin = (
+                sign * (exec_result.price - lv.price)
+                - open_fee_per_coin
+                - close_fee_per_coin
+            )
+            # Консервативно: PnL на шаг округляем вниз.
+            pnl_step_scaled = floor(pnl_per_coin * step * PNL_SCALE)
+            qty_steps_count = floor(lv.qty / step + 1e-9)
+            int_levels.append((pnl_step_scaled, qty_steps_count))
+
+        return int_levels        
+
+    def _execute_plan(self, plan, entries, side: str) -> ExecutionResult:
+        """Собирает команду закрытия по плану и исполняет ордер."""
+        levels = [entries[pc.level_idx] for pc in plan.pieces]
+        command = ActionCommand(
+            action=Action.CLOSE,
+            symbol=self.state.data.symbol,
+            side=get_inverse_side(side),
+            qty=plan.total_qty,
+            levels=levels,
+            reason="PYRAMID_FOLD_CLOSE",
+        )
+        return self.action_service.execution.execute(command)    
