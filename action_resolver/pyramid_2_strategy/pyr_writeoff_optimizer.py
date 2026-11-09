@@ -16,9 +16,10 @@
 Порядок убыточных уровней (loss_order):
   "least_first" - от наименее убыточных (по умолчанию, прежнее поведение).
   "most_first"  - от самых убыточных (как в планировщике свёртывания).
-                  Если безубыточного распределения нет, убыток всё равно
-                  минимизируется: в этом случае убыточные берутся от
-                  наименее убыточных, чтобы потеря была наименьшей.
+                  Если в этом порядке безубыточного распределения нет, но
+                  оно есть при убыточных от наименее убыточных, берётся оно
+                  (breakeven=True). Если безубыточного нет совсем, убыток
+                  минимизируется: убыточные от наименее убыточных.
 
 Все величины целые: units - количество в шагах qty_step,
 coef - PnL на один шаг (целое, округление должно быть консервативным).
@@ -73,12 +74,12 @@ def optimize_reductions(levels, q_units, min_pnl=0, profit_order="most_first",
         l_order = loss_idx if l_order is None else l_order
         return fill(l_order, L)[1] + fill(prof_order, q_units - L)[1]
 
-    def max_L(prof_order, lo, hi):
+    def max_L(prof_order, lo, hi, l_order=None):
         # f не возрастает по L: ищем наибольшее L с f(L) >= min_pnl
         a, b = lo, hi
         while a < b:
             mid = (a + b + 1) // 2
-            if f(mid, prof_order) >= min_pnl:
+            if f(mid, prof_order, l_order) >= min_pnl:
                 a = mid
             else:
                 b = mid - 1
@@ -101,7 +102,14 @@ def optimize_reductions(levels, q_units, min_pnl=0, profit_order="most_first",
 
     # "most_first": максимум PnL при каждом L
     if f(lo, prof_most) < min_pnl:
-        # безубыточного нет: максимум PnL = минимум L, убыточные от
+        # В порядке loss_order безубыточного нет. Пробуем убыточные от
+        # наименее убыточных: если так безубыточность достижима, берём
+        # максимальный объём убыточных в этом порядке.
+        if (loss_idx is not loss_least
+                and f(lo, prof_most, loss_least) >= min_pnl):
+            L = max_L(prof_most, lo, hi, loss_least)
+            return build(L, prof_most, True, "most_first", loss_least)
+        # Безубыточного нет совсем: максимум PnL = минимум L, убыточные от
         # наименее убыточных (потеря наименьшая)
         return build(lo, prof_most, False, "most_first", loss_least)
-    return build(max_L(prof_most, lo, hi), prof_most, True, "most_first")
+    return build(max_L(prof_most, lo, hi), prof_most, True, "most_first")s
