@@ -112,4 +112,4 @@ def optimize_reductions(levels, q_units, min_pnl=0, profit_order="most_first",
         # Безубыточного нет совсем: максимум PnL = минимум L, убыточные от
         # наименее убыточных (потеря наименьшая)
         return build(lo, prof_most, False, "most_first", loss_least)
-    return build(max_L(prof_most, lo, hi), prof_most, True, "most_first")s
+    return build(max_L(prof_most, lo, hi), prof_most, True, "most_first")
