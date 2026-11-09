@@ -23,6 +23,13 @@ from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
     PyrDustCleaner,
 )
+from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
+    _per_coin,
+)
+from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
+    is_position_limit_allowed,
+)
+from common.level_distance_checker import is_level_distance_allowed
 
 class PyramidStrategy(BaseStrategy):
     BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]    
@@ -143,10 +150,80 @@ class PyramidStrategy(BaseStrategy):
             # Запускать нечего -> выходим
             return ResolveResult(executed=False, status=""), False
 
+        # Свёртывание исполнилось -> пробуем открыть донорский уровень
+        if exec_result.executed:
+            self._try_rearm()
+
         return ResolveResult(
             executed=exec_result.executed,
             status="",
         ), True
+
+    def _try_rearm(self) -> None:
+        """Rearm после успешного свёртывания (разовая проверка).
+
+        Открываем новый уровень, только если:
+        1) в стеке не осталось прибыльных уровней (пустой стек - частный
+           случай), т.е. нет донора для следующего свёртывания;
+        2) расстояние от цены до каждого уровня стека не меньше шага
+           пирамиды (open_step_pct);
+        3) размер позиции в норме (is_position_limit_allowed);
+        4) объём rearm больше нуля.
+        Не прошла проверка - rearm пропускаем, дальше работает обычный вход.
+        """
+        data = self.state_store.data
+        entries = data.stack.entries
+        proxy_driver = self.app_ctx.proxy_driver
+
+        # 1. Прибыльные уровни остались -> донор есть, rearm не нужен
+        if entries:
+            ticker = proxy_driver.get_ticker(data.symbol)
+            price = ticker["bid"] if data.side == "Buy" else ticker["ask"]
+            fee_taker = self.trading_info.fee_taker
+            has_profitable = any(
+                _per_coin(lv, price, data.side, fee_taker) > 0
+                for lv in entries
+            )
+            if has_profitable:
+                return
+
+        # 2. Дистанция до ближайшего уровня не меньше шага пирамиды
+        cur_price = float(proxy_driver.get_last_price(data.symbol))
+        if not is_level_distance_allowed(
+            cur_price=cur_price,
+            entries=entries,
+            hedge_step_ratio=self.open_checker.step_ratio,
+        ):
+            self.app_ctx.logger.info(
+                "[REARM] skipped: distance to nearest level < step"
+            )
+            return
+
+        # 3. Лимит размера позиции
+        if not is_position_limit_allowed(
+            proxy_driver, data.symbol, data.side
+        ):
+            self.app_ctx.logger.info("[REARM] skipped: position limit")
+            return
+
+        # 4. Объём
+        qty = self.open_checker.get_rearm_qty()
+        if qty <= 0:
+            self.app_ctx.logger.info("[REARM] skipped: qty = 0")
+            return
+
+        rearm_command = ActionCommand(
+            action=Action.OPEN,
+            symbol=data.symbol,
+            side=data.side,
+            qty=qty,
+            reason="PYRAMID_REARM",
+        )
+
+        while True:
+            rearm_result = self.action_service.process_action(rearm_command)
+            if rearm_result.executed:
+                break
 
     def _process_profit_close(self) -> tuple[ResolveResult, bool]:
         # Если стек пуст, то закрытие по прибыли не проверяем
