@@ -20,7 +20,7 @@ session = HTTP(testnet=False)
 
 # ---------------- Параметры ----------------
 RSI_INTERVAL = "D"
-RSI_THRESHOLD = 67
+RSI_THRESHOLD = 60
 MAX_SIZE_THRESHOLD = 0.1          # макс. мин. размер контракта в USDT
 MIN_TURNOVER_THRESHOLD = 1_000_000
 SIDE = "Sell"

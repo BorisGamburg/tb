@@ -1,25 +1,18 @@
 """Запускатель свёртывания стека по порогу L/P.
 
 Цепочка: проверка размера стека -> план (pyr_loss_fold_planner) ->
-исполнение ордера -> учёт по факту (pyr_writeoff_optimizer + reduce_levels).
+исполнение ордера с проверкой -> учёт по факту (PyrFillApplier).
 """
-from math import ceil, floor
-
 from action_processor.action import Action, ActionCommand
 from action_processor.execution.execution_result import ExecutionResult
 from action_processor.execution.limit_order_result import LimitOrderStatus
+from action_resolver.pyramid_2_strategy.pyr_fill_applier import PyrFillApplier
 from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
     Params,
     _per_coin,
     plan as make_plan,
 )
-from action_resolver.pyramid_2_strategy.pyr_writeoff_optimizer import (
-    optimize_reductions,
-)
 from utils.utils import get_inverse_side
-
-# Оптимизатор работает с целыми: PnL на шаг qty_step считаем в 1e-8 USDT.
-PNL_SCALE = 10 ** 8
 
 
 class PyrFoldLauncher:
@@ -37,13 +30,16 @@ class PyrFoldLauncher:
         self.action_service = action_service
         self.trading_info = trading_info
         self.logger = logger
+        self.fill_applier = PyrFillApplier(
+            state, trading_info, action_service, logger
+        )
         # Состояние свёртывания для строки статуса (обновляется в run()).
         self.status: str = ""
 
     def run(self) -> ExecutionResult | None:
         """None - запускать нечего (размер стека мал или плана нет)."""
 
-        # Получаем данные 
+        # Получаем данные
         data = self.state.data
         side = data.side
         entries = self.state.stack_mng.data.entries
@@ -55,7 +51,7 @@ class PyrFoldLauncher:
 
         # Проверяем, что размер стека достаточен для свёртывания.
 
-        # Получаем текущую цену 
+        # Получаем текущую цену
         # Баланс запрашиваем до цены, чтобы между расчётом плана и
         # выставлением ордера не было лишних запросов к бирже.
         stack_pct = self._stack_pct(entries)
@@ -85,17 +81,14 @@ class PyrFoldLauncher:
             # Ничего свертывать не нужно -> выходим
             return None
 
-        # Исполняем ордер свёртывания стека.
-        exec_result = self._execute_plan(plan, entries, side, price)
+        # Исполняем ордер свёртывания стека и проверяем результат.
+        exec_result = self._execute_and_verify(plan, entries, side, price)
         if not exec_result.executed:
             return exec_result
-        
-        # Проверяем корректность результата исполнения ордера.
-        self._check_exec_result(exec_result, plan)
 
-        # Проводим оптимальное списание уровней стека 
+        # Проводим оптимальное списание уровней стека
         try:
-            self._account(side, entries, exec_result)
+            self.fill_applier.apply(side, entries, exec_result)
         except Exception as e:
             raise RuntimeError(
                 f"FOLD CLOSE accounting failed after execution | "
@@ -185,81 +178,14 @@ class PyrFoldLauncher:
                 f"filled={exec_result.qty} | planned={plan.total_qty}"
             )
 
-    def _account(self, side, entries, exec_result: ExecutionResult):
-        # Копия: reduce_levels удаляет закрытые уровни из списка стека.
-        levels = list(entries)
-        step = self.trading_info.qty_step
-
-        # Преобразуем уровни стека в целые уровни для оптимизатора
-        int_levels = self._to_int_levels(side, levels, exec_result)
-
-        # Преобразуем qty и min_pnl в целые для оптимизатора
-        int_close_qty = round(exec_result.qty / step)
-        int_min_pnl = ceil(self.state.data.min_pnl * PNL_SCALE)
-
-        # Вызываем оптимизатор
-        res = optimize_reductions(
-            int_levels, int_close_qty, int_min_pnl, loss_order="most_first"
-        )
-        if res is None:
-            raise RuntimeError(
-                f"Executed qty exceeds stack qty | "
-                f"q_units={int_close_qty} | units={[u for _, u in int_levels]}"
-            )
-        if not res.breakeven:
-            self.logger.warning(
-                f"[FOLD] no break-even distribution | "
-                f"pnl={res.pnl / PNL_SCALE:.8f} | min_pnl={self.state.data.min_pnl} | "
-                f"price={exec_result.price} | qty={exec_result.qty}"
-            )
-
-        # Преобразуем обратно целые списания в реальные величины
-        reductions = [round(u * step, 12) for u in res.reductions]
-
-        # Применяем списания к уровням стека 
-        self.action_service.accounting.reduce_levels(levels, reductions)
-
-        self.logger.info(
-            f"[FOLD] closed | price={exec_result.price} | "
-            f"qty={exec_result.qty} | pnl={res.pnl / PNL_SCALE:.8f} | "
-            f"reductions={reductions}"
-        )
-
-    def _to_int_levels(
-        self,
-        side: str,
-        levels: list,
-        exec_result: ExecutionResult,
-    ) -> list[tuple[int, int]]:
-        """Описывает уровни стека целыми числами для оптимизатора:
-        (PnL одного шага qty_step в 1e-8 USDT, число шагов на уровне).
-        PnL считается по реальным цене и комиссии исполнения."""
-        step = self.trading_info.qty_step
-        sign = 1.0 if side == "Buy" else -1.0
-
-        # Комиссия закрытия на монету (ордер один, одинакова для всех уровней).
-        close_fee_per_coin = exec_result.fee / exec_result.qty
-
-        int_levels = []
-        for lv in levels:
-            base = lv.initial_qty if lv.initial_qty > 0 else lv.qty
-            open_fee_per_coin = lv.fee / base
-            pnl_per_coin = (
-                sign * (exec_result.price - lv.price)
-                - open_fee_per_coin
-                - close_fee_per_coin
-            )
-            # Консервативно: PnL на шаг округляем вниз.
-            pnl_step_scaled = floor(pnl_per_coin * step * PNL_SCALE)
-            qty_steps_count = floor(lv.qty / step + 1e-9)
-            int_levels.append((pnl_step_scaled, qty_steps_count))
-
-        return int_levels        
-
-    def _execute_plan(
+    def _execute_and_verify(
         self, plan, entries, side: str, price: float
     ) -> ExecutionResult:
-        """Собирает команду закрытия по плану и исполняет ордер."""
+        """Собирает команду закрытия по плану, исполняет ордер и сверяет факт с планом.
+
+        Не исполнился -> возвращается как есть (проверять нечего).
+        Исполнился -> результат проверен, иначе исключение.
+        """
         levels = [entries[pc.level_idx] for pc in plan.pieces]
         command = ActionCommand(
             action=Action.CLOSE,
@@ -270,4 +196,9 @@ class PyrFoldLauncher:
             reason="PYRAMID_FOLD_CLOSE",
             limit_price=price,
         )
-        return self.action_service.execution.execute(command)
+        exec_result = self.action_service.execution.execute(command)
+        if not exec_result.executed:
+            return exec_result
+
+        self._check_exec_result(exec_result, plan)
+        return exec_result
