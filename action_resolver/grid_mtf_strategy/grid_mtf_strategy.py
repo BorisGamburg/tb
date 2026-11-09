@@ -208,7 +208,7 @@ class GridMTFStrategy(BaseStrategy):
 
         return self.action_service.process_action(
             action_command,
-            exit_type=ExitType.PASSIVE,
+            exit_type=ExitType.ACTIVE,
         )
 
     def _resolve_exit_cross(
