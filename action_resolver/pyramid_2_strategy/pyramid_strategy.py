@@ -32,7 +32,7 @@ from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
 from common.level_distance_checker import is_level_distance_allowed
 
 class PyramidStrategy(BaseStrategy):
-    BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]    
+    BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]
     def __init__(
         self,
         state_store: State,
@@ -105,24 +105,28 @@ class PyramidStrategy(BaseStrategy):
             return profit_close_result
 
         # Проверяем Unwind
-        close_result, close_found = self._process_close()
+        close_result, close_found, fold_report = self._process_close()
         if close_found:
             return close_result
 
         # Проверяем открытие
-        return self._process_open()
+        entry_result, executed = self._process_open()
 
-    def _process_open(self) -> ResolveResult:
+        # Строка статуса строится здесь, один раз, в конце
+        status = self._build_status_line(entry_result, fold_report)
+
+        return ResolveResult(executed=executed, status=status)
+
+    def _process_open(self) -> tuple:
+        """Возвращает (entry_result, executed)."""
         # Проверяем сигнал на открытие
         entry_result = self.open_checker.check(
             self.state_store.data.stack.entries,
             self.state_store.data.entry_tf,
         )
 
-        status = self._build_status_line(entry_result)
-
         if not entry_result.allowed:
-            return ResolveResult(executed=False, status=status)
+            return entry_result, False
 
         # Формируем команду
         action_command = ActionCommand(
@@ -135,20 +139,17 @@ class PyramidStrategy(BaseStrategy):
         # Передаем команду на исполнение и учет
         exec_result = self.action_service.process_action(action_command)
         if exec_result.executed and entry_result.level_type == "base":
-            self._advance_entry_tf()        
+            self._advance_entry_tf()
 
-        # Возвращаем результат
-        return ResolveResult(
-            executed=exec_result.executed,
-            status=status,
-        )
+        return entry_result, exec_result.executed
 
-    def _process_close(self) -> tuple[ResolveResult, bool]:
+    def _process_close(self) -> tuple[ResolveResult, bool, object]:
+        """Возвращает (ResolveResult, найдено, fold_report)."""
         # Свёртывание стека по порогу L/P
-        exec_result = self.fold_launcher.run()
+        exec_result, fold_report = self.fold_launcher.run()
         if exec_result is None:
             # Запускать нечего -> выходим
-            return ResolveResult(executed=False, status=""), False
+            return ResolveResult(executed=False, status=""), False, fold_report
 
         # Свёртывание исполнилось -> пробуем открыть донорский уровень
         if exec_result.executed:
@@ -157,7 +158,7 @@ class PyramidStrategy(BaseStrategy):
         return ResolveResult(
             executed=exec_result.executed,
             status="",
-        ), True
+        ), True, fold_report
 
     def _try_rearm(self) -> None:
         """Rearm после успешного свёртывания (разовая проверка).
@@ -274,7 +275,7 @@ class PyramidStrategy(BaseStrategy):
             status="",
         ), True
 
-    def _build_status_line(self, entry_result) -> str:
+    def _build_status_line(self, entry_result, fold_report) -> str:
         ticker = self.app_ctx.proxy_driver.get_ticker(
             self.state_store.data.symbol
         )
@@ -302,7 +303,7 @@ class PyramidStrategy(BaseStrategy):
                 status += f" (MIN: {self.trading_info.min_qty})"
             status += " | "
         if entry_result.position_limit_blocked:
-            status += "POSITION LIMIT: 🔴 | "            
+            status += "POSITION LIMIT: 🔴 | "
 
         if entry_result.allowed and entry_result.level_type == "base":
             status += "ENTRY: BASE | "
@@ -313,11 +314,57 @@ class PyramidStrategy(BaseStrategy):
             dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
             status += f"DIST: {dist_marker} | "
 
-        fold_status = self.fold_launcher.status
+        fold_status = self._format_fold_status(fold_report)
         if fold_status:
             status += fold_status + " | "
 
         return status.rstrip(" |")
+
+    def _format_fold_status(self, report) -> str:
+        """Fold-часть строки статуса из сырых данных FoldReport."""
+        if report is None:
+            return ""
+        data = self.state_store.data
+        plan = report.plan
+        ratio = "∞" if plan.ratio == float("inf") else f"{plan.ratio * 100:.1f}%"
+        if report.stack_pct < data.min_stack_pct:
+            return (
+                f"FOLD: 🔴 STACK {report.stack_pct:.1f}% < "
+                f"{data.min_stack_pct:g}% | L/P {ratio}"
+            )
+        if not plan.triggered:
+            return (
+                f"FOLD: ⚪ L/P {ratio} ≤ {data.trigger_pct:g}% | "
+                f"L {plan.L:.4f} P {plan.P:.4f}"
+            )
+        if not plan.pieces:
+            return (
+                f"FOLD: 🟠 L/P {ratio} > {data.trigger_pct:g}% | "
+                + self._fold_no_cover_reason(report)
+            )
+        return (
+            f"FOLD: 🟢 L/P {ratio} > {data.trigger_pct:g}% | "
+            f"CLOSE {plan.total_qty:g}"
+        )
+
+    def _fold_no_cover_reason(self, report) -> str:
+        """Почему план не построен: сколько прибыли есть и сколько нужно
+        минимум (min_qty монет самого дешёвого по убытку уровня)."""
+        plan, params = report.plan, report.params
+        costs = []
+        for lv in report.entries:
+            u = _per_coin(
+                lv, report.price, self.state_store.data.side, params.fee_taker
+            )
+            if u < 0:
+                costs.append(-u * params.min_qty)
+        if not costs:
+            return "NO LOSING LEVELS"
+        need = min(costs)
+        have = max(0.0, min(plan.P - params.min_pnl, plan.budget))
+        if have < need:
+            return f"NO PROFIT: have {have:.6f} need {need:.6f} USDT"
+        return "CAN'T COVER (qty step / min qty)"
 
     def _log_parameters(self) -> None:
         data = self.state_store.data
