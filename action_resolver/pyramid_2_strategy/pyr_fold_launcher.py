@@ -1,4 +1,4 @@
-"""Запускатель свёртывания стека по порогу L/P.
+"""Unwinder: свёртывание стека по порогу L/P.
 
 Цепочка: проверка размера стека -> план (pyr_loss_fold_planner) ->
 исполнение ордера с проверкой -> учёт по факту (PyrFillApplier).
@@ -43,7 +43,7 @@ class FoldReport:
     plan: Any           # результат планировщика (make_plan)
 
 
-class PyrFoldLauncher:
+class Unwinder:
 
     def __init__(
         self,

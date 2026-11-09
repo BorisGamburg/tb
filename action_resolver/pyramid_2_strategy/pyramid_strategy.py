@@ -2,9 +2,9 @@ from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
 from common.trading_info import TradingInfo
-from action_resolver.pyramid_2_strategy.pyr_fold_launcher import (
+from action_resolver.pyramid_2_strategy.unwinder import (
     FoldConfig,
-    PyrFoldLauncher,
+    Unwinder,
 )
 from action_processor.action import Action
 from action_processor.action import ActionCommand
@@ -84,7 +84,7 @@ class PyramidStrategy(BaseStrategy):
             logger=app_ctx.logger,
         )
 
-        self.fold_launcher = PyrFoldLauncher(
+        self.unwinder = Unwinder(
             proxy_driver=app_ctx.proxy_driver,
             action_service=self.action_service,
             trading_info=trading_info,
@@ -146,7 +146,7 @@ class PyramidStrategy(BaseStrategy):
     def _process_close(self) -> tuple[ResolveResult, bool, object]:
         """Возвращает (ResolveResult, найдено, fold_report)."""
         # Свёртывание стека по порогу L/P
-        exec_result, fold_report = self.fold_launcher.run(
+        exec_result, fold_report = self.unwinder.run(
             self._fold_config(),
             self.state_store.data.stack.entries,
         )
