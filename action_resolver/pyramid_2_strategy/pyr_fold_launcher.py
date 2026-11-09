@@ -3,9 +3,10 @@
 Цепочка: проверка размера стека -> план (pyr_loss_fold_planner) ->
 исполнение ордера с проверкой -> учёт по факту (PyrFillApplier).
 
-Модуль универсальный: ничего не знает про строки статуса. run() возвращает
-результат исполнения и сырые данные, которые сам использовал (FoldReport).
-Что из них показывать и как - решает вызывающая стратегия.
+Модуль универсальный: не зависит ни от state, ни от строк статуса.
+Настройки (FoldConfig) и уровни стека приходят аргументами run() на каждом
+тике, поэтому вызывающий код может менять условия на лету. run() возвращает
+результат исполнения и сырые данные расчёта (FoldReport).
 """
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,17 @@ from utils.utils import get_inverse_side
 
 
 @dataclass(frozen=True, slots=True)
+class FoldConfig:
+    """Настройки свёртывания на данный вызов."""
+    symbol: str
+    side: str               # сторона свёртываемых уровней ("Buy" / "Sell")
+    trigger_pct: float      # порог L/P, %
+    target_pct: float       # целевое L/P после свёртывания, %
+    min_pnl: float          # минимальный PnL свёртывания, USDT
+    min_stack_pct: float    # минимальный размер стека, % от баланса
+
+
+@dataclass(frozen=True, slots=True)
 class FoldReport:
     """Сырые входы и выход проверки свёртывания на тике."""
     entries: Any        # уровни стека, по которым считался план
@@ -35,32 +47,29 @@ class PyrFoldLauncher:
 
     def __init__(
         self,
-        state,
         proxy_driver,
         action_service,
         trading_info,
         logger,
     ):
-        self.state = state
         self.proxy_driver = proxy_driver
         self.action_service = action_service
         self.trading_info = trading_info
         self.logger = logger
         self.fill_applier = PyrFillApplier(
-            state, trading_info, action_service, logger
+            trading_info, action_service, logger
         )
 
-    def run(self) -> tuple[ExecutionResult | None, FoldReport | None]:
+    def run(
+        self, config: FoldConfig, entries
+    ) -> tuple[ExecutionResult | None, FoldReport | None]:
         """Возвращает (exec_result, report).
 
         exec_result None - запускать нечего (стек пуст, мал, плана нет).
         report None - стек пуст, расчёт не выполнялся.
         """
 
-        # Получаем данные
-        data = self.state.data
-        side = data.side
-        entries = self.state.stack_mng.data.entries
+        side = config.side
 
         # Стек пустой -> выходим
         if not entries:
@@ -72,13 +81,13 @@ class PyrFoldLauncher:
         # Баланс запрашиваем до цены, чтобы между расчётом плана и
         # выставлением ордера не было лишних запросов к бирже.
         stack_pct = self._stack_pct(entries)
-        price = self._get_exec_price(data.symbol, side)
+        price = self._get_exec_price(config.symbol, side)
 
         # Формируем план свёртывания стека.
         params = Params(
-            trigger=data.trigger_pct / 100,
-            target=data.target_pct / 100,
-            min_pnl=data.min_pnl,
+            trigger=config.trigger_pct / 100,
+            target=config.target_pct / 100,
+            min_pnl=config.min_pnl,
             fee_taker=self.trading_info.fee_taker,
             qty_step=self.trading_info.qty_step,
             min_qty=self.trading_info.min_qty,
@@ -93,7 +102,7 @@ class PyrFoldLauncher:
             plan=plan,
         )
 
-        if stack_pct < data.min_stack_pct:
+        if stack_pct < config.min_stack_pct:
             # Стек мал для свёртывания -> выходим
             return None, report
 
@@ -102,13 +111,13 @@ class PyrFoldLauncher:
             return None, report
 
         # Исполняем ордер свёртывания стека и проверяем результат.
-        exec_result = self._execute_and_verify(plan, entries, side, price)
+        exec_result = self._execute_and_verify(config, plan, entries, price)
         if not exec_result.executed:
             return exec_result, report
 
         # Проводим оптимальное списание уровней стека
         try:
-            self.fill_applier.apply(side, entries, exec_result)
+            self.fill_applier.apply(side, entries, exec_result, config.min_pnl)
         except Exception as e:
             raise RuntimeError(
                 f"FOLD CLOSE accounting failed after execution | "
@@ -155,7 +164,7 @@ class PyrFoldLauncher:
             )
 
     def _execute_and_verify(
-        self, plan, entries, side: str, price: float
+        self, config: FoldConfig, plan, entries, price: float
     ) -> ExecutionResult:
         """Собирает команду закрытия по плану, исполняет ордер и сверяет факт с планом.
 
@@ -165,8 +174,8 @@ class PyrFoldLauncher:
         levels = [entries[pc.level_idx] for pc in plan.pieces]
         command = ActionCommand(
             action=Action.CLOSE,
-            symbol=self.state.data.symbol,
-            side=get_inverse_side(side),
+            symbol=config.symbol,
+            side=get_inverse_side(config.side),
             qty=plan.total_qty,
             levels=levels,
             reason="PYRAMID_FOLD_CLOSE",

@@ -3,6 +3,7 @@ from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
 from common.trading_info import TradingInfo
 from action_resolver.pyramid_2_strategy.pyr_fold_launcher import (
+    FoldConfig,
     PyrFoldLauncher,
 )
 from action_processor.action import Action
@@ -84,7 +85,6 @@ class PyramidStrategy(BaseStrategy):
         )
 
         self.fold_launcher = PyrFoldLauncher(
-            state=state_store,
             proxy_driver=app_ctx.proxy_driver,
             action_service=self.action_service,
             trading_info=trading_info,
@@ -146,7 +146,10 @@ class PyramidStrategy(BaseStrategy):
     def _process_close(self) -> tuple[ResolveResult, bool, object]:
         """Возвращает (ResolveResult, найдено, fold_report)."""
         # Свёртывание стека по порогу L/P
-        exec_result, fold_report = self.fold_launcher.run()
+        exec_result, fold_report = self.fold_launcher.run(
+            self._fold_config(),
+            self.state_store.data.stack.entries,
+        )
         if exec_result is None:
             # Запускать нечего -> выходим
             return ResolveResult(executed=False, status=""), False, fold_report
@@ -159,6 +162,18 @@ class PyramidStrategy(BaseStrategy):
             executed=exec_result.executed,
             status="",
         ), True, fold_report
+
+    def _fold_config(self) -> FoldConfig:
+        """Настройки свёртывания из состояния стратегии (читаются на каждом тике)."""
+        data = self.state_store.data
+        return FoldConfig(
+            symbol=data.symbol,
+            side=data.side,
+            trigger_pct=data.trigger_pct,
+            target_pct=data.target_pct,
+            min_pnl=data.min_pnl,
+            min_stack_pct=data.min_stack_pct,
+        )
 
     def _try_rearm(self) -> None:
         """Rearm после успешного свёртывания (разовая проверка).

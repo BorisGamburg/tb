@@ -13,13 +13,18 @@ PNL_SCALE = 10 ** 8
 
 class PyrFillApplier:
 
-    def __init__(self, state, trading_info, action_service, logger):
-        self.state = state
+    def __init__(self, trading_info, action_service, logger):
         self.trading_info = trading_info
         self.action_service = action_service
         self.logger = logger
 
-    def apply(self, side, entries, exec_result: ExecutionResult) -> None:
+    def apply(
+        self,
+        side: str,
+        entries,
+        exec_result: ExecutionResult,
+        min_pnl: float,
+    ) -> None:
         # Копия: reduce_levels удаляет закрытые уровни из списка стека.
         levels = list(entries)
         step = self.trading_info.qty_step
@@ -29,7 +34,7 @@ class PyrFillApplier:
 
         # Преобразуем qty и min_pnl в целые для оптимизатора
         int_close_qty = round(exec_result.qty / step)
-        int_min_pnl = ceil(self.state.data.min_pnl * PNL_SCALE)
+        int_min_pnl = ceil(min_pnl * PNL_SCALE)
 
         # Вызываем оптимизатор
         res = optimize_reductions(
@@ -43,7 +48,7 @@ class PyrFillApplier:
         if not res.breakeven:
             self.logger.warning(
                 f"[FOLD] no break-even distribution | "
-                f"pnl={res.pnl / PNL_SCALE:.8f} | min_pnl={self.state.data.min_pnl} | "
+                f"pnl={res.pnl / PNL_SCALE:.8f} | min_pnl={min_pnl} | "
                 f"price={exec_result.price} | qty={exec_result.qty}"
             )
 
