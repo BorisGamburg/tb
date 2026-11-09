@@ -210,6 +210,7 @@ class Execution:
             side=result.side,
             qty=result.qty,
             exit_type=exit_type,
+            limit_price=result.limit_price,
         )
 
         if order_result.status == LimitOrderStatus.PARTIALLY_FILLED:

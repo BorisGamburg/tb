@@ -10,6 +10,7 @@ from action_processor.execution.execution_result import ExecutionResult
 from action_processor.execution.limit_order_result import LimitOrderStatus
 from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
     Params,
+    _per_coin,
     plan as make_plan,
 )
 from action_resolver.pyramid_2_strategy.pyr_writeoff_optimizer import (
@@ -55,6 +56,9 @@ class PyrFoldLauncher:
         # Проверяем, что размер стека достаточен для свёртывания.
 
         # Получаем текущую цену 
+        # Баланс запрашиваем до цены, чтобы между расчётом плана и
+        # выставлением ордера не было лишних запросов к бирже.
+        stack_pct = self._stack_pct(entries)
         price = self._get_exec_price(data.symbol, side)
 
         # Формируем план свёртывания стека.
@@ -68,10 +72,10 @@ class PyrFoldLauncher:
         )
         plan = make_plan(entries, price, side, params)
 
-        # Размер стека (в % от баланса) и строка статуса.
-        stack_pct = self._stack_pct(entries)
+        # Строка статуса.
         self.status = self._build_status(
-            stack_pct, data.min_stack_pct, data.trigger_pct, plan
+            stack_pct, data.min_stack_pct, data.trigger_pct, plan,
+            entries, price, params, side,
         )
         if stack_pct < data.min_stack_pct:
             # Стек мал для свёртывания -> выходим
@@ -82,7 +86,7 @@ class PyrFoldLauncher:
             return None
 
         # Исполняем ордер свёртывания стека.
-        exec_result = self._execute_plan(plan, entries, side)
+        exec_result = self._execute_plan(plan, entries, side, price)
         if not exec_result.executed:
             return exec_result
         
@@ -114,7 +118,25 @@ class PyrFoldLauncher:
         return stack_value / balance * 100
 
     @staticmethod
-    def _build_status(stack_pct, min_stack_pct, trigger_pct, plan) -> str:
+    def _no_cover_text(plan, entries, price, params, side) -> str:
+        """Почему план не построен: сколько прибыли есть и сколько нужно
+        минимум (min_qty монет самого дешёвого по убытку уровня)."""
+        costs = []
+        for lv in entries:
+            u = _per_coin(lv, price, side, params.fee_taker)
+            if u < 0:
+                costs.append(-u * params.min_qty)
+        if not costs:
+            return "NO LOSING LEVELS"
+        need = min(costs)
+        have = max(0.0, min(plan.P - params.min_pnl, plan.budget))
+        if have < need:
+            return f"NO PROFIT: have {have:.6f} need {need:.6f} USDT"
+        return "CAN'T COVER (qty step / min qty)"
+
+    @staticmethod
+    def _build_status(stack_pct, min_stack_pct, trigger_pct, plan,
+                      entries, price, params, side) -> str:
         """Одна строка о состоянии свёртывания для статусной строки."""
         ratio = "∞" if plan.ratio == float("inf") else f"{plan.ratio * 100:.1f}%"
         if stack_pct < min_stack_pct:
@@ -130,7 +152,9 @@ class PyrFoldLauncher:
         if not plan.pieces:
             return (
                 f"FOLD: 🟠 L/P {ratio} > {trigger_pct:g}% | "
-                f"NO PROFIT TO COVER"
+                + PyrFoldLauncher._no_cover_text(
+                    plan, entries, price, params, side
+                )
             )
         return (
             f"FOLD: 🟢 L/P {ratio} > {trigger_pct:g}% | "
@@ -232,7 +256,9 @@ class PyrFoldLauncher:
 
         return int_levels        
 
-    def _execute_plan(self, plan, entries, side: str) -> ExecutionResult:
+    def _execute_plan(
+        self, plan, entries, side: str, price: float
+    ) -> ExecutionResult:
         """Собирает команду закрытия по плану и исполняет ордер."""
         levels = [entries[pc.level_idx] for pc in plan.pieces]
         command = ActionCommand(
@@ -242,5 +268,6 @@ class PyrFoldLauncher:
             qty=plan.total_qty,
             levels=levels,
             reason="PYRAMID_FOLD_CLOSE",
+            limit_price=price,
         )
         return self.action_service.execution.execute(command)

@@ -28,3 +28,6 @@ class ActionCommand:
     levels: list[StackElem] | None = None
     reason: str | None = None
     details: ActionDetails | None = None
+    # Предельная цена закрытия: лимитный ордер не ставится хуже неё
+    # (Sell - не ниже, Buy - не выше). None - без ограничения.
+    limit_price: float | None = None

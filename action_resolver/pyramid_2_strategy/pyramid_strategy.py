@@ -236,6 +236,10 @@ class PyramidStrategy(BaseStrategy):
             dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
             status += f"DIST: {dist_marker} | "
 
+        fold_status = self.fold_launcher.status
+        if fold_status:
+            status += fold_status + " | "
+
         return status.rstrip(" |")
 
     def _log_parameters(self) -> None:

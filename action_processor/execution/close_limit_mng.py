@@ -49,13 +49,15 @@ class CloseLimitMng(LimitOrderBase):
         side: str,
         qty: float,
         exit_type: ExitType,
+        limit_price: float | None = None,
     ) -> LimitOrderResult:
         # Размещаем ордер на закрытие позиции
         order_id = self._place_close_order(
             symbol=symbol,
             side=side,
             qty=qty,
-            exit_type=exit_type
+            exit_type=exit_type,
+            limit_price=limit_price,
         )
 
         # Проверяем исполнение ордера после короткой задержки
@@ -78,7 +80,8 @@ class CloseLimitMng(LimitOrderBase):
         symbol: str,
         side: str,
         qty: float,
-        exit_type: ExitType
+        exit_type: ExitType,
+        limit_price: float | None = None,
     ) -> str:
         # Получаем цену для активного/пассивного исполнения лимитного ордера
         if exit_type == ExitType.ACTIVE:
@@ -97,6 +100,14 @@ class CloseLimitMng(LimitOrderBase):
                 f"symbol={symbol} | "
                 f"side={side} | "
                 f"exit_type={exit_type}"
+            )
+
+        # Предельная цена: не хуже заданной (Sell - не ниже, Buy - не выше).
+        # Если рынок ушёл, ордер встанет по предельной цене, не исполнится
+        # и будет отменён.
+        if limit_price is not None:
+            price = max(price, limit_price) if side == "Sell" else min(
+                price, limit_price
             )
 
         # Размещаем лимитный ордер на закрытие позиции
