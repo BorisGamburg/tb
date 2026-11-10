@@ -1,58 +1,32 @@
-"""Unwinder: свёртывание стека по порогу L/P.
+"""Unwinder: закрытие заданного объёма по уровням стека.
 
-Цепочка: проверка размера стека -> план (pyr_loss_fold_planner) ->
-исполнение ордера с проверкой -> учёт по факту (PyrFillApplier).
+Модуль не принимает решений «пора ли свёртывать»: условия и объём определяет
+вызывающая стратегия. Unwinder получает «закрой qty монет» и делает три шага:
+  1. нормализует объём (кратно qty_step, не больше объёма стека, не меньше
+     min_qty);
+  2. исполняет лимитный ордер закрытия по переданной цене и сверяет факт
+     исполнения с запросом;
+  3. списывает уровни стека по факту исполнения (PyrFillApplier).
 
-Модуль универсальный: не зависит ни от state, ни от строк статуса.
-Настройки (FoldConfig) и уровни стека приходят аргументами run() на каждом
-тике, поэтому вызывающий код может менять условия на лету. run() возвращает
-результат исполнения и сырые данные расчёта (FoldReport).
+От state и строк статуса модуль не зависит.
 """
-from dataclasses import dataclass
-from typing import Any
+from math import floor
 
 from action_processor.action import Action, ActionCommand
 from action_processor.execution.execution_result import ExecutionResult
 from action_processor.execution.limit_order_result import LimitOrderStatus
 from action_resolver.pyramid_2_strategy.pyr_fill_applier import PyrFillApplier
-from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
-    Params,
-    plan as make_plan,
-)
 from utils.utils import get_inverse_side
 
+EPS = 1e-9
 
-@dataclass(frozen=True, slots=True)
-class FoldConfig:
-    """Настройки свёртывания на данный вызов."""
-    symbol: str
-    side: str               # сторона свёртываемых уровней ("Buy" / "Sell")
-    trigger_pct: float      # порог L/P, %
-    target_pct: float       # целевое L/P после свёртывания, %
-    min_pnl: float          # минимальный PnL свёртывания, USDT
-    min_stack_pct: float    # минимальный размер стека, % от баланса
-
-
-@dataclass(frozen=True, slots=True)
-class FoldReport:
-    """Сырые входы и выход проверки свёртывания на тике."""
-    entries: Any        # уровни стека, по которым считался план
-    stack_pct: float    # стоимость стека, % от баланса
-    price: float        # исполняемая цена
-    params: Params      # параметры планировщика
-    plan: Any           # результат планировщика (make_plan)
+# Причина ордера в логах и учёте.
+REASON = "UNWIND_CLOSE"
 
 
 class Unwinder:
 
-    def __init__(
-        self,
-        proxy_driver,
-        action_service,
-        trading_info,
-        logger,
-    ):
-        self.proxy_driver = proxy_driver
+    def __init__(self, action_service, trading_info, logger):
         self.action_service = action_service
         self.trading_info = trading_info
         self.logger = logger
@@ -61,129 +35,104 @@ class Unwinder:
         )
 
     def run(
-        self, config: FoldConfig, entries
-    ) -> tuple[ExecutionResult | None, FoldReport | None]:
-        """Возвращает (exec_result, report).
+        self,
+        levels,
+        side: str,
+        symbol: str,
+        qty: float,
+        price: float,
+        min_pnl: float = 0.0,
+    ) -> ExecutionResult | None:
+        """Закрывает qty монет по уровням стека.
 
-        exec_result None - запускать нечего (стек пуст, мал, плана нет).
-        report None - стек пуст, расчёт не выполнялся.
+        levels  - уровни стека (тот же список, что видит учёт: закрытые
+                  уровни удаляются из него);
+        side    - сторона свёртываемых уровней ("Buy" / "Sell");
+        price   - лимитная цена закрытия;
+        min_pnl - желаемый итог ордера: оптимизатор списания старается
+                  уложиться не ниже, иначе минимизирует убыток.
+
+        Возвращает результат исполнения. None - ордер не отправлялся
+        (объём после нормализации меньше min_qty).
         """
 
-        side = config.side
+        # Нормализуем объём
+        qty = self._normalize_qty(levels, qty)
+        if qty is None:
+            return None
 
-        # Стек пустой -> выходим
-        if not entries:
-            return None, None
-
-        # Проверяем, что размер стека достаточен для свёртывания.
-
-        # Получаем текущую цену
-        # Баланс запрашиваем до цены, чтобы между расчётом плана и
-        # выставлением ордера не было лишних запросов к бирже.
-        stack_pct = self._stack_pct(entries)
-        price = self._get_exec_price(config.symbol, side)
-
-        # Формируем план свёртывания стека.
-        params = Params(
-            trigger=config.trigger_pct / 100,
-            target=config.target_pct / 100,
-            min_pnl=config.min_pnl,
-            fee_taker=self.trading_info.fee_taker,
-            qty_step=self.trading_info.qty_step,
-            min_qty=self.trading_info.min_qty,
+        # Исполняем ордер и проверяем результат.
+        exec_result = self._execute_and_verify(
+            levels, side, symbol, qty, price
         )
-        plan = make_plan(entries, price, side, params)
-
-        report = FoldReport(
-            entries=entries,
-            stack_pct=stack_pct,
-            price=price,
-            params=params,
-            plan=plan,
-        )
-
-        if stack_pct < config.min_stack_pct:
-            # Стек мал для свёртывания -> выходим
-            return None, report
-
-        if not plan.triggered or not plan.pieces:
-            # Ничего свертывать не нужно -> выходим
-            return None, report
-
-        # Исполняем ордер свёртывания стека и проверяем результат.
-        exec_result = self._execute_and_verify(config, plan, entries, price)
         if not exec_result.executed:
-            return exec_result, report
+            return exec_result
 
-        # Проводим оптимальное списание уровней стека
+        # Проводим оптимальное списание уровней стека по факту
         try:
-            self.fill_applier.apply(side, entries, exec_result, config.min_pnl)
+            self.fill_applier.apply(side, levels, exec_result, min_pnl)
         except Exception as e:
             raise RuntimeError(
-                f"FOLD CLOSE accounting failed after execution | "
+                f"UNWIND accounting failed after execution | "
                 f"exec: price={exec_result.price} qty={exec_result.qty} "
                 f"fee={exec_result.fee} status={exec_result.status} | "
-                f"plan: total_qty={plan.total_qty} pnl={plan.pnl} "
-                f"L={plan.L} P={plan.P} ratio={plan.ratio} "
-                f"pieces={[(p.level_idx, p.role, p.qty) for p in plan.pieces]} | "
+                f"request: side={side} qty={qty} price={price} "
+                f"min_pnl={min_pnl} | "
                 f"error: {e!r}"
             ) from e
 
-        return exec_result, report
+        return exec_result
 
-    def _stack_pct(self, entries) -> float:
-        """Стоимость стека (qty * цена входа) в % от баланса."""
-        stack_value = sum(lv.qty * lv.price for lv in entries)
-        balance = self.proxy_driver.get_balance()
-        if balance <= 0:
-            return float("inf")
-        return stack_value / balance * 100
+    def _normalize_qty(self, levels, qty: float) -> float | None:
+        """Объём кратно qty_step, не больше объёма стека. None - меньше min_qty."""
+        step = self.trading_info.qty_step
+        q = min(qty, sum(lv.qty for lv in levels))
+        q = round(floor(q / step + EPS) * step, 12)
+        if q < self.trading_info.min_qty - EPS:
+            return None
+        return q
 
-    def _get_exec_price(self, symbol: str, side: str) -> float:
-        # Исполняемая сторона: лонг закрываем по bid, шорт по ask.
-        ticker = self.proxy_driver.get_ticker(symbol)
-        return ticker["bid"] if side == "Buy" else ticker["ask"]
-
-    def _check_exec_result(self, exec_result: ExecutionResult, plan) -> None:
+    def _check_exec_result(
+        self, exec_result: ExecutionResult, qty: float
+    ) -> None:
         if exec_result.status not in (
             LimitOrderStatus.FILLED,
             LimitOrderStatus.PARTIALLY_FILLED,
         ):
             raise ValueError(
-                f"Unexpected FOLD CLOSE status: {exec_result.status}"
+                f"Unexpected UNWIND status: {exec_result.status}"
             )
         if exec_result.qty <= 0:
             raise ValueError(
-                f"FOLD CLOSE executed with non-positive qty: {exec_result.qty}"
+                f"UNWIND executed with non-positive qty: {exec_result.qty}"
             )
         tolerance = self.trading_info.qty_step / 2
-        if exec_result.qty > plan.total_qty + tolerance:
+        if exec_result.qty > qty + tolerance:
             raise RuntimeError(
-                f"FOLD CLOSE filled more than planned | "
-                f"filled={exec_result.qty} | planned={plan.total_qty}"
+                f"UNWIND filled more than requested | "
+                f"filled={exec_result.qty} | requested={qty}"
             )
 
     def _execute_and_verify(
-        self, config: FoldConfig, plan, entries, price: float
+        self, levels, side: str, symbol: str, qty: float, price: float
     ) -> ExecutionResult:
-        """Собирает команду закрытия по плану, исполняет ордер и сверяет факт с планом.
+        """Исполняет ордер закрытия и сверяет факт с запросом.
 
         Не исполнился -> возвращается как есть (проверять нечего).
         Исполнился -> результат проверен, иначе исключение.
         """
-        levels = [entries[pc.level_idx] for pc in plan.pieces]
         command = ActionCommand(
             action=Action.CLOSE,
-            symbol=config.symbol,
-            side=get_inverse_side(config.side),
-            qty=plan.total_qty,
-            levels=levels,
-            reason="PYRAMID_FOLD_CLOSE",
+            symbol=symbol,
+            side=get_inverse_side(side),
+            qty=qty,
+            levels=list(levels),
+            reason=REASON,
             limit_price=price,
         )
         exec_result = self.action_service.execution.execute(command)
         if not exec_result.executed:
             return exec_result
 
-        self._check_exec_result(exec_result, plan)
+        self._check_exec_result(exec_result, qty)
         return exec_result

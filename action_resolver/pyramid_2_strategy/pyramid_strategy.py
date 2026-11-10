@@ -2,10 +2,11 @@ from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
 from common.trading_info import TradingInfo
-from action_resolver.pyramid_2_strategy.unwinder import (
+from action_resolver.pyramid_2_strategy.pyr_fold_advisor import (
     FoldConfig,
-    Unwinder,
+    PyrFoldAdvisor,
 )
+from action_resolver.pyramid_2_strategy.unwinder import Unwinder
 from action_processor.action import Action
 from action_processor.action import ActionCommand
 from action_processor.action_service import ActionService
@@ -84,8 +85,12 @@ class PyramidStrategy(BaseStrategy):
             logger=app_ctx.logger,
         )
 
-        self.unwinder = Unwinder(
+        self.fold_advisor = PyrFoldAdvisor(
             proxy_driver=app_ctx.proxy_driver,
+            trading_info=trading_info,
+        )
+
+        self.unwinder = Unwinder(
             action_service=self.action_service,
             trading_info=trading_info,
             logger=app_ctx.logger,
@@ -145,13 +150,37 @@ class PyramidStrategy(BaseStrategy):
 
     def _process_close(self) -> tuple[ResolveResult, bool, object]:
         """Возвращает (ResolveResult, найдено, fold_report)."""
-        # Свёртывание стека по порогу L/P
-        exec_result, fold_report = self.unwinder.run(
-            self._fold_config(),
-            self.state_store.data.stack.entries,
-        )
+        config = self._fold_config()
+        entries = self.state_store.data.stack.entries
+
+        # Условия свёртывания (размер стека, порог L/P) и объём к закрытию
+        fold_report = self.fold_advisor.check(config, entries)
+        if fold_report is None or fold_report.qty_to_close <= 0:
+            # Свёртывать нечего -> выходим
+            return ResolveResult(executed=False, status=""), False, fold_report
+
+        # Свёртывание: исполнение и списание по факту
+        try:
+            exec_result = self.unwinder.run(
+                levels=entries,
+                side=config.side,
+                symbol=config.symbol,
+                qty=fold_report.qty_to_close,
+                price=fold_report.price,
+                min_pnl=config.min_pnl,
+            )
+        except Exception as e:
+            plan = fold_report.plan
+            raise RuntimeError(
+                f"FOLD unwind failed | "
+                f"plan: total_qty={plan.total_qty} pnl={plan.pnl} "
+                f"L={plan.L} P={plan.P} ratio={plan.ratio} "
+                f"pieces={[(p.level_idx, p.role, p.qty) for p in plan.pieces]} | "
+                f"error: {e!r}"
+            ) from e
+
         if exec_result is None:
-            # Запускать нечего -> выходим
+            # Объём после нормализации меньше минимума -> ордер не отправлялся
             return ResolveResult(executed=False, status=""), False, fold_report
 
         # Свёртывание исполнилось -> пробуем открыть донорский уровень
