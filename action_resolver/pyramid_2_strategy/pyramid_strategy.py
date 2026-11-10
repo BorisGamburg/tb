@@ -6,7 +6,7 @@ from action_resolver.pyramid_2_strategy.pyr_fold_advisor import (
     FoldConfig,
     PyrFoldAdvisor,
 )
-from action_resolver.pyramid_2_strategy.unwinder import Unwinder
+from common.unwind.unwinder import Unwinder
 from action_processor.action import Action
 from action_processor.action import ActionCommand
 from action_processor.action_service import ActionService
