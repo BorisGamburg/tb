@@ -85,7 +85,7 @@ class PyramidStrategy(BaseStrategy):
             logger=app_ctx.logger,
         )
 
-        self.fold_advisor = PyrFoldAdvisor(
+        self.unwind_advisor = PyrFoldAdvisor(
             proxy_driver=app_ctx.proxy_driver,
             trading_info=trading_info,
         )
@@ -149,15 +149,15 @@ class PyramidStrategy(BaseStrategy):
         return entry_result, exec_result.executed
 
     def _process_close(self) -> tuple[ResolveResult, bool, object]:
-        """Возвращает (ResolveResult, найдено, fold_report)."""
-        config = self._fold_config()
+        """Возвращает (ResolveResult, найдено, unwind_report)."""
+        config = self._unwind_config()
         entries = self.state_store.data.stack.entries
 
         # Условия свёртывания (размер стека, порог L/P) и объём к закрытию
-        fold_report = self.fold_advisor.check(config, entries)
-        if fold_report is None or fold_report.qty_to_close <= 0:
+        unwind_report = self.unwind_advisor.check(config, entries)
+        if unwind_report is None or unwind_report.qty_to_close <= 0:
             # Свёртывать нечего -> выходим
-            return ResolveResult(executed=False, status=""), False, fold_report
+            return ResolveResult(executed=False, status=""), False, unwind_report
 
         # Свёртывание: исполнение и списание по факту
         try:
@@ -165,12 +165,12 @@ class PyramidStrategy(BaseStrategy):
                 levels=entries,
                 side=config.side,
                 symbol=config.symbol,
-                qty=fold_report.qty_to_close,
-                price=fold_report.price,
+                qty=unwind_report.qty_to_close,
+                price=unwind_report.price,
                 min_pnl=config.min_pnl,
             )
         except Exception as e:
-            plan = fold_report.plan
+            plan = unwind_report.plan
             raise RuntimeError(
                 f"FOLD unwind failed | "
                 f"plan: total_qty={plan.total_qty} pnl={plan.pnl} "
@@ -181,7 +181,7 @@ class PyramidStrategy(BaseStrategy):
 
         if exec_result is None:
             # Объём после нормализации меньше минимума -> ордер не отправлялся
-            return ResolveResult(executed=False, status=""), False, fold_report
+            return ResolveResult(executed=False, status=""), False, unwind_report
 
         # Свёртывание исполнилось -> пробуем открыть донорский уровень
         if exec_result.executed:
@@ -190,9 +190,9 @@ class PyramidStrategy(BaseStrategy):
         return ResolveResult(
             executed=exec_result.executed,
             status="",
-        ), True, fold_report
+        ), True, unwind_report
 
-    def _fold_config(self) -> FoldConfig:
+    def _unwind_config(self) -> FoldConfig:
         """Настройки свёртывания из состояния стратегии (читаются на каждом тике)."""
         data = self.state_store.data
         return FoldConfig(
@@ -373,21 +373,21 @@ class PyramidStrategy(BaseStrategy):
         ratio = "∞" if plan.ratio == float("inf") else f"{plan.ratio * 100:.1f}%"
         if report.stack_pct < data.min_stack_pct:
             return (
-                f"FOLD: 🔴 STACK {report.stack_pct:.1f}% < "
+                f"UNWIND: 🔴 STACK {report.stack_pct:.1f}% < "
                 f"{data.min_stack_pct:g}% | L/P {ratio}"
             )
         if not plan.triggered:
             return (
-                f"FOLD: ⚪ L/P {ratio} ≤ {data.trigger_pct:g}% | "
+                f"UNWIND: ⚪ L/P {ratio} ≤ {data.trigger_pct:g}% | "
                 f"L {plan.L:.4f} P {plan.P:.4f}"
             )
         if not plan.pieces:
             return (
-                f"FOLD: 🟠 L/P {ratio} > {data.trigger_pct:g}% | "
+                f"UNWIND: 🟠 L/P {ratio} > {data.trigger_pct:g}% | "
                 + self._fold_no_cover_reason(report)
             )
         return (
-            f"FOLD: 🟢 L/P {ratio} > {data.trigger_pct:g}% | "
+            f"UNWIND: 🟢 L/P {ratio} > {data.trigger_pct:g}% | "
             f"CLOSE {plan.total_qty:g}"
         )
 

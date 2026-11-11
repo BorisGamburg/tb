@@ -42,6 +42,7 @@ class Unwinder:
         qty: float,
         price: float,
         min_pnl: float = 0.0,
+        profit_order: str = "most_first",
     ) -> ExecutionResult | None:
         """Закрывает qty монет по уровням стека.
 
@@ -50,7 +51,10 @@ class Unwinder:
         side    - сторона свёртываемых уровней ("Buy" / "Sell");
         price   - лимитная цена закрытия;
         min_pnl - желаемый итог ордера: оптимизатор списания старается
-                  уложиться не ниже, иначе минимизирует убыток.
+                  уложиться не ниже, иначе минимизирует убыток;
+        profit_order - порядок списания прибыльных уровней: "most_first"
+                  (от самых прибыльных, по умолчанию) или "least_first"
+                  (от наименее прибыльных).
 
         Возвращает результат исполнения. None - ордер не отправлялся
         (объём после нормализации меньше min_qty).
@@ -70,18 +74,46 @@ class Unwinder:
 
         # Проводим оптимальное списание уровней стека по факту
         try:
-            self.fill_applier.apply(side, levels, exec_result, min_pnl)
+            self.fill_applier.apply(
+                side, levels, exec_result, min_pnl, profit_order
+            )
         except Exception as e:
             raise RuntimeError(
                 f"UNWIND accounting failed after execution | "
                 f"exec: price={exec_result.price} qty={exec_result.qty} "
                 f"fee={exec_result.fee} status={exec_result.status} | "
                 f"request: side={side} qty={qty} price={price} "
-                f"min_pnl={min_pnl} | "
+                f"min_pnl={min_pnl} | profit_order={profit_order} | "
                 f"error: {e!r}"
             ) from e
 
         return exec_result
+
+    def check_breakeven(
+        self,
+        levels,
+        side: str,
+        qty: float,
+        price: float,
+        min_pnl: float = 0.0,
+        profit_order: str = "most_first",
+    ):
+        """Укладывается ли закрытие qty монет по price в min_pnl.
+
+        Ордер не отправляется. Объём нормализуется так же, как в run, а
+        PnL считается теми же формулами и тем же оптимизатором, что и при
+        списании (FillApplier.estimate), поэтому оценка и факт согласованы
+        с точностью до разницы комиссии и цены исполнения.
+
+        Возвращает Result оптимизатора (res.breakeven, res.pnl в 1e-8 USDT)
+        или None, если объём после нормализации меньше min_qty.
+        """
+        qty = self._normalize_qty(levels, qty)
+        if qty is None:
+            return None
+        return self.fill_applier.estimate(
+            side, levels, price, qty, min_pnl, profit_order
+        )
 
     def _normalize_qty(self, levels, qty: float) -> float | None:
         """Объём кратно qty_step, не больше объёма стека. None - меньше min_qty."""

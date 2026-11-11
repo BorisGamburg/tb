@@ -10,6 +10,9 @@ from common.unwind.writeoff_optimizer import (
 # Оптимизатор работает с целыми: PnL на шаг qty_step считаем в 1e-8 USDT.
 PNL_SCALE = 10 ** 8
 
+# Порядок списания убыточных уровней: от самых убыточных.
+LOSS_ORDER = "most_first"
+
 
 class FillApplier:
 
@@ -24,13 +27,19 @@ class FillApplier:
         entries,
         exec_result: ExecutionResult,
         min_pnl: float,
+        profit_order: str = "most_first",
     ) -> None:
         # Копия: reduce_levels удаляет закрытые уровни из списка стека.
         levels = list(entries)
         step = self.trading_info.qty_step
 
         # Преобразуем уровни стека в целые уровни для оптимизатора
-        int_levels = self._to_int_levels(side, levels, exec_result)
+        int_levels = self._to_int_levels(
+            side,
+            levels,
+            exec_result.price,
+            exec_result.fee / exec_result.qty,
+        )
 
         # Преобразуем qty и min_pnl в целые для оптимизатора
         int_close_qty = round(exec_result.qty / step)
@@ -38,7 +47,11 @@ class FillApplier:
 
         # Вызываем оптимизатор
         res = optimize_reductions(
-            int_levels, int_close_qty, int_min_pnl, loss_order="most_first"
+            int_levels,
+            int_close_qty,
+            int_min_pnl,
+            profit_order=profit_order,
+            loss_order=LOSS_ORDER,
         )
         if res is None:
             raise RuntimeError(
@@ -64,27 +77,58 @@ class FillApplier:
             f"reductions={reductions}"
         )
 
+    def estimate(
+        self,
+        side: str,
+        entries,
+        price: float,
+        qty: float,
+        min_pnl: float,
+        profit_order: str = "most_first",
+    ):
+        """Оценка списания без исполнения ордера: те же формулы, тот же
+        оптимизатор, что и в apply. Комиссия закрытия - fee_taker от цены.
+
+        Возвращает Result оптимизатора (res.breakeven - укладывается ли
+        объём в min_pnl) или None, если qty больше объёма стека."""
+        step = self.trading_info.qty_step
+        int_levels = self._to_int_levels(
+            side,
+            list(entries),
+            price,
+            price * self.trading_info.fee_taker,
+        )
+        return optimize_reductions(
+            int_levels,
+            round(qty / step),
+            ceil(min_pnl * PNL_SCALE),
+            profit_order=profit_order,
+            loss_order=LOSS_ORDER,
+        )
+
     def _to_int_levels(
         self,
         side: str,
         levels: list,
-        exec_result: ExecutionResult,
+        price: float,
+        close_fee_per_coin: float,
     ) -> list[tuple[int, int]]:
         """Описывает уровни стека целыми числами для оптимизатора:
         (PnL одного шага qty_step в 1e-8 USDT, число шагов на уровне).
-        PnL считается по реальным цене и комиссии исполнения."""
+
+        price и close_fee_per_coin: при списании - реальные цена и комиссия
+        исполнения, при оценке - плановая цена и ожидаемая комиссия.
+        Комиссия закрытия на монету одинакова для всех уровней (ордер один).
+        """
         step = self.trading_info.qty_step
         sign = 1.0 if side == "Buy" else -1.0
-
-        # Комиссия закрытия на монету (ордер один, одинакова для всех уровней).
-        close_fee_per_coin = exec_result.fee / exec_result.qty
 
         int_levels = []
         for lv in levels:
             base = lv.initial_qty if lv.initial_qty > 0 else lv.qty
             open_fee_per_coin = lv.fee / base
             pnl_per_coin = (
-                sign * (exec_result.price - lv.price)
+                sign * (price - lv.price)
                 - open_fee_per_coin
                 - close_fee_per_coin
             )

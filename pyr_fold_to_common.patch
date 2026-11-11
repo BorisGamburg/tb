@@ -1,0 +1,546 @@
+diff -ruN a/action_resolver/pyramid_2_strategy/pyr_fold_advisor.py b/action_resolver/pyramid_2_strategy/pyr_fold_advisor.py
+--- a/action_resolver/pyramid_2_strategy/pyr_fold_advisor.py	2026-11-11 09:02:05.960193504 +0000
++++ b/action_resolver/pyramid_2_strategy/pyr_fold_advisor.py	1970-01-01 00:00:00.000000000 +0000
+@@ -1,99 +0,0 @@
+-"""Советчик свёртывания для пирамиды: решает, нужно ли свёртывать стек и
+-сколько закрыть. Ничего не исполняет.
+-
+-Условия (размер стека, порог L/P) и планировщик (pyr_loss_fold_planner)
+-живут здесь, а не в Unwinder: у каждой стратегии свои условия. Результат -
+-FoldReport: сырые данные расчёта плюс объём к закрытию (qty_to_close).
+-Что из отчёта показывать в строке статуса, решает стратегия.
+-"""
+-from dataclasses import dataclass
+-from typing import Any
+-
+-from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
+-    Params,
+-    plan as make_plan,
+-)
+-
+-
+-@dataclass(frozen=True, slots=True)
+-class FoldConfig:
+-    """Настройки свёртывания пирамиды на данный вызов."""
+-    symbol: str
+-    side: str               # сторона свёртываемых уровней ("Buy" / "Sell")
+-    trigger_pct: float      # порог L/P, %
+-    target_pct: float       # целевое L/P после свёртывания, %
+-    min_pnl: float          # минимальный PnL свёртывания, USDT
+-    min_stack_pct: float    # минимальный размер стека, % от баланса
+-
+-
+-@dataclass(frozen=True, slots=True)
+-class FoldReport:
+-    """Сырые входы и выход проверки свёртывания на тике."""
+-    entries: Any            # уровни стека, по которым считался план
+-    stack_pct: float        # стоимость стека, % от баланса
+-    price: float            # исполняемая цена
+-    params: Params          # параметры планировщика
+-    plan: Any               # результат планировщика (make_plan)
+-    qty_to_close: float     # сколько закрыть; 0 - свёртывать не нужно
+-
+-
+-class PyrFoldAdvisor:
+-
+-    def __init__(self, proxy_driver, trading_info):
+-        self.proxy_driver = proxy_driver
+-        self.trading_info = trading_info
+-
+-    def check(self, config: FoldConfig, entries) -> FoldReport | None:
+-        """None - стек пуст, расчёт не выполнялся."""
+-        side = config.side
+-
+-        # Стек пустой -> выходим
+-        if not entries:
+-            return None
+-
+-        # Баланс запрашиваем до цены, чтобы между расчётом плана и
+-        # выставлением ордера не было лишних запросов к бирже.
+-        stack_pct = self._stack_pct(entries)
+-        price = self._get_exec_price(config.symbol, side)
+-
+-        # Формируем план свёртывания стека.
+-        params = Params(
+-            trigger=config.trigger_pct / 100,
+-            target=config.target_pct / 100,
+-            min_pnl=config.min_pnl,
+-            fee_taker=self.trading_info.fee_taker,
+-            qty_step=self.trading_info.qty_step,
+-            min_qty=self.trading_info.min_qty,
+-        )
+-        plan = make_plan(entries, price, side, params)
+-
+-        # Условия свёртывания: стек достаточен, порог L/P сработал, план есть.
+-        qty_to_close = 0.0
+-        if (
+-            stack_pct >= config.min_stack_pct
+-            and plan.triggered
+-            and plan.pieces
+-        ):
+-            qty_to_close = plan.total_qty
+-
+-        return FoldReport(
+-            entries=entries,
+-            stack_pct=stack_pct,
+-            price=price,
+-            params=params,
+-            plan=plan,
+-            qty_to_close=qty_to_close,
+-        )
+-
+-    def _stack_pct(self, entries) -> float:
+-        """Стоимость стека (qty * цена входа) в % от баланса."""
+-        stack_value = sum(lv.qty * lv.price for lv in entries)
+-        balance = self.proxy_driver.get_balance()
+-        if balance <= 0:
+-            return float("inf")
+-        return stack_value / balance * 100
+-
+-    def _get_exec_price(self, symbol: str, side: str) -> float:
+-        # Исполняемая сторона: лонг закрываем по bid, шорт по ask.
+-        ticker = self.proxy_driver.get_ticker(symbol)
+-        return ticker["bid"] if side == "Buy" else ticker["ask"]
+\ No newline at end of file
+diff -ruN a/action_resolver/pyramid_2_strategy/pyr_loss_fold_planner.py b/action_resolver/pyramid_2_strategy/pyr_loss_fold_planner.py
+--- a/action_resolver/pyramid_2_strategy/pyr_loss_fold_planner.py	2026-11-11 09:02:05.960988320 +0000
++++ b/action_resolver/pyramid_2_strategy/pyr_loss_fold_planner.py	1970-01-01 00:00:00.000000000 +0000
+@@ -1,147 +0,0 @@
+-"""Планировщик свёртывания по порогу L/P.
+-
+-L - суммарный убыток убыточных уровней, P - суммарная прибыль прибыльных
+-(оба по цене закрытия, с комиссиями). Чистая функция plan(), без зависимостей от бота.
+-
+-levels - список StackElem (нужны атрибуты price, qty, fee, initial_qty) в порядке
+-стека; level_idx в кусках плана - позиция в этом списке.
+-"""
+-from dataclasses import dataclass, field
+-from math import floor, ceil
+-
+-EPS = 1e-9
+-
+-
+-@dataclass
+-class Params:
+-    trigger: float = 0.10   # запуск, если L/P выше
+-    target: float = 0.05    # цель возврата L/P
+-    min_pnl: float = 0.0    # итог ордера не ниже
+-    fee_taker: float = 0.00055
+-    qty_step: float = 0.001
+-    min_qty: float = 0.001
+-
+-
+-@dataclass
+-class Piece:
+-    level_idx: int
+-    role: str             # 'loss' или 'donor'
+-    qty: float
+-    pnl: float            # чистый pnl этого куска при закрытии
+-
+-
+-@dataclass
+-class Plan:
+-    triggered: bool
+-    reason: str
+-    L: float = 0.0
+-    P: float = 0.0
+-    ratio: float = 0.0
+-    budget: float = 0.0
+-    pieces: list = field(default_factory=list)
+-    total_qty: float = 0.0
+-    pnl: float = 0.0
+-    ratio_after: float = 0.0
+-
+-
+-def _floor_step(q, step):
+-    return round(floor(q / step + EPS) * step, 12)
+-
+-
+-def _ceil_step(q, step):
+-    return round(ceil(q / step - EPS) * step, 12)
+-
+-
+-def _per_coin(lv, price, side, fee_taker):
+-    """Чистый результат закрытия одной монеты уровня (комиссия входа
+-    считается на initial_qty, как в боте; если он не задан - на qty)."""
+-    sign = 1.0 if side == "Buy" else -1.0
+-    base = lv.initial_qty if getattr(lv, "initial_qty", 0) > 0 else lv.qty
+-    return sign * (price - lv.price) - lv.fee / base - price * fee_taker
+-
+-
+-def _stats(levels, price, side, fee_taker, left=None):
+-    """left - необязательный словарь {индекс: сколько qty остаётся}."""
+-    L = P = 0.0
+-    for i, lv in enumerate(levels):
+-        q = lv.qty if left is None else left.get(i, lv.qty)
+-        if q <= EPS:
+-            continue
+-        u = _per_coin(lv, price, side, fee_taker)
+-        if u < 0:
+-            L += -u * q
+-        elif u > 0:
+-            P += u * q
+-    ratio = (L / P) if P > 0 else (float("inf") if L > 0 else 0.0)
+-    return L, P, ratio
+-
+-
+-def plan(levels, price, side, p: Params) -> Plan:
+-    """price - цена с исполняемой стороны стакана (лонг: bid, шорт: ask)."""
+-    L, P, ratio = _stats(levels, price, side, p.fee_taker)
+-    res = Plan(False, "", L, P, ratio, ratio_after=ratio)
+-
+-    if ratio <= p.trigger:
+-        res.reason = f"L/P={ratio:.3f} не выше порога {p.trigger}"
+-        return res
+-    res.triggered = True
+-
+-    pool = P - p.min_pnl                      # сколько убытка можно закрыть
+-    budget = min(L, (L - p.target * P) / (1 - p.target))
+-    res.budget = budget
+-    if pool <= EPS:
+-        res.reason = "нет прибыли для покрытия"
+-        return res
+-
+-    per = [(i, _per_coin(lv, price, side, p.fee_taker)) for i, lv in enumerate(levels)]
+-    losers = sorted([(i, u) for i, u in per if u < 0], key=lambda x: x[1])   # самый убыточный первым
+-    donors = sorted([(i, u) for i, u in per if u > 0], key=lambda x: x[1])   # наименее прибыльный первым
+-
+-    pieces, loss_closed, budget_left = [], 0.0, budget
+-    for i, u in losers:
+-        if budget_left <= EPS:
+-            break
+-        lv, c = levels[i], -u
+-        qmax = min(lv.qty, budget_left / c, (pool - loss_closed) / c)
+-        if qmax >= lv.qty - EPS:
+-            q = lv.qty
+-        else:
+-            q = _floor_step(qmax, p.qty_step)
+-            if lv.qty - q < p.min_qty - EPS:          # остаток не меньше min_qty
+-                q = _floor_step(lv.qty - p.min_qty, p.qty_step)
+-        if q < p.min_qty - EPS:
+-            continue                                  # на этот уровень не хватает, идём к следующему
+-        pieces.append(Piece(i, "loss", q, u * q))
+-        loss_closed += c * q
+-        budget_left -= c * q
+-
+-    if not pieces:
+-        res.reason = "прибыли не хватает даже на минимальный кусок"
+-        return res
+-
+-    need = loss_closed + p.min_pnl
+-    for i, u in donors:
+-        if need <= EPS:
+-            break
+-        lv = levels[i]
+-        q = _ceil_step(need / u, p.qty_step)
+-        q = max(q, p.min_qty)
+-        if q >= lv.qty - EPS or lv.qty - q < p.min_qty - EPS:
+-            q = lv.qty
+-        pieces.append(Piece(i, "donor", q, u * q))
+-        need -= u * q
+-    if need > 1e-7:
+-        res.pieces, res.reason = [], "доноры не покрывают закрываемый убыток"
+-        return res
+-
+-    # состояние после плана
+-    left = {i: lv.qty for i, lv in enumerate(levels)}
+-    for pc in pieces:
+-        left[pc.level_idx] -= pc.qty
+-    _, _, res.ratio_after = _stats(levels, price, side, p.fee_taker, left)
+-
+-    res.pieces = pieces
+-    res.total_qty = sum(pc.qty for pc in pieces)
+-    res.pnl = sum(pc.pnl for pc in pieces)
+-    res.reason = "ok"
+-    return res
+\ No newline at end of file
+diff -ruN a/action_resolver/pyramid_2_strategy/pyramid_strategy.py b/action_resolver/pyramid_2_strategy/pyramid_strategy.py
+--- a/action_resolver/pyramid_2_strategy/pyramid_strategy.py	2026-11-11 09:02:05.959202942 +0000
++++ b/action_resolver/pyramid_2_strategy/pyramid_strategy.py	2026-11-11 09:02:05.999540874 +0000
+@@ -2,9 +2,9 @@
+ from action_processor.state.state import State
+ from action_processor.bootstrap import AppContext
+ from common.trading_info import TradingInfo
+-from action_resolver.pyramid_2_strategy.pyr_fold_advisor import (
++from common.unwind.fold_advisor import (
+     FoldConfig,
+-    PyrFoldAdvisor,
++    FoldAdvisor,
+ )
+ from common.unwind.unwinder import Unwinder
+ from action_processor.action import Action
+@@ -25,7 +25,7 @@
+ from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
+     PyrDustCleaner,
+ )
+-from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
++from common.unwind.loss_fold_planner import (
+     _per_coin,
+ )
+ from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
+@@ -85,7 +85,7 @@
+             logger=app_ctx.logger,
+         )
+ 
+-        self.fold_advisor = PyrFoldAdvisor(
++        self.fold_advisor = FoldAdvisor(
+             proxy_driver=app_ctx.proxy_driver,
+             trading_info=trading_info,
+         )
+diff -ruN a/common/unwind/fold_advisor.py b/common/unwind/fold_advisor.py
+--- a/common/unwind/fold_advisor.py	1970-01-01 00:00:00.000000000 +0000
++++ b/common/unwind/fold_advisor.py	2026-11-11 09:02:05.999248490 +0000
+@@ -0,0 +1,100 @@
++"""Советчик свёртывания: решает, нужно ли свёртывать стек и
++сколько закрыть. Ничего не исполняет.
++
++Условия (размер стека, порог L/P) и планировщик (loss_fold_planner)
++живут здесь, а не в Unwinder: Unwinder только исполняет. Модуль общий
++для стратегий; настройки каждая стратегия передаёт через FoldConfig. Результат -
++FoldReport: сырые данные расчёта плюс объём к закрытию (qty_to_close).
++Что из отчёта показывать в строке статуса, решает стратегия.
++"""
++from dataclasses import dataclass
++from typing import Any
++
++from common.unwind.loss_fold_planner import (
++    Params,
++    plan as make_plan,
++)
++
++
++@dataclass(frozen=True, slots=True)
++class FoldConfig:
++    """Настройки свёртывания на данный вызов."""
++    symbol: str
++    side: str               # сторона свёртываемых уровней ("Buy" / "Sell")
++    trigger_pct: float      # порог L/P, %
++    target_pct: float       # целевое L/P после свёртывания, %
++    min_pnl: float          # минимальный PnL свёртывания, USDT
++    min_stack_pct: float    # минимальный размер стека, % от баланса
++
++
++@dataclass(frozen=True, slots=True)
++class FoldReport:
++    """Сырые входы и выход проверки свёртывания на тике."""
++    entries: Any            # уровни стека, по которым считался план
++    stack_pct: float        # стоимость стека, % от баланса
++    price: float            # исполняемая цена
++    params: Params          # параметры планировщика
++    plan: Any               # результат планировщика (make_plan)
++    qty_to_close: float     # сколько закрыть; 0 - свёртывать не нужно
++
++
++class FoldAdvisor:
++
++    def __init__(self, proxy_driver, trading_info):
++        self.proxy_driver = proxy_driver
++        self.trading_info = trading_info
++
++    def check(self, config: FoldConfig, entries) -> FoldReport | None:
++        """None - стек пуст, расчёт не выполнялся."""
++        side = config.side
++
++        # Стек пустой -> выходим
++        if not entries:
++            return None
++
++        # Баланс запрашиваем до цены, чтобы между расчётом плана и
++        # выставлением ордера не было лишних запросов к бирже.
++        stack_pct = self._stack_pct(entries)
++        price = self._get_exec_price(config.symbol, side)
++
++        # Формируем план свёртывания стека.
++        params = Params(
++            trigger=config.trigger_pct / 100,
++            target=config.target_pct / 100,
++            min_pnl=config.min_pnl,
++            fee_taker=self.trading_info.fee_taker,
++            qty_step=self.trading_info.qty_step,
++            min_qty=self.trading_info.min_qty,
++        )
++        plan = make_plan(entries, price, side, params)
++
++        # Условия свёртывания: стек достаточен, порог L/P сработал, план есть.
++        qty_to_close = 0.0
++        if (
++            stack_pct >= config.min_stack_pct
++            and plan.triggered
++            and plan.pieces
++        ):
++            qty_to_close = plan.total_qty
++
++        return FoldReport(
++            entries=entries,
++            stack_pct=stack_pct,
++            price=price,
++            params=params,
++            plan=plan,
++            qty_to_close=qty_to_close,
++        )
++
++    def _stack_pct(self, entries) -> float:
++        """Стоимость стека (qty * цена входа) в % от баланса."""
++        stack_value = sum(lv.qty * lv.price for lv in entries)
++        balance = self.proxy_driver.get_balance()
++        if balance <= 0:
++            return float("inf")
++        return stack_value / balance * 100
++
++    def _get_exec_price(self, symbol: str, side: str) -> float:
++        # Исполняемая сторона: лонг закрываем по bid, шорт по ask.
++        ticker = self.proxy_driver.get_ticker(symbol)
++        return ticker["bid"] if side == "Buy" else ticker["ask"]
+\ No newline at end of file
+diff -ruN a/common/unwind/loss_fold_planner.py b/common/unwind/loss_fold_planner.py
+--- a/common/unwind/loss_fold_planner.py	1970-01-01 00:00:00.000000000 +0000
++++ b/common/unwind/loss_fold_planner.py	2026-11-11 09:02:05.962483078 +0000
+@@ -0,0 +1,147 @@
++"""Планировщик свёртывания по порогу L/P.
++
++L - суммарный убыток убыточных уровней, P - суммарная прибыль прибыльных
++(оба по цене закрытия, с комиссиями). Чистая функция plan(), без зависимостей от бота.
++
++levels - список StackElem (нужны атрибуты price, qty, fee, initial_qty) в порядке
++стека; level_idx в кусках плана - позиция в этом списке.
++"""
++from dataclasses import dataclass, field
++from math import floor, ceil
++
++EPS = 1e-9
++
++
++@dataclass
++class Params:
++    trigger: float = 0.10   # запуск, если L/P выше
++    target: float = 0.05    # цель возврата L/P
++    min_pnl: float = 0.0    # итог ордера не ниже
++    fee_taker: float = 0.00055
++    qty_step: float = 0.001
++    min_qty: float = 0.001
++
++
++@dataclass
++class Piece:
++    level_idx: int
++    role: str             # 'loss' или 'donor'
++    qty: float
++    pnl: float            # чистый pnl этого куска при закрытии
++
++
++@dataclass
++class Plan:
++    triggered: bool
++    reason: str
++    L: float = 0.0
++    P: float = 0.0
++    ratio: float = 0.0
++    budget: float = 0.0
++    pieces: list = field(default_factory=list)
++    total_qty: float = 0.0
++    pnl: float = 0.0
++    ratio_after: float = 0.0
++
++
++def _floor_step(q, step):
++    return round(floor(q / step + EPS) * step, 12)
++
++
++def _ceil_step(q, step):
++    return round(ceil(q / step - EPS) * step, 12)
++
++
++def _per_coin(lv, price, side, fee_taker):
++    """Чистый результат закрытия одной монеты уровня (комиссия входа
++    считается на initial_qty, как в боте; если он не задан - на qty)."""
++    sign = 1.0 if side == "Buy" else -1.0
++    base = lv.initial_qty if getattr(lv, "initial_qty", 0) > 0 else lv.qty
++    return sign * (price - lv.price) - lv.fee / base - price * fee_taker
++
++
++def _stats(levels, price, side, fee_taker, left=None):
++    """left - необязательный словарь {индекс: сколько qty остаётся}."""
++    L = P = 0.0
++    for i, lv in enumerate(levels):
++        q = lv.qty if left is None else left.get(i, lv.qty)
++        if q <= EPS:
++            continue
++        u = _per_coin(lv, price, side, fee_taker)
++        if u < 0:
++            L += -u * q
++        elif u > 0:
++            P += u * q
++    ratio = (L / P) if P > 0 else (float("inf") if L > 0 else 0.0)
++    return L, P, ratio
++
++
++def plan(levels, price, side, p: Params) -> Plan:
++    """price - цена с исполняемой стороны стакана (лонг: bid, шорт: ask)."""
++    L, P, ratio = _stats(levels, price, side, p.fee_taker)
++    res = Plan(False, "", L, P, ratio, ratio_after=ratio)
++
++    if ratio <= p.trigger:
++        res.reason = f"L/P={ratio:.3f} не выше порога {p.trigger}"
++        return res
++    res.triggered = True
++
++    pool = P - p.min_pnl                      # сколько убытка можно закрыть
++    budget = min(L, (L - p.target * P) / (1 - p.target))
++    res.budget = budget
++    if pool <= EPS:
++        res.reason = "нет прибыли для покрытия"
++        return res
++
++    per = [(i, _per_coin(lv, price, side, p.fee_taker)) for i, lv in enumerate(levels)]
++    losers = sorted([(i, u) for i, u in per if u < 0], key=lambda x: x[1])   # самый убыточный первым
++    donors = sorted([(i, u) for i, u in per if u > 0], key=lambda x: x[1])   # наименее прибыльный первым
++
++    pieces, loss_closed, budget_left = [], 0.0, budget
++    for i, u in losers:
++        if budget_left <= EPS:
++            break
++        lv, c = levels[i], -u
++        qmax = min(lv.qty, budget_left / c, (pool - loss_closed) / c)
++        if qmax >= lv.qty - EPS:
++            q = lv.qty
++        else:
++            q = _floor_step(qmax, p.qty_step)
++            if lv.qty - q < p.min_qty - EPS:          # остаток не меньше min_qty
++                q = _floor_step(lv.qty - p.min_qty, p.qty_step)
++        if q < p.min_qty - EPS:
++            continue                                  # на этот уровень не хватает, идём к следующему
++        pieces.append(Piece(i, "loss", q, u * q))
++        loss_closed += c * q
++        budget_left -= c * q
++
++    if not pieces:
++        res.reason = "прибыли не хватает даже на минимальный кусок"
++        return res
++
++    need = loss_closed + p.min_pnl
++    for i, u in donors:
++        if need <= EPS:
++            break
++        lv = levels[i]
++        q = _ceil_step(need / u, p.qty_step)
++        q = max(q, p.min_qty)
++        if q >= lv.qty - EPS or lv.qty - q < p.min_qty - EPS:
++            q = lv.qty
++        pieces.append(Piece(i, "donor", q, u * q))
++        need -= u * q
++    if need > 1e-7:
++        res.pieces, res.reason = [], "доноры не покрывают закрываемый убыток"
++        return res
++
++    # состояние после плана
++    left = {i: lv.qty for i, lv in enumerate(levels)}
++    for pc in pieces:
++        left[pc.level_idx] -= pc.qty
++    _, _, res.ratio_after = _stats(levels, price, side, p.fee_taker, left)
++
++    res.pieces = pieces
++    res.total_qty = sum(pc.qty for pc in pieces)
++    res.pnl = sum(pc.pnl for pc in pieces)
++    res.reason = "ok"
++    return res
+\ No newline at end of file
