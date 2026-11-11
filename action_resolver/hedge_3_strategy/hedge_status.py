@@ -17,4 +17,5 @@ class HedgeStatus:
     zone_low: float | None = None
     zone_high: float | None = None
     unwind_wait: bool = False   # сворачивать пора, но безубытка нет
-    scheme: str = "A" 
+    scheme: str = "A"
+    scheme_info: str = ""   # схема B: L/P и объём к закрытию 

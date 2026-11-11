@@ -18,13 +18,24 @@ UNWIND_MIN_PNL = 0.0
 UNWIND_PROFIT_ORDER = "least_first"
 
 
+# Схема B: хвосты по L/P, как в пирамиде 2. Значения стартовые, их
+# подбираем по результатам; в конфиг выносим, если понадобится.
+SCHEME_B_TRIGGER_PCT = 10.0     # порог L/P, %
+SCHEME_B_TARGET_PCT = 5.0       # целевое L/P после сворачивания, %
+SCHEME_B_MIN_PNL = 0.0          # итог ордера не ниже, USDT
+SCHEME_B_MIN_STACK_PCT = 0.0    # минимальный стек, % от баланса
+SCHEME_B_PROFIT_ORDER = "most_first"   # как в пирамиде (по умолчанию)
+
+
 @dataclass
 class UnwindResult:
-    found: bool       # есть безубыточный объём для закрытия
+    found: bool       # есть объём для закрытия
     qty: float        # объём к закрытию, монет
     price: float      # плановая цена (граница лимитного ордера)
-    steps: int        # сколько шагов закрываем
+    steps: int        # схема A: сколько шагов закрываем (схема B: 0)
     wait: bool        # условие сворачивания выполнено, но безубытка нет
+    min_pnl: float = UNWIND_MIN_PNL
+    profit_order: str = UNWIND_PROFIT_ORDER
 
 
 @dataclass

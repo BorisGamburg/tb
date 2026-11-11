@@ -16,13 +16,20 @@ from action_resolver.hedge_3_strategy.hedge_regulator import (
 )
 from action_resolver.hedge_3_strategy.hedge_unwind import (
     HoldResult,
+    UnwindResult,
     find_unwind_qty,
+    SCHEME_B_MIN_PNL,
+    SCHEME_B_MIN_STACK_PCT,
+    SCHEME_B_PROFIT_ORDER,
+    SCHEME_B_TARGET_PCT,
+    SCHEME_B_TRIGGER_PCT,
 )
 from action_resolver.hedge_3_strategy.hedge_status import HedgeStatus
 from action_resolver.hedge_3_strategy.position_info import (
     PositionInfo,
 )
 from action_processor.bootstrap import AppContext
+from common.unwind.unwind_advisor import UnwindAdvisor, UnwindConfig
 
 
 
@@ -70,6 +77,11 @@ class HedgeModeMng:
             symbol=self.symbol,
             side=self.hedge_side,
         )        
+
+        self.unwind_advisor = UnwindAdvisor(
+            proxy_driver=self.proxy_driver,
+            trading_info=trading_info,
+        )
 
         self.protect_check = HedgeProtectCheck(
             hedge_side=self.hedge_side,
@@ -204,19 +216,65 @@ class HedgeModeMng:
         return result, status
 
     def _check_scheme_b(self, ctx: HedgeContext):
-        # TODO: схема B (хвосты по L/P, как в пирамиде 2)
+        """Схема B: основная позиция в плюсе или её нет. Хвосты хеджа
+        сворачиваем по L/P тем же советчиком, что и в пирамиде 2."""
         main_qty = ctx.main_position.qty
         cur_ratio = ctx.hedge_position.qty / main_qty if main_qty > 0 else 0.0
+
+        config = UnwindConfig(
+            symbol=self.symbol,
+            side=self.hedge_side,
+            trigger_pct=SCHEME_B_TRIGGER_PCT,
+            target_pct=SCHEME_B_TARGET_PCT,
+            min_pnl=SCHEME_B_MIN_PNL,
+            min_stack_pct=SCHEME_B_MIN_STACK_PCT,
+        )
+        report = self.unwind_advisor.check(config, ctx.entries)
+
+        if report is not None and report.qty_to_close > 0:
+            mode = HedgeMode.UNWIND
+            result = UnwindResult(
+                found=True,
+                qty=report.qty_to_close,
+                price=report.price,
+                steps=0,
+                wait=False,
+                min_pnl=SCHEME_B_MIN_PNL,
+                profit_order=SCHEME_B_PROFIT_ORDER,
+            )
+        else:
+            mode = HedgeMode.HOLD
+            result = HoldResult()
+
         status = HedgeStatus(
             bid=ctx.bid,
             ask=ctx.ask,
             protection_current=cur_ratio,
             protection_required=0.0,
             pnl=ctx.main_unrealised_pnl,
-            mode=HedgeMode.HOLD,
+            mode=mode,
             scheme="B",
+            scheme_info=self._format_scheme_b(report),
         )
-        return HoldResult(), status
+        return result, status
+
+    @staticmethod
+    def _format_scheme_b(report) -> str:
+        if report is None:
+            return "STACK: empty"
+        plan = report.plan
+        ratio = "∞" if plan.ratio == float("inf") else f"{plan.ratio * 100:.1f}%"
+        trigger = f"{SCHEME_B_TRIGGER_PCT:g}%"
+        if report.stack_pct < SCHEME_B_MIN_STACK_PCT:
+            return (
+                f"STACK {report.stack_pct:.1f}% < "
+                f"{SCHEME_B_MIN_STACK_PCT:g}% | L/P {ratio}"
+            )
+        if not plan.triggered:
+            return f"L/P {ratio} ≤ {trigger} | L {plan.L:.4f} P {plan.P:.4f}"
+        if not plan.pieces:
+            return f"L/P {ratio} > {trigger} | donors don't cover"
+        return f"L/P {ratio} > {trigger} | CLOSE {plan.total_qty:g}"
 
     def _get_positions_data(self):
         main_pos = self.proxy_driver.get_position(

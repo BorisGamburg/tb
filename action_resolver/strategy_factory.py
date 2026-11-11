@@ -125,6 +125,33 @@ class StrategyFactory:
             return state_store, strategy, trading_info
 
         # =========================================================
+        # --- СТРАТЕГИЯ: hedge_3 ---
+        # =========================================================
+        if strategy_name == "hedge_3":
+            from action_resolver.hedge_3_strategy.hedge_3_schema import Hedge3Schema
+            from action_resolver.hedge_3_strategy.hedge_3_strategy import Hedge3Strategy
+
+            # Валидируем данные через Pydantic
+            config_data = Hedge3Schema.model_validate(parsed_data)
+
+            trading_info = cls._load_trading_info(
+                symbol=config_data.symbol,
+                proxy_driver=app_ctx.proxy_driver,
+            )
+
+            # Создаем State
+            state_store = State(config_file=config_file, config_data=config_data, logger=app_ctx.logger)
+
+            # Создаем объект стратегии
+            strategy = Hedge3Strategy(
+                state_store=state_store,
+                app_ctx=app_ctx,
+                trading_info=trading_info,
+            )
+
+            return state_store, strategy, trading_info
+
+        # =========================================================
         # --- СТРАТЕГИЯ 3: pyramid ---
         # =========================================================
         if strategy_name == "pyramid":

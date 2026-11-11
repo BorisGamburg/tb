@@ -1,23 +1,24 @@
-"""Советчик свёртывания для пирамиды: решает, нужно ли свёртывать стек и
+"""Советчик сворачивания: решает, нужно ли свёртывать стек и
 сколько закрыть. Ничего не исполняет.
 
-Условия (размер стека, порог L/P) и планировщик (pyr_loss_fold_planner)
-живут здесь, а не в Unwinder: у каждой стратегии свои условия. Результат -
-FoldReport: сырые данные расчёта плюс объём к закрытию (qty_to_close).
+Условия (размер стека, порог L/P) и планировщик (unwind_planner)
+живут здесь, а не в Unwinder: Unwinder только исполняет. Модуль общий
+для стратегий, настройки каждая передаёт через UnwindConfig. Результат -
+UnwindReport: сырые данные расчёта плюс объём к закрытию (qty_to_close).
 Что из отчёта показывать в строке статуса, решает стратегия.
 """
 from dataclasses import dataclass
 from typing import Any
 
-from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
+from common.unwind.unwind_planner import (
     Params,
     plan as make_plan,
 )
 
 
 @dataclass(frozen=True, slots=True)
-class FoldConfig:
-    """Настройки свёртывания пирамиды на данный вызов."""
+class UnwindConfig:
+    """Настройки сворачивания на данный вызов."""
     symbol: str
     side: str               # сторона свёртываемых уровней ("Buy" / "Sell")
     trigger_pct: float      # порог L/P, %
@@ -27,7 +28,7 @@ class FoldConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class FoldReport:
+class UnwindReport:
     """Сырые входы и выход проверки свёртывания на тике."""
     entries: Any            # уровни стека, по которым считался план
     stack_pct: float        # стоимость стека, % от баланса
@@ -37,13 +38,13 @@ class FoldReport:
     qty_to_close: float     # сколько закрыть; 0 - свёртывать не нужно
 
 
-class PyrFoldAdvisor:
+class UnwindAdvisor:
 
     def __init__(self, proxy_driver, trading_info):
         self.proxy_driver = proxy_driver
         self.trading_info = trading_info
 
-    def check(self, config: FoldConfig, entries) -> FoldReport | None:
+    def check(self, config: UnwindConfig, entries) -> UnwindReport | None:
         """None - стек пуст, расчёт не выполнялся."""
         side = config.side
 
@@ -76,7 +77,7 @@ class PyrFoldAdvisor:
         ):
             qty_to_close = plan.total_qty
 
-        return FoldReport(
+        return UnwindReport(
             entries=entries,
             stack_pct=stack_pct,
             price=price,

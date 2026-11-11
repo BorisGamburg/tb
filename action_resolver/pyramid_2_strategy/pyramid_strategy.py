@@ -2,9 +2,9 @@ from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
 from common.trading_info import TradingInfo
-from action_resolver.pyramid_2_strategy.pyr_fold_advisor import (
-    FoldConfig,
-    PyrFoldAdvisor,
+from common.unwind.unwind_advisor import (
+    UnwindConfig,
+    UnwindAdvisor,
 )
 from common.unwind.unwinder import Unwinder
 from action_processor.action import Action
@@ -25,7 +25,7 @@ from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
     PyrDustCleaner,
 )
-from action_resolver.pyramid_2_strategy.pyr_loss_fold_planner import (
+from common.unwind.unwind_planner import (
     _per_coin,
 )
 from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
@@ -85,7 +85,7 @@ class PyramidStrategy(BaseStrategy):
             logger=app_ctx.logger,
         )
 
-        self.unwind_advisor = PyrFoldAdvisor(
+        self.unwind_advisor = UnwindAdvisor(
             proxy_driver=app_ctx.proxy_driver,
             trading_info=trading_info,
         )
@@ -110,7 +110,7 @@ class PyramidStrategy(BaseStrategy):
             return profit_close_result
 
         # Проверяем Unwind
-        close_result, close_found, fold_report = self._process_close()
+        close_result, close_found, unwind_report = self._process_close()
         if close_found:
             return close_result
 
@@ -118,7 +118,7 @@ class PyramidStrategy(BaseStrategy):
         entry_result, executed = self._process_open()
 
         # Строка статуса строится здесь, один раз, в конце
-        status = self._build_status_line(entry_result, fold_report)
+        status = self._build_status_line(entry_result, unwind_report)
 
         return ResolveResult(executed=executed, status=status)
 
@@ -192,10 +192,10 @@ class PyramidStrategy(BaseStrategy):
             status="",
         ), True, unwind_report
 
-    def _unwind_config(self) -> FoldConfig:
+    def _unwind_config(self) -> UnwindConfig:
         """Настройки свёртывания из состояния стратегии (читаются на каждом тике)."""
         data = self.state_store.data
-        return FoldConfig(
+        return UnwindConfig(
             symbol=data.symbol,
             side=data.side,
             trigger_pct=data.trigger_pct,
@@ -319,7 +319,7 @@ class PyramidStrategy(BaseStrategy):
             status="",
         ), True
 
-    def _build_status_line(self, entry_result, fold_report) -> str:
+    def _build_status_line(self, entry_result, unwind_report) -> str:
         ticker = self.app_ctx.proxy_driver.get_ticker(
             self.state_store.data.symbol
         )
@@ -358,14 +358,14 @@ class PyramidStrategy(BaseStrategy):
             dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
             status += f"DIST: {dist_marker} | "
 
-        fold_status = self._format_fold_status(fold_report)
-        if fold_status:
-            status += fold_status + " | "
+        unwind_status = self._format_unwind_status(unwind_report)
+        if unwind_status:
+            status += unwind_status + " | "
 
         return status.rstrip(" |")
 
-    def _format_fold_status(self, report) -> str:
-        """Fold-часть строки статуса из сырых данных FoldReport."""
+    def _format_unwind_status(self, report) -> str:
+        """Unwind-часть строки статуса из сырых данных UnwindReport."""
         if report is None:
             return ""
         data = self.state_store.data
@@ -384,14 +384,14 @@ class PyramidStrategy(BaseStrategy):
         if not plan.pieces:
             return (
                 f"UNWIND: 🟠 L/P {ratio} > {data.trigger_pct:g}% | "
-                + self._fold_no_cover_reason(report)
+                + self._unwind_no_cover_reason(report)
             )
         return (
             f"UNWIND: 🟢 L/P {ratio} > {data.trigger_pct:g}% | "
             f"CLOSE {plan.total_qty:g}"
         )
 
-    def _fold_no_cover_reason(self, report) -> str:
+    def _unwind_no_cover_reason(self, report) -> str:
         """Почему план не построен: сколько прибыли есть и сколько нужно
         минимум (min_qty монет самого дешёвого по убытку уровня)."""
         plan, params = report.plan, report.params

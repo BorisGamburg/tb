@@ -10,11 +10,7 @@ from action_processor.action import Action, ActionCommand
 from signals.ha_reversal_signal import HAReversalSignal
 from action_resolver.hedge_3_strategy.build_mng import calc_hedge_qty
 from action_processor.action_service import ActionService
-from action_resolver.hedge_3_strategy.hedge_unwind import (
-    UNWIND_MIN_PNL,
-    UNWIND_PROFIT_ORDER,
-    UnwindResult,
-)
+from action_resolver.hedge_3_strategy.hedge_unwind import UnwindResult
 from common.unwind.unwinder import Unwinder
 from common.level_distance_checker import is_level_distance_allowed
 
@@ -80,6 +76,11 @@ class Hedge3Strategy(BaseStrategy):
         else:
             zone = "—"
 
+        if status.scheme == "B":
+            tail = f"UNWIND: {status.scheme_info}"
+        else:
+            tail = f"ZONE: {zone}"
+
         build_indicator = ""
         if status.mode.name == "BUILD":
             ha_status = "ALLOW" if build_trend_active else "BLOCK"
@@ -97,7 +98,7 @@ class Hedge3Strategy(BaseStrategy):
             f"SCHEME: {status.scheme} | "
             f"MODE: {mode_text}"
             f"{build_indicator} | "
-            f"ZONE: {zone} | "
+            f"{tail} | "
             f"RECOVERY: {'ON' if self.state_store.data.recovery_enabled else 'OFF'}  "
             f"TF: {self.state_store.data.recovery_timeframe}"
         )
@@ -219,8 +220,8 @@ class Hedge3Strategy(BaseStrategy):
                 symbol=self.symbol,
                 qty=result.qty,
                 price=result.price,
-                min_pnl=UNWIND_MIN_PNL,
-                profit_order=UNWIND_PROFIT_ORDER,
+                min_pnl=result.min_pnl,
+                profit_order=result.profit_order,
             )
         except Exception as e:
             raise RuntimeError(
