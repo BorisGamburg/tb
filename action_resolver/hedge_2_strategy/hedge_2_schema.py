@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
 from action_processor.state.pct import Pct
 from action_processor.state.stack_schema import StackData
@@ -20,6 +20,16 @@ class Hedge2Schema(BaseModel):
 
     profit_tolerance_pct: Pct
     loss_tolerance_pct: Pct
+
+    protect_ratio_factor: float = Field(
+        default=1.0,
+        ge=0.0,
+    )
+    max_hedge_ratio: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+    )
         
     # Start
     start_tf: AllowedTimeframes | None

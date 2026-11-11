@@ -53,7 +53,8 @@ class HedgeModeMng:
         self.profit_tolerance_ratio = state_store.data.profit_tolerance_pct / 100
         self.loss_tolerance_ratio = state_store.data.loss_tolerance_pct / 100
         self.hedge_qty_ratio = state_store.data.hedge_qty_pct / 100
-        self.max_hedge_ratio = 0.5
+        self.protect_ratio_factor = state_store.data.protect_ratio_factor
+        self.max_hedge_ratio = state_store.data.max_hedge_ratio
         self.prev_work_price: float | None = None
         self.trend_active: bool
 
@@ -72,6 +73,7 @@ class HedgeModeMng:
 
         self.protect_check = HedgeProtectCheck(
             hedge_side=self.hedge_side,
+            protect_ratio_factor=self.protect_ratio_factor,
             max_hedge_ratio=self.max_hedge_ratio,
         )
 
