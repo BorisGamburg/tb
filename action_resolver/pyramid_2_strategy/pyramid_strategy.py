@@ -20,7 +20,6 @@ from action_resolver.pyramid_2_strategy.pyr_partial_close_calculator import (
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
 )
-from action_resolver.pyramid_2_strategy.pyr_tp_checker import PyrTPChecker
 from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
     PyrDustCleaner,
@@ -69,14 +68,6 @@ class PyramidStrategy(BaseStrategy):
             trading_info=trading_info,
         )
 
-        self.profit_close_checker = PyrTPChecker(
-            proxy_driver=app_ctx.proxy_driver,
-            symbol=state_store.data.symbol,
-            side=state_store.data.side,
-            price_service=app_ctx.price_service,
-            fee_taker=trading_info.fee_taker,
-        )
-
         self.dust_cleaner = PyrDustCleaner(
             symbol=state_store.data.symbol,
             side=state_store.data.side,
@@ -103,11 +94,6 @@ class PyramidStrategy(BaseStrategy):
         dust_result, dust_found = self._process_dust_close()
         if dust_found:
             return dust_result
-
-        # Проверяем закрытие всей пирамиды по прибыли
-        profit_close_result, profit_close_found = self._process_profit_close()
-        if profit_close_found:
-            return profit_close_result
 
         # Проверяем Unwind
         close_result, close_found, unwind_report = self._process_close()
@@ -269,55 +255,6 @@ class PyramidStrategy(BaseStrategy):
             rearm_result = self.action_service.process_action(rearm_command)
             if rearm_result.executed:
                 break
-
-    def _process_profit_close(self) -> tuple[ResolveResult, bool]:
-        # Если стек пуст, то закрытие по прибыли не проверяем
-        entries = self.state_store.data.stack.entries
-        if len(entries) == 0:
-            return ResolveResult(executed=False, status=""), False
-
-        # Определяем таймфрейм предыдущего уровня
-        current_tf = self.state_store.data.entry_tf
-        current_index = self.BASE_TIMEFRAMES.index(current_tf)
-
-        if current_index == 0:
-            raise ValueError(
-                f"Cannot determine close timeframe: "
-                f"entry_tf is already at minimum ({current_tf})"
-            )
-
-        close_tf = self.BASE_TIMEFRAMES[current_index - 1]
-
-        # Получаем уровни, достигшие безубыточности с учётом комиссий
-        # и дополнительного порога прибыли 0.1%.
-        profitable_levels = self.profit_close_checker.check(
-            entries,
-            close_tf,
-        )
-
-        if not profitable_levels:
-            return ResolveResult(executed=False, status=""), False
-
-        # Закрываем только уровни пирамиды (Action.CLOSE на их суммарный qty),
-        # а не всю биржевую позицию: в ней могут быть позиции других стратегий.
-        # levels — копия: Accounting удаляет уровни из того же списка entries.
-        levels = profitable_levels
-        action_command = ActionCommand(
-            action=Action.CLOSE,
-            symbol=self.state_store.data.symbol,
-            side=get_inverse_side(self.state_store.data.side),
-            qty=round(sum(level.qty for level in levels), 8),
-            levels=levels,
-            reason="PYRAMID_PROFIT_CLOSE",
-        )
-
-        self.action_service.notify_action(action_command)
-        exec_result = self.close_processor.execute_profit_close(action_command)
-
-        return ResolveResult(
-            executed=exec_result.executed,
-            status="",
-        ), True
 
     def _build_status_line(self, entry_result, unwind_report) -> str:
         ticker = self.app_ctx.proxy_driver.get_ticker(
