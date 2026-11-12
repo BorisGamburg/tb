@@ -8,7 +8,6 @@ class BuildResult:
     allowed: bool
     side: str
     qty: float
-    trend_active: bool
     distance_allowed: bool
 
 def calc_hedge_qty(
@@ -23,7 +22,6 @@ def calc_hedge_qty(
     return trading_info.get_valid_order_qty(hedge_qty)
 
 def check_build(
-    trend_active: bool,
     work_price: float,
     entries,
     hedge_step_ratio: float,
@@ -53,17 +51,6 @@ def check_build(
             allowed=False,
             side=hedge_side,
             qty=hedge_qty,
-            trend_active=trend_active,
-            distance_allowed=distance_allowed,
-        )
-
-    # Без активного тренда новые уровни защиты не строим
-    if not trend_active:
-        return BuildResult(
-            allowed=False,
-            side=hedge_side,
-            qty=hedge_qty,
-            trend_active=trend_active,
             distance_allowed=distance_allowed,
         )
 
@@ -72,7 +59,6 @@ def check_build(
             allowed=False,
             side=hedge_side,
             qty=hedge_qty,
-            trend_active=trend_active,
             distance_allowed=distance_allowed,
         )
 
@@ -80,6 +66,5 @@ def check_build(
         allowed=True,
         side=hedge_side,
         qty=hedge_qty,
-        trend_active=trend_active,
         distance_allowed=distance_allowed,
     )
