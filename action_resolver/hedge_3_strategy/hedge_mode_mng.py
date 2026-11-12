@@ -4,7 +4,6 @@ from action_resolver.hedge_3_strategy.hedge_mode_selector import (
     HedgeProtectCheck,
     HedgeMode,
 )
-from common.ha_trend_checker import HATrendChecker
 from action_resolver.hedge_3_strategy.build_mng import (
     calc_hedge_qty,
     check_build,
@@ -43,7 +42,6 @@ class HedgeContext:
     main_position: PositionInfo
     main_unrealised_pnl: float
     entries: list
-    trend_active: bool
     hedge_qty_ratio: float
     hedge_step_ratio: float
     profit_tolerance_ratio: float
@@ -68,15 +66,9 @@ class HedgeModeMng:
         self.profit_tolerance_ratio = state_store.data.profit_tolerance_pct / 100
         self.loss_tolerance_ratio = state_store.data.loss_tolerance_pct / 100
         self.hedge_qty_ratio = state_store.data.hedge_qty_pct / 100
-        self.max_hedge_ratio = 0.5
+        self.protect_ratio_factor = state_store.data.protect_ratio_factor
+        self.max_hedge_ratio = state_store.data.max_hedge_ratio
         self.prev_work_price: float | None = None
-        self.trend_active: bool
-
-        self.ha_trend = HATrendChecker(
-            proxy_driver=self.proxy_driver,
-            symbol=self.symbol,
-            side=self.hedge_side,
-        )        
 
         self.unwind_advisor = UnwindAdvisor(
             proxy_driver=self.proxy_driver,
@@ -85,6 +77,7 @@ class HedgeModeMng:
 
         self.protect_check = HedgeProtectCheck(
             hedge_side=self.hedge_side,
+            protect_ratio_factor=self.protect_ratio_factor,
             max_hedge_ratio=self.max_hedge_ratio,
         )
 
@@ -107,11 +100,6 @@ class HedgeModeMng:
             main_position,
         )
 
-        # Проверяем, активен ли тренд 
-        self.trend_active = self.ha_trend.is_active(
-            self.state_store.data.start_tf,
-        )        
-
         # Формируем HedgeContext
         ctx = HedgeContext(
             work_price=work_price,
@@ -122,7 +110,6 @@ class HedgeModeMng:
             main_position=main_position,
             main_unrealised_pnl=main_unrealised_pnl,
             entries=self.state_store.stack_mng.data.entries,
-            trend_active=self.trend_active,
             hedge_qty_ratio=self.hedge_qty_ratio,
             hedge_step_ratio=self.hedge_step_ratio,
             profit_tolerance_ratio=self.profit_tolerance_ratio,
@@ -176,7 +163,6 @@ class HedgeModeMng:
         if decision.action == RegAction.BUILD:
             mode = HedgeMode.BUILD
             result = check_build(
-                trend_active=ctx.trend_active,
                 work_price=ctx.work_price,
                 entries=ctx.entries,
                 hedge_step_ratio=ctx.hedge_step_ratio,

@@ -71,10 +71,17 @@ class FillApplier:
         # Применяем списания к уровням стека
         self.action_service.accounting.reduce_levels(levels, reductions)
 
+        # Списания в логе: цена уровня и объём, только ненулевые. Индексы
+        # в reductions относятся к порядку списка стека, а в отчёте стек
+        # печатается по цене, поэтому индексы там не совпадают.
+        reductions_log = ", ".join(
+            f"{lv.price}:{r}" for lv, r in zip(levels, reductions) if r > 0
+        )
+
         self.logger.info(
             f"[FOLD] closed | price={exec_result.price} | "
             f"qty={exec_result.qty} | pnl={res.pnl / PNL_SCALE:.8f} | "
-            f"reductions={reductions}"
+            f"reductions=[{reductions_log}]"
         )
 
     def estimate(

@@ -20,6 +20,9 @@ class Hedge3Schema(BaseModel):
 
     profit_tolerance_pct: Pct
     loss_tolerance_pct: Pct
+
+    protect_ratio_factor: float = 1.0
+    max_hedge_ratio: float = 0.5    
         
     # Start
     start_tf: AllowedTimeframes | None

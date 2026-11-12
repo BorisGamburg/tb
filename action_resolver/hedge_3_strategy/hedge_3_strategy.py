@@ -58,51 +58,6 @@ class Hedge3Strategy(BaseStrategy):
 
         self._log_parameters()
 
-    def __build_status_line(
-        self,
-        status: HedgeStatus,
-        build_trend_active: bool = False,
-        build_distance_allowed: bool = False,
-    ) -> str:
-        protection_ok = status.protection_current >= status.protection_required
-        protection_mark = "✓" if protection_ok else "✗"
-
-        mode_text = status.mode.name
-        if status.mode.name == "UNWIND" and status.unwind_wait:
-            mode_text = "UNWIND (WAIT)"
-
-        if status.zone_low is not None and status.zone_high is not None:
-            zone = f"{status.zone_low:.3f} — {status.zone_high:.3f}"
-        else:
-            zone = "—"
-
-        if status.scheme == "B":
-            tail = f"UNWIND: {status.scheme_info}"
-        else:
-            tail = f"ZONE: {zone}"
-
-        build_indicator = ""
-        if status.mode.name == "BUILD":
-            ha_status = "ALLOW" if build_trend_active else "BLOCK"
-            dist_marker = "🟢" if build_distance_allowed else "🔴"
-            build_indicator = (
-                f"  HA({self.state_store.data.start_tf}m): {ha_status} "
-                f" DIST: {dist_marker}"
-            )
-
-        return (
-            f"BID/ASK: {status.bid:.6f} — {status.ask:.6f} | "
-            f"PROTECTION: cur={status.protection_current:.3f} "
-            f"req={status.protection_required:.3f} {protection_mark} | "
-            f"PNL: {status.pnl:+.6f} | "
-            f"SCHEME: {status.scheme} | "
-            f"MODE: {mode_text}"
-            f"{build_indicator} | "
-            f"{tail} | "
-            f"RECOVERY: {'ON' if self.state_store.data.recovery_enabled else 'OFF'}  "
-            f"TF: {self.state_store.data.recovery_timeframe}"
-        )
-
     def _log_parameters(self) -> None:
         self.app_ctx.logger.info(
             f"Symbol: {self.state_store.data.symbol} | "
@@ -258,26 +213,6 @@ class Hedge3Strategy(BaseStrategy):
             f"Unsupported action in Hedge3Strategy: {action_command.action}"
         ) 
 
-    def _build_status_line(self, mode_result, status):
-        build_trend_active = (
-            mode_result.trend_active
-            if status.mode.name == "BUILD"
-            else False
-        )
-
-        build_distance_allowed = (
-            mode_result.distance_allowed
-            if status.mode.name == "BUILD"
-            else False
-        )
-
-        status_line = self.__build_status_line(
-            status=status,
-            build_trend_active=build_trend_active,
-            build_distance_allowed=build_distance_allowed,
-        )
-        return status_line   
-
     def _check_level_distance(
         self,
         side: str,
@@ -297,3 +232,55 @@ class Hedge3Strategy(BaseStrategy):
             entries=entries,
             hedge_step_ratio=hedge_step_ratio,
         )
+
+    def __build_status_line(
+        self,
+        status: HedgeStatus,
+        build_distance_allowed: bool = False,
+    ) -> str:
+        protection_ok = status.protection_current >= status.protection_required
+        protection_mark = "✓" if protection_ok else "✗"
+
+        mode_text = status.mode.name
+        if status.mode.name == "UNWIND" and status.unwind_wait:
+            mode_text = "UNWIND (WAIT)"
+
+        if status.zone_low is not None and status.zone_high is not None:
+            zone = f"{status.zone_low:.3f} — {status.zone_high:.3f}"
+        else:
+            zone = "—"
+
+        if status.scheme == "B":
+            tail = f"UNWIND: {status.scheme_info}"
+        else:
+            tail = f"ZONE: {zone}"
+
+        build_indicator = ""
+        if status.mode.name == "BUILD":
+            dist_marker = "🟢" if build_distance_allowed else "🔴"
+            build_indicator = f"  DIST: {dist_marker}"
+
+        return (
+            f"BID/ASK: {status.bid:.6f} — {status.ask:.6f} | "
+            f"PROTECTION: cur={status.protection_current:.3f} "
+            f"req={status.protection_required:.3f} {protection_mark} | "
+            f"PNL: {status.pnl:+.6f} | "
+            f"SCHEME: {status.scheme} | "
+            f"MODE: {mode_text}"
+            f"{build_indicator} | "
+            f"{tail} | "
+            f"RECOVERY: {'ON' if self.state_store.data.recovery_enabled else 'OFF'}  "
+            f"TF: {self.state_store.data.recovery_timeframe}"
+        )    
+
+    def _build_status_line(self, mode_result, status):
+        build_distance_allowed = (
+            mode_result.distance_allowed
+            if status.mode.name == "BUILD"
+            else False
+        )
+
+        return self.__build_status_line(
+            status=status,
+            build_distance_allowed=build_distance_allowed,
+        )    

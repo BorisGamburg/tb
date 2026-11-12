@@ -22,12 +22,13 @@ class HedgeProtectCheck:
     def __init__(
         self,
         hedge_side: str,
+        protect_ratio_factor: float,
         max_hedge_ratio: float,
     ):
         self.hedge_side = hedge_side
         self.main_side = "Sell" if hedge_side == "Buy" else "Buy"
+        self.protect_ratio_factor = protect_ratio_factor
         self.max_hedge_ratio = max_hedge_ratio
-        self.protect_ratio_factor = 1.0
 
     def _calc_protect_ratios(
         self,
