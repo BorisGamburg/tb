@@ -89,8 +89,10 @@ class PyrEntryChecker:
         cur_price = float(self.proxy_driver.get_last_price(self.symbol))
         raw_qty, qty = self.qty_calculator.calculate()
 
+        # Проверяем сигнал на базовый уровень
         base_result = self.base_level_checker.check(cur_price, entries, entry_tf)
 
+        # Активен ли тренд?
         trend_active = self.ha_trend.is_active(entry_tf)
         if not trend_active:
             return PyrdEntryResult(
@@ -104,6 +106,7 @@ class PyrEntryChecker:
                 ha_breakout=base_result.ha_breakout,
             )
 
+        # Проверяем дистанцию 
         distance_allowed = is_level_distance_allowed(
             cur_price=cur_price,
             entries=entries,
@@ -124,6 +127,7 @@ class PyrEntryChecker:
         if base_result.allowed:
             level_type = "base"
         else:
+            # Проверяем есть ли хотя бы один уровень который ниже текущей цены (для Buy) или выше текущей цены (для Sell)
             extension_result = self.extension_level_checker.check(
                 cur_price,
                 entries,
@@ -142,6 +146,8 @@ class PyrEntryChecker:
 
             level_type = "extension"
 
+        # Если мы пришли сюда, значит базовый или extension уровень разрешен, тренд активен и дистанция разрешена
+        # Проверяем не превышает ли позиция лимит
         position_limit_blocked = (
             qty > 0
             and not is_position_limit_allowed(
