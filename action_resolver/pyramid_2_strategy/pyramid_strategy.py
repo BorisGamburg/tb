@@ -20,10 +20,6 @@ from action_resolver.pyramid_2_strategy.pyr_partial_close_calculator import (
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
 )
-from utils.utils import get_inverse_side
-from action_resolver.pyramid_2_strategy.pyr_dust_cleaner import (
-    PyrDustCleaner,
-)
 from common.unwind.unwind_planner import (
     _per_coin,
 )
@@ -68,14 +64,6 @@ class PyramidStrategy(BaseStrategy):
             trading_info=trading_info,
         )
 
-        self.dust_cleaner = PyrDustCleaner(
-            symbol=state_store.data.symbol,
-            side=state_store.data.side,
-            price_service=app_ctx.price_service,
-            trading_info=trading_info,
-            logger=app_ctx.logger,
-        )
-
         self.unwind_advisor = UnwindAdvisor(
             proxy_driver=app_ctx.proxy_driver,
             trading_info=trading_info,
@@ -90,11 +78,6 @@ class PyramidStrategy(BaseStrategy):
         self._log_parameters()
 
     def resolve(self) -> ResolveResult:
-        # Проверяем закрытие dust-уровня
-        dust_result, dust_found = self._process_dust_close()
-        if dust_found:
-            return dust_result
-
         # Проверяем Unwind
         close_result, close_found, unwind_report = self._process_close()
         if close_found:
@@ -391,33 +374,3 @@ class PyramidStrategy(BaseStrategy):
             f"from {current_tf} to {next_tf}"
         )
 
-    def _process_dust_close(self) -> tuple[ResolveResult, bool]:
-
-        entries = self.state_store.data.stack.entries
-
-        level, close_qty = self.dust_cleaner.find_closeable_level(
-            entries
-        )
-
-        if level is None:
-            return ResolveResult(executed=False, status=""), False
-
-        action_command = ActionCommand(
-            action=Action.CLOSE,
-            symbol=self.state_store.data.symbol,
-            side=get_inverse_side(self.state_store.data.side),
-            qty=close_qty,
-            levels=[level],
-            reason="PYRAMID_DUST_CLOSE",
-        )
-
-        self.action_service.notify_action(action_command)
-
-        exec_result = self.close_processor.execute_profit_close(
-            action_command
-        )
-
-        return ResolveResult(
-            executed=exec_result.executed,
-            status="",
-        ), True
