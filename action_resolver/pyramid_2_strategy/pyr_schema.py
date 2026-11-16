@@ -18,6 +18,7 @@ class PyrSchema(BaseModel):
     entry_tf: AllowedTimeframes
     open_step_pct: Pct
     open_qty_pct: Pct
+    min_be_buffer_pct: Pct
 
     # --- Свёртывание стека по порогу L/P ---
     trigger_pct: Pct = 10.0      # запуск, если L/P выше

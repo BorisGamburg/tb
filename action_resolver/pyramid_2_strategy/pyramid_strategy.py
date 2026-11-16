@@ -1,6 +1,7 @@
 from action_resolver.base_strategy import BaseStrategy
 from action_processor.state.state import State
 from action_processor.bootstrap import AppContext
+from action_resolver.pyramid_2_strategy.pyramid_mode_resolver import PyramidModeResolver
 from common.trading_info import TradingInfo
 from common.unwind.unwind_advisor import (
     UnwindConfig,
@@ -78,18 +79,27 @@ class PyramidStrategy(BaseStrategy):
         self._log_parameters()
 
     def resolve(self) -> ResolveResult:
-        # Проверяем Unwind
-        close_result, close_found, unwind_report = self._process_close()
-        if close_found:
-            return close_result
+        data = self.state_store.data
 
-        # Проверяем открытие
-        entry_result, executed = self._process_open()
+        current_price = self.app_ctx.price_service.get_market_close_price(
+            symbol=data.symbol,
+            side=data.side,
+        )
 
-        # Строка статуса строится здесь, один раз, в конце
-        status = self._build_status_line(entry_result, unwind_report)
+        mode = PyramidModeResolver.resolve(
+            side=data.side,
+            current_price=current_price,
+            stack_mng=self.state_store.stack_mng,
+            fee_taker=self.trading_info.fee_taker,
+        )
 
-        return ResolveResult(executed=executed, status=status)
+        if mode == PyramidModeResolver.PROFIT_MODE:
+            return self._process_profit_mode()
+
+        if mode == PyramidModeResolver.RECOVERY_MODE:
+            return self._process_recovery_mode()
+
+        raise ValueError(f"Unsupported Pyramid mode: {mode}")
 
     def _process_open(self) -> tuple:
         """Возвращает (entry_result, executed)."""
