@@ -228,13 +228,13 @@ class StackMng:
         self,
         side: str,
         fee_taker: float,
-    ) -> float:
+    ) -> float | None:
         """Calculate the break-even price for the entire stack."""
 
         levels = self.data.entries
 
         if not levels:
-            raise ValueError("Cannot calculate BE for an empty stack")
+            return None
 
         if side not in ("Buy", "Sell"):
             raise ValueError(f"Unsupported position side: {side}")
@@ -286,4 +286,4 @@ class StackMng:
         else:
             denominator = total_qty * (1.0 + fee_taker)
 
-        return numerator / denominator
+        return numerator / denominator    

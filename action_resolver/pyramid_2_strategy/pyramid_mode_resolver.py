@@ -19,13 +19,16 @@ class PyramidModeResolver:
         if side not in ("Buy", "Sell"):
             raise ValueError(f"Unsupported position side: {side}")
 
-        if not isfinite(current_price) or current_price <= 0:
-            raise ValueError(f"Invalid current price: {current_price}")
-
         stack_be = stack_mng.calculate_break_even_price(
             side,
             fee_taker,
         )
+
+        if stack_be is None:
+            return PyramidModeResolver.PROFIT_MODE
+
+        if not isfinite(current_price) or current_price <= 0:
+            raise ValueError(f"Invalid current price: {current_price}")
 
         if side == "Buy":
             if current_price > stack_be:
