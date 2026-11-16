@@ -1,6 +1,7 @@
 import logging
 from typing import List, Optional
 from action_processor.state.stack_schema import StackData, StackElem
+from math import fsum, isfinite
 
 class StackMng:
     """Управляет операциями стека ордеров, используя данные из StateStore."""
@@ -223,3 +224,66 @@ class StackMng:
 
         return merged    
     
+    def calculate_break_even_price(
+        self,
+        side: str,
+        fee_taker: float,
+    ) -> float:
+        """Calculate the break-even price for the entire stack."""
+
+        levels = self.data.entries
+
+        if not levels:
+            raise ValueError("Cannot calculate BE for an empty stack")
+
+        if side not in ("Buy", "Sell"):
+            raise ValueError(f"Unsupported position side: {side}")
+
+        if not isfinite(fee_taker) or not 0 <= fee_taker < 1:
+            raise ValueError(f"Invalid taker fee rate: {fee_taker}")
+
+        total_qty = 0.0
+        weighted_prices = []
+
+        for level in levels:
+            price = level.price
+            qty = level.qty
+            fee = level.fee
+            initial_qty = level.initial_qty
+
+            if not isfinite(price) or price <= 0:
+                raise ValueError(f"Invalid level price: {price}")
+
+            if not isfinite(qty) or qty <= 0:
+                raise ValueError(f"Invalid level quantity: {qty}")
+
+            if not isfinite(fee) or fee < 0:
+                raise ValueError(f"Invalid entry fee: {fee}")
+
+            if not isfinite(initial_qty):
+                raise ValueError(
+                    f"Invalid initial quantity: {initial_qty}"
+                )
+
+            base_qty = initial_qty if initial_qty > 0 else qty
+            entry_fee_per_coin = fee / base_qty
+
+            if side == "Buy":
+                weighted_prices.append(
+                    qty * (price + entry_fee_per_coin)
+                )
+            else:
+                weighted_prices.append(
+                    qty * (price - entry_fee_per_coin)
+                )
+
+            total_qty += qty
+
+        numerator = fsum(weighted_prices)
+
+        if side == "Buy":
+            denominator = total_qty * (1.0 - fee_taker)
+        else:
+            denominator = total_qty * (1.0 + fee_taker)
+
+        return numerator / denominator
