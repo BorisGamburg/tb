@@ -31,6 +31,9 @@ from common.level_distance_checker import is_level_distance_allowed
 from action_resolver.pyramid_2_strategy.pyr_profit_mode import (
     PyrProfitMode,
 )
+from action_resolver.pyramid_2_strategy.pyr_recovery_mode import (
+    PyrRecoveryMode,
+)
 
 
 class PyramidStrategy(BaseStrategy):
@@ -87,7 +90,16 @@ class PyramidStrategy(BaseStrategy):
             action_service=self.action_service,
             open_checker=self.open_checker,
             close_processor=self.close_processor,
-        )        
+        )   
+
+        self.recovery_mode = PyrRecoveryMode(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            trading_info=trading_info,
+            action_service=self.action_service,
+            open_checker=self.open_checker,
+            close_processor=self.close_processor,
+        )             
 
         self._log_parameters()
 
@@ -110,7 +122,7 @@ class PyramidStrategy(BaseStrategy):
             return self.profit_mode.resolve()
 
         if mode == PyramidModeResolver.RECOVERY_MODE:
-            return self._process_recovery_mode()
+            return self.recovery_mode.resolve()
 
         raise ValueError(f"Unsupported Pyramid mode: {mode}")
 

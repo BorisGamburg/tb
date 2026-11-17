@@ -1,4 +1,3 @@
-from action_resolver.resolve_result import ResolveResult
 from common.level_distance_checker import is_level_distance_allowed
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
@@ -6,6 +5,12 @@ from action_resolver.pyramid_2_strategy.pyr_close_processor import (
 from action_resolver.pyramid_2_strategy.pyr_rearm import PyrRearm
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
+)
+from action_processor.action import Action, ActionCommand
+from action_resolver.resolve_result import ResolveResult
+from utils.utils import get_inverse_side
+from action_resolver.pyramid_2_strategy.pyr_compensation_planner import (
+    PyrCompensationPlanner,
 )
 
 
@@ -26,6 +31,11 @@ class PyrRecoveryMode:
         self.action_service = action_service
         self.open_checker = open_checker
         self.close_processor = close_processor
+
+        self.compensation_planner = PyrCompensationPlanner(
+            trading_info=trading_info,
+            step_ratio=open_checker.step_ratio,
+        )        
 
         self.rearm = PyrRearm(
             state_store=state_store,
@@ -51,8 +61,76 @@ class PyrRecoveryMode:
         return self._process_ha_breakout()
 
     def _process_compensation(self) -> ResolveResult | None:
-        # Пока не реализовано: расчёт и исполнение компенсации пишем отдельными шагами.
-        return None
+        data = self.state_store.data
+
+        # Цена закрытия с исполняемой стороны (Buy: Bid, Sell: Ask)
+        close_price = float(
+            self.app_ctx.price_service.get_market_close_price(
+                symbol=data.symbol,
+                side=data.side,
+            )
+        )
+
+        # Считаем компенсацию: что закрывать и в каком объёме
+        plan = self.compensation_planner.plan(
+            levels=data.stack.entries,
+            side=data.side,
+            price=close_price,
+            min_pnl=float(data.min_pnl),
+        )
+        if plan is None:
+            # Компенсации нет -> дальше проверяем HA Breakout
+            return None
+
+        # Формируем команду на закрытие связки одним ордером.
+        # limit_price: ордер не исполняется хуже цены, по которой считался план.
+        close_command = ActionCommand(
+            action=Action.CLOSE,
+            symbol=data.symbol,
+            side=get_inverse_side(data.side),
+            qty=round(plan.total_qty, 8),
+            levels=[plan.base_level, plan.loss_level],
+            reason="PYRAMID_COMPENSATION_CLOSE",
+            limit_price=close_price,
+        )
+
+        # Отправляем команду на закрытие через CloseProcessor.
+        close_result = self.close_processor.execute_compensation_close(
+            close_command,
+            base_qty=plan.base_qty,
+            loss_qty=plan.loss_qty,
+        )
+
+        # Проверяем результат исполнения команды.
+        if not close_result.execution_result.executed:
+            return ResolveResult(
+                executed=False,
+                status="COMPENSATION: NOT FILLED",
+            )
+
+        # Связка исполнена частично -> rearm не выполняем
+        if not close_result.fully_closed:
+            return ResolveResult(
+                executed=True,
+                status=(
+                    f"COMPENSATION: PARTIAL "
+                    f"| base={plan.base_level.price} "
+                    f"| loss={plan.loss_level.price}"
+                ),
+            )
+
+        # Связка исполнена полностью -> пробуем выполнить rearm.
+        rearm_status = self.rearm.try_rearm()
+
+        return ResolveResult(
+            executed=True,
+            status=(
+                f"COMPENSATION: FULL "
+                f"| base={plan.base_level.price} "
+                f"| loss={plan.loss_level.price} qty={plan.loss_qty} "
+                f"| {rearm_status}"
+            ),
+        )
 
     def _process_ha_breakout(self) -> ResolveResult:
         data = self.state_store.data

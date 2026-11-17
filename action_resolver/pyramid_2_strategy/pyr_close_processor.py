@@ -164,3 +164,77 @@ class PyrCloseProcessor:
 
         return False
 
+
+    def execute_compensation_close(
+        self,
+        action_command: ActionCommand,
+        base_qty: float,
+        loss_qty: float,
+    ) -> PyrCloseResult:
+        """
+        Закрытие связки одним ордером: Base целиком + кусок убыточного уровня.
+
+        action_command.levels = [base_level, loss_level], qty команды - сумма
+        base_qty и loss_qty. Учёт строится по фактически исполненному объёму:
+        при полном исполнении Base закрывается целиком, с убыточного уровня
+        списывается loss_qty; при частичном - объём распределяется между
+        частями пропорционально, остаток остаётся в стеке.
+        """
+        levels = list(action_command.levels or [])
+        if len(levels) != 2:
+            raise ValueError(
+                f"Compensation close expects exactly two levels, got {len(levels)}"
+            )
+
+        qty_step = self.trading_info.qty_step
+        tolerance = qty_step / 2
+        total_qty = base_qty + loss_qty
+
+        if action_command.qty is None or abs(action_command.qty - total_qty) > tolerance:
+            raise ValueError(
+                f"Compensation command qty mismatch | "
+                f"command_qty={action_command.qty} | "
+                f"base_qty={base_qty} | loss_qty={loss_qty}"
+            )
+
+        # Исполнение команды и контроль результата
+        exec_result = self._execute_and_check(action_command)
+
+        # Ордер не исполнился -> стек не меняем
+        if not exec_result.executed:
+            return PyrCloseResult(
+                execution_result=exec_result,
+                fully_closed=False,
+            )
+
+        filled_qty = exec_result.qty
+
+        # Исполнено больше, чем в связке: затронут чужой объём
+        if filled_qty > total_qty + tolerance:
+            raise RuntimeError(
+                f"Compensation close filled more than bundle qty | "
+                f"filled={filled_qty} | bundle_qty={total_qty}"
+            )
+
+        # Исполнено всё -> закрываем Base целиком и loss_qty на убыточном уровне
+        if abs(total_qty - filled_qty) <= tolerance:
+            reductions = [base_qty, loss_qty]
+            fully_closed = True
+        else:
+            # Исполнено частично -> распределяем пропорционально частям
+            reductions = list(
+                self.partial_close_calculator.calc_bundle_reductions(
+                    base_qty=base_qty,
+                    loss_qty=loss_qty,
+                    executed_qty=filled_qty,
+                    qty_step=qty_step,
+                )
+            )
+            fully_closed = False
+
+        self.action_service.accounting.reduce_levels(levels, reductions)
+
+        return PyrCloseResult(
+            execution_result=exec_result,
+            fully_closed=fully_closed,
+        )
