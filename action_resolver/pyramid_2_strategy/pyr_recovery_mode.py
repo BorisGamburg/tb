@@ -8,9 +8,11 @@ from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
 from action_resolver.resolve_result import ResolveResult
-from action_resolver.pyramid_2_strategy.pyr_compensation_planner import (
-    PyrCompensationPlanner,
-)
+from common.compensation.compensation_planner import CompensationPlanner
+from action_processor.action import Action, ActionCommand
+from action_processor.execution.close_limit_mng import ExitType
+from action_processor.execution.limit_order_result import LimitOrderStatus
+from utils.utils import get_inverse_side
 
 
 class PyrRecoveryMode:
@@ -33,10 +35,10 @@ class PyrRecoveryMode:
         self.close_processor = close_processor
         self.unwinder = unwinder
 
-        self.compensation_planner = PyrCompensationPlanner(
-            trading_info=trading_info,
-            step_ratio=open_checker.step_ratio,
-            unwinder=unwinder,
+        self.compensation_planner = CompensationPlanner(
+            qty_step=trading_info.qty_step,
+            min_qty=trading_info.min_qty,
+            fee_taker=trading_info.fee_taker,
         )
 
         self.rearm = PyrRearm(
@@ -84,52 +86,50 @@ class PyrRecoveryMode:
             # Компенсации нет -> дальше проверяем HA Breakout
             return None
 
-        # Закрываем Base + убыточные уровни одним ордером через Unwinder.
-        # limit_price: ордер не исполняется хуже цены, по которой считался план.
-        exec_result = self.unwinder.run(
-            levels=plan.levels,
-            side=data.side,
-            symbol=data.symbol,
-            qty=plan.qty,
-            price=close_price,
-            min_pnl=float(data.min_pnl),
-            profit_order="most_first",
-        )
-        if exec_result is None:
-            # Объём после нормализации меньше min_qty -> ордер не отправлялся
-            return ResolveResult(
-                executed=False,
-                status="COMPENSATION: SKIPPED (QTY)",
-            )
+        # Уровни, участвующие в компенсационном закрытии
+        levels = [
+            plan.base_level,
+            *(reduction.level for reduction in plan.reductions),
+        ]
 
+        # Формируем команду на закрытие одним общим ордером
+        command = ActionCommand(
+            action=Action.CLOSE,
+            symbol=data.symbol,
+            side=get_inverse_side(data.side),
+            qty=plan.total_qty,
+            levels=levels,
+            reason="PYRAMID_COMPENSATION",
+            limit_price=close_price,
+        )
+
+        # Отправляем ордер через существующий механизм исполнения
+        exec_result = self.action_service.execution.execute(
+            command,
+            exit_type=ExitType.ACTIVE,
+        )
         if not exec_result.executed:
             return ResolveResult(
                 executed=False,
                 status="COMPENSATION: NOT FILLED",
             )
 
-        info = (
-            f"base={plan.base_level.price} "
-            f"| qty={exec_result.qty:g} (loss {plan.loss_qty:g})"
+        status = (
+            "FILLED"
+            if exec_result.status == LimitOrderStatus.FILLED
+            else "PARTIALLY FILLED"
         )
-
-        # Base остался в стеке (частичное исполнение) -> rearm не выполняем
-        base_closed = not any(
-            level is plan.base_level for level in data.stack.entries
-        )
-        if not base_closed:
-            return ResolveResult(
-                executed=True,
-                status=f"COMPENSATION: PARTIAL | {info}",
-            )
-
-        # Base закрыт -> пробуем выполнить rearm.
-        rearm_status = self.rearm.try_rearm()
 
         return ResolveResult(
             executed=True,
-            status=f"COMPENSATION: FULL | {info} | {rearm_status}",
+            status=(
+                f"COMPENSATION: {status} "
+                f"| requested={plan.total_qty:g} "
+                f"| executed={exec_result.qty:g} "
+                f"| price={exec_result.price:g}"
+            ),
         )
+
 
     def _process_ha_breakout(self) -> ResolveResult:
         data = self.state_store.data

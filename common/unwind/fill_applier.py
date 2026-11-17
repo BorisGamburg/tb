@@ -29,7 +29,7 @@ class FillApplier:
         min_pnl: float,
         profit_order: str = "most_first",
     ) -> None:
-        # Копия: reduce_levels удаляет закрытые уровни из списка стека.
+        # Копия: Accounting может удалить закрытые уровни из стека.
         levels = list(entries)
         step = self.trading_info.qty_step
 
@@ -65,17 +65,21 @@ class FillApplier:
                 f"price={exec_result.price} | qty={exec_result.qty}"
             )
 
-        # Преобразуем обратно целые списания в реальные величины
-        reductions = [round(u * step, 12) for u in res.reductions]
+        # Формируем пары (level, reduction)
+        level_reductions = [
+            (level, round(units * step, 12))
+            for level, units in zip(levels, res.reductions)
+        ]
 
         # Применяем списания к уровням стека
-        self.action_service.accounting.reduce_levels(levels, reductions)
+        self.action_service.accounting.reduce_level_2(level_reductions)
 
-        # Списания в логе: цена уровня и объём, только ненулевые. Индексы
-        # в reductions относятся к порядку списка стека, а в отчёте стек
-        # печатается по цене, поэтому индексы там не совпадают.
+        # В лог выводятся цена уровня и фактическое списание,
+        # только для уровней с ненулевым списанием.
         reductions_log = ", ".join(
-            f"{lv.price}:{r}" for lv, r in zip(levels, reductions) if r > 0
+            f"{level.price}:{reduction}"
+            for level, reduction in level_reductions
+            if reduction > 0
         )
 
         self.logger.info(
