@@ -162,7 +162,7 @@ class PyrProfitMode:
 
         # Дистанция ОК -> пробуем выполнить rearm
         # Получаем количество для rearm
-        qty = self.open_checker.get_rearm_qty()
+        qty = self.open_checker.get_qty()
         if qty <= 0:
             self.app_ctx.logger.info(
                 "[REARM] skipped: qty = 0"
@@ -192,29 +192,82 @@ class PyrProfitMode:
     def _process_ha_breakout(self) -> ResolveResult:
         data = self.state_store.data
 
-        # Без существующего уровня открывать Extension нельзя:
-        # первый уровень стека является Base.
-        if not data.stack.entries:
+        # Проверяем HA Signal
+        if not self._check_ha_signal():
+            # HA Signal отсутствует -> выходим
             return ResolveResult(
                 executed=False,
-                status="HA BREAKOUT: SKIPPED (NO STACK)",
+                status="HA BREAKOUT: NO SIGNAL",
             )
+
+        # Получаем qty
+        qty = self.open_checker.get_qty()
+        if qty <= 0:
+            # qty <= 0 -> выходим
+            return ResolveResult(
+                executed=False,
+                status="HA BREAKOUT: SKIPPED (QTY = 0)",
+            )
+
+        # Стек пустой?
+        if not data.stack.entries:
+            # Пустой стек: открываем Base по сигналу, без проверки буфера BE.
+            return self._open_by_ha_breakout(qty, "BASE (EMPTY STACK)")
+
+        # Стек не пуст: открываем Extension, только если хватает буфера.
+        buffer_ok, buffer_info = self._check_buffer_after_open(qty)
+        if not buffer_ok:
+            # Проверка буфера не прошла -> выходим
+            return ResolveResult(
+                executed=False,
+                status=f"HA BREAKOUT: SKIPPED | {buffer_info}",
+            )
+
+        # Открываем уровень
+        return self._open_by_ha_breakout(qty, buffer_info)
+
+    def _check_buffer_after_open(self, qty: float) -> tuple[bool, str]:
+        """Хватит ли буфера до BE, если открыть новый уровень сейчас.
+
+        Возвращает (достаточно ли, описание для статуса).
+        """
+        data = self.state_store.data
+
+        # Текущая цена активной стороны спреда
+        active_price = self._get_active_price()
+
+        # Какой будет буфер, если открыть уровень сейчас
+        buffer_after_open_pct = self._calc_buffer_after_open(active_price, qty)
+
+        # Минимальный буфер из конфига
+        min_buffer_pct = float(data.min_be_buffer_pct)
+
+        if buffer_after_open_pct < min_buffer_pct:
+            return False, (
+                f"BUFFER {buffer_after_open_pct:.4f}% "
+                f"< {min_buffer_pct:.4f}%"
+            )
+
+        return True, (
+            f"BUFFER {buffer_after_open_pct:.4f}% "
+            f">= {min_buffer_pct:.4f}%"
+        )    
+
+    def _check_ha_signal(self) -> bool:
+        data = self.state_store.data
 
         signal_price = float(
             self.app_ctx.proxy_driver.get_last_price(data.symbol)
         )
-
         signal_result = self.ha_signal.is_entry(
             tf=data.entry_tf,
             side=data.side,
             price=signal_price,
         )
+        return signal_result.ok
 
-        if not signal_result.ok:
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: NO SIGNAL",
-            )
+    def _get_active_price(self) -> float:
+        data = self.state_store.data
 
         # Цена той же стороны спреда, по которой открывается лимитный ордер.
         active_price = self.app_ctx.price_service.get_active_price(
@@ -225,73 +278,58 @@ class PyrProfitMode:
             raise ValueError(
                 f"Invalid active price for HA Breakout: {active_price}"
             )
+        return active_price
 
-        qty = self.open_checker.get_rearm_qty()
-
-        if qty <= 0:
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: SKIPPED (QTY = 0)",
-            )
+    def _calc_buffer_after_open(self, active_price: float, qty: float) -> float:
+        """Буфер (в %) между ценой и новым BE стека после модельного открытия."""
+        data = self.state_store.data
+        fee_taker = self.trading_info.fee_taker
 
         # Моделируем новый уровень, не меняя реальный стек.
-        fee_taker = self.trading_info.fee_taker
+        # Создаем стек для моделирования
         simulated_stack = self.state_store.stack_mng.clone()
 
-        estimated_entry_fee = (
-            active_price * qty * fee_taker
-        )
-
-        # Добавляем новый уровень к simulated_stack
+        # Добавляем в simulated_stack новый уровень
         simulated_stack.push(
             price=active_price,
             qty=qty,
             initial_qty=qty,
-            fee=estimated_entry_fee,
+            fee=active_price * qty * fee_taker,
         )
 
-        # Вычисляем безубыток simulated_stack
-        new_be = simulated_stack.calculate_break_even_price(
+        # Рассчитываем безубыток simulated_stack
+        simulated_stack_be = simulated_stack.calculate_break_even_price(
             side=data.side,
             fee_taker=fee_taker,
         )
-        if new_be is None:
+        if simulated_stack_be is None:
+            # Не смогли рассчитать безубыток -> исключение
             raise RuntimeError(
                 "Cannot calculate BE after simulated HA Breakout entry"
             )
 
-        # Получаем текущий буфер
+        # Безубыток рассчитан
+        # Рассчитываем буфер simulated_stack
         if data.side == "Buy":
-            buffer_pct = (
-                (active_price - new_be) / active_price * 100
-            )
+            buffer_pct = (active_price - simulated_stack_be) / active_price * 100
         else:
-            buffer_pct = (
-                (new_be - active_price) / active_price * 100
-            )
-        min_buffer_pct = float(data.min_be_buffer_pct)
+            buffer_pct = (simulated_stack_be - active_price) / active_price * 100
 
+        # Лог
         self.app_ctx.logger.info(
             f"[HA BREAKOUT] "
             f"active_price={active_price} "
-            f"new_be={new_be} "
+            f"new_be={simulated_stack_be} "
             f"buffer={buffer_pct:.4f}% "
-            f"min_buffer={min_buffer_pct:.4f}%"
+            f"min_buffer={float(data.min_be_buffer_pct):.4f}%"
         )
 
-        # Сравниваем текущий буфер с минимальным
-        if buffer_pct < min_buffer_pct:
-            # Текущий буфер слишком маленький -> выходим
-            return ResolveResult(
-                executed=False,
-                status=(
-                    f"HA BREAKOUT: SKIPPED "
-                    f"| BUFFER {buffer_pct:.4f}% "
-                    f"< {min_buffer_pct:.4f}%"
-                ),
-            )
+        # Буфер рассчитан -> выходим
+        return buffer_pct
 
-        # Текущий буфер достаточного размера
+    def _open_by_ha_breakout(self, qty: float, info: str) -> ResolveResult:
+        data = self.state_store.data
+
         # Формируем команду
         open_command = ActionCommand(
             action=Action.OPEN,
@@ -301,11 +339,8 @@ class PyrProfitMode:
             reason="PYRAMID_HA_BREAKOUT",
         )
 
-        # Выполняем команду
-        # Ошибки открытия не перехватываем: исключение должно выйти наружу.
-        open_result = self.action_service.process_action(
-            open_command
-        )
+        # Посылаем команду на исполнение и учет
+        open_result = self.action_service.process_action(open_command)
         if not open_result.executed:
             # Команда не выполнена
             return ResolveResult(
@@ -316,8 +351,5 @@ class PyrProfitMode:
         # Команда выполнена
         return ResolveResult(
             executed=True,
-            status=(
-                f"HA BREAKOUT: OPENED "
-                f"| BUFFER {buffer_pct:.4f}%"
-            ),
-        )
+            status=f"HA BREAKOUT: OPENED | {info}",
+        )    

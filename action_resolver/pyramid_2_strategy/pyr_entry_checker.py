@@ -171,6 +171,6 @@ class PyrEntryChecker:
             ha_breakout=base_result.ha_breakout,
         )
 
-    def get_rearm_qty(self) -> float:
+    def get_qty(self) -> float:
+        """Объём нового уровня пирамиды (вход, REARM, HA Breakout)."""
         return self._get_pyramid_qty()
-

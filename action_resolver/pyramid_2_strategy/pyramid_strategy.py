@@ -28,6 +28,10 @@ from action_resolver.pyramid_2_strategy.pyr_position_limit_checker import (
     is_position_limit_allowed,
 )
 from common.level_distance_checker import is_level_distance_allowed
+from action_resolver.pyramid_2_strategy.pyr_profit_mode import (
+    PyrProfitMode,
+)
+
 
 class PyramidStrategy(BaseStrategy):
     BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]
@@ -76,6 +80,15 @@ class PyramidStrategy(BaseStrategy):
             logger=app_ctx.logger,
         )
 
+        self.profit_mode = PyrProfitMode(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            trading_info=trading_info,
+            action_service=self.action_service,
+            open_checker=self.open_checker,
+            close_processor=self.close_processor,
+        )        
+
         self._log_parameters()
 
     def resolve(self) -> ResolveResult:
@@ -94,7 +107,7 @@ class PyramidStrategy(BaseStrategy):
         )
 
         if mode == PyramidModeResolver.PROFIT_MODE:
-            return self._process_profit_mode()
+            return self.profit_mode.resolve()
 
         if mode == PyramidModeResolver.RECOVERY_MODE:
             return self._process_recovery_mode()
@@ -231,7 +244,7 @@ class PyramidStrategy(BaseStrategy):
             return
 
         # 4. Объём
-        qty = self.open_checker.get_rearm_qty()
+        qty = self.open_checker.get_qty()
         if qty <= 0:
             self.app_ctx.logger.info("[REARM] skipped: qty = 0")
             return
