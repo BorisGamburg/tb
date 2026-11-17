@@ -132,9 +132,9 @@ class PyrProfitMode:
                 )
 
             if close_price_reached:
-                close_level = level
-                break
-        return close_level
+                return level
+
+        return None
 
     def _try_rearm(self) -> str:
         data = self.state_store.data
@@ -175,16 +175,14 @@ class PyrProfitMode:
             reason="REARM",
         )
 
-        # Отправляем команду на rearm через ActionService
-        rearm_result = self.action_service.process_action(
-            rearm_command
-        )
-        ***** Rearm надо выполнять пока не выполнится
-        if not rearm_result.executed:
-            self.app_ctx.logger.info(
-                "[REARM] order not filled"
+        # Отправляем команду на rearm через ActionService.
+        # Повторяем, пока ордер не исполнится (как в PyramidStrategy._try_rearm).
+        while True:
+            rearm_result = self.action_service.process_action(
+                rearm_command
             )
-            return "REARM: NOT FILLED"
+            if rearm_result.executed:
+                break
 
         return "REARM: EXECUTED"
 
