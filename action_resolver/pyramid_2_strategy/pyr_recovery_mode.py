@@ -1,3 +1,4 @@
+from common.unwind.unwinder import Unwinder
 from common.level_distance_checker import is_level_distance_allowed
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
@@ -6,9 +7,7 @@ from action_resolver.pyramid_2_strategy.pyr_rearm import PyrRearm
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
-from action_processor.action import Action, ActionCommand
 from action_resolver.resolve_result import ResolveResult
-from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_compensation_planner import (
     PyrCompensationPlanner,
 )
@@ -24,6 +23,7 @@ class PyrRecoveryMode:
         action_service,
         open_checker,
         close_processor: PyrCloseProcessor,
+        unwinder: Unwinder,
     ):
         self.state_store = state_store
         self.app_ctx = app_ctx
@@ -31,11 +31,13 @@ class PyrRecoveryMode:
         self.action_service = action_service
         self.open_checker = open_checker
         self.close_processor = close_processor
+        self.unwinder = unwinder
 
         self.compensation_planner = PyrCompensationPlanner(
             trading_info=trading_info,
             step_ratio=open_checker.step_ratio,
-        )        
+            unwinder=unwinder,
+        )
 
         self.rearm = PyrRearm(
             state_store=state_store,
@@ -82,54 +84,51 @@ class PyrRecoveryMode:
             # Компенсации нет -> дальше проверяем HA Breakout
             return None
 
-        # Формируем команду на закрытие связки одним ордером.
+        # Закрываем Base + убыточные уровни одним ордером через Unwinder.
         # limit_price: ордер не исполняется хуже цены, по которой считался план.
-        close_command = ActionCommand(
-            action=Action.CLOSE,
+        exec_result = self.unwinder.run(
+            levels=plan.levels,
+            side=data.side,
             symbol=data.symbol,
-            side=get_inverse_side(data.side),
-            qty=round(plan.total_qty, 8),
-            levels=[plan.base_level, plan.loss_level],
-            reason="PYRAMID_COMPENSATION_CLOSE",
-            limit_price=close_price,
+            qty=plan.qty,
+            price=close_price,
+            min_pnl=float(data.min_pnl),
+            profit_order="most_first",
         )
+        if exec_result is None:
+            # Объём после нормализации меньше min_qty -> ордер не отправлялся
+            return ResolveResult(
+                executed=False,
+                status="COMPENSATION: SKIPPED (QTY)",
+            )
 
-        # Отправляем команду на закрытие через CloseProcessor.
-        close_result = self.close_processor.execute_compensation_close(
-            close_command,
-            base_qty=plan.base_qty,
-            loss_qty=plan.loss_qty,
-        )
-
-        # Проверяем результат исполнения команды.
-        if not close_result.execution_result.executed:
+        if not exec_result.executed:
             return ResolveResult(
                 executed=False,
                 status="COMPENSATION: NOT FILLED",
             )
 
-        # Связка исполнена частично -> rearm не выполняем
-        if not close_result.fully_closed:
+        info = (
+            f"base={plan.base_level.price} "
+            f"| qty={exec_result.qty:g} (loss {plan.loss_qty:g})"
+        )
+
+        # Base остался в стеке (частичное исполнение) -> rearm не выполняем
+        base_closed = not any(
+            level is plan.base_level for level in data.stack.entries
+        )
+        if not base_closed:
             return ResolveResult(
                 executed=True,
-                status=(
-                    f"COMPENSATION: PARTIAL "
-                    f"| base={plan.base_level.price} "
-                    f"| loss={plan.loss_level.price}"
-                ),
+                status=f"COMPENSATION: PARTIAL | {info}",
             )
 
-        # Связка исполнена полностью -> пробуем выполнить rearm.
+        # Base закрыт -> пробуем выполнить rearm.
         rearm_status = self.rearm.try_rearm()
 
         return ResolveResult(
             executed=True,
-            status=(
-                f"COMPENSATION: FULL "
-                f"| base={plan.base_level.price} "
-                f"| loss={plan.loss_level.price} qty={plan.loss_qty} "
-                f"| {rearm_status}"
-            ),
+            status=f"COMPENSATION: FULL | {info} | {rearm_status}",
         )
 
     def _process_ha_breakout(self) -> ResolveResult:

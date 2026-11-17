@@ -1,27 +1,32 @@
 from dataclasses import dataclass
+from math import ceil, floor
 
-from common.unwind.unwind_planner import EPS, _floor_step, _per_coin
+from common.unwind.unwind_planner import EPS, _per_coin
+from common.unwind.unwinder import Unwinder
 
 
 @dataclass
 class CompensationPlan:
-    base_level: object   # нижний уровень (источник прибыли), закрывается целиком
+    base_level: object   # Base: источник прибыли, закрывается целиком
+    levels: list         # Base + убыточные уровни (список для Unwinder)
+    qty: float           # общий объём ордера = Base + списание с убыточных
     base_qty: float
-    loss_level: object   # убыточный уровень, с которого закрывается кусок
-    loss_qty: float
-    expected_pnl: float  # ожидаемый итог связки с учётом комиссий
-
-    @property
-    def total_qty(self) -> float:
-        return self.base_qty + self.loss_qty
+    loss_qty: float      # сколько списывается с убыточных уровней суммарно
 
 
 class PyrCompensationPlanner:
-    """Расчёт компенсации режима recovery. Только расчёт, без ордеров."""
+    """Расчёт компенсации режима recovery. Только расчёт, без ордеров.
 
-    def __init__(self, trading_info, step_ratio: float):
+    Прибыль берётся только с Base. Ищется максимальный объём убыточных
+    уровней, который Base покрывает в безубыток (min_pnl). Распределение
+    по убыточным уровням делает общий оптимизатор Unwinder (самые убыточные
+    первыми), поэтому за один ордер может закрыться несколько уровней.
+    """
+
+    def __init__(self, trading_info, step_ratio: float, unwinder: Unwinder):
         self.trading_info = trading_info
         self.step_ratio = step_ratio
+        self.unwinder = unwinder
 
     def plan(
         self,
@@ -33,9 +38,10 @@ class PyrCompensationPlanner:
         """
         levels  - уровни стека (StackElem).
         price   - цена закрытия с исполняемой стороны (Buy: Bid, Sell: Ask).
-        min_pnl - минимальный итог связки.
+        min_pnl - минимальный итог ордера.
 
-        Возвращает план или None, если компенсации нет.
+        Возвращает план или None, если не покрывается даже min_qty
+        убыточного уровня.
         """
         if len(levels) < 2:
             # Меньше 2 уровней. Компенсировать нечего.
@@ -48,42 +54,58 @@ class PyrCompensationPlanner:
         if not self._is_step_reached(base, side, price):
             return None
 
-        # Прибыль Base (с комиссиями), которой можно покрыть убыток
+        # Base должен быть в прибыли (с комиссиями)
         fee_taker = self.trading_info.fee_taker
-        base_per_coin = _per_coin(base, price, side, fee_taker)
-        if base_per_coin <= 0:
+        if _per_coin(base, price, side, fee_taker) <= 0:
             return None
 
-        base_profit = base_per_coin * base.qty
-        pool = base_profit - min_pnl
-        if pool <= EPS:
+        # Убыточные уровни. Остальные прибыльные в расчёте не участвуют.
+        losers = [
+            level for level in levels
+            if level is not base
+            and _per_coin(level, price, side, fee_taker) < 0
+        ]
+        if not losers:
             return None
 
-        # Убыточные уровни: от самого убыточного к менее убыточным
-        losers = []
-        for level in levels:
-            if level is base:
-                continue
-            per_coin = _per_coin(level, price, side, fee_taker)
-            if per_coin < 0:
-                losers.append((level, per_coin))
-        losers.sort(key=lambda item: item[1])
+        # Границы поиска объёма убыточных, в шагах qty_step
+        step = self.trading_info.qty_step
+        min_units = ceil(self.trading_info.min_qty / step - EPS)
+        max_units = floor(sum(level.qty for level in losers) / step + EPS)
+        if max_units < min_units:
+            return None
 
-        # Первый уровень, на котором можно закрыть хотя бы min_qty
-        for level, per_coin in losers:
-            loss_qty = self._calc_loss_qty(level, -per_coin, pool)
-            if loss_qty is None:
-                continue
+        sub_levels = [base] + losers
 
-            return CompensationPlan(
-                base_level=base,
-                base_qty=base.qty,
-                loss_level=level,
-                loss_qty=loss_qty,
-                expected_pnl=base_profit + per_coin * loss_qty,
+        def is_breakeven(units: int) -> bool:
+            qty = round(base.qty + units * step, 12)
+            res = self.unwinder.check_breakeven(
+                sub_levels, side, qty, price, min_pnl, "most_first"
             )
+            return res is not None and res.breakeven
 
-        return None
+        # Прибыли Base не хватает даже на min_qty убыточного -> компенсации нет
+        if not is_breakeven(min_units):
+            return None
+
+        # Бинарный поиск максимального безубыточного объёма
+        # (чем больше убыточных, тем меньше PnL, поэтому условие монотонно).
+        lo, hi = min_units, max_units
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if is_breakeven(mid):
+                lo = mid
+            else:
+                hi = mid - 1
+
+        loss_qty = round(lo * step, 12)
+        return CompensationPlan(
+            base_level=base,
+            levels=sub_levels,
+            qty=round(base.qty + loss_qty, 12),
+            base_qty=base.qty,
+            loss_qty=loss_qty,
+        )
 
     def _get_base_level(self, levels, side: str):
         if side == "Buy":
@@ -94,24 +116,3 @@ class PyrCompensationPlanner:
         if side == "Buy":
             return price >= base.price * (1 + self.step_ratio)
         return price <= base.price * (1 - self.step_ratio)
-
-    def _calc_loss_qty(self, level, loss_per_coin: float, pool: float):
-        """Сколько можно закрыть на убыточном уровне. None, если меньше min_qty."""
-        qty_step = self.trading_info.qty_step
-        min_qty = self.trading_info.min_qty
-
-        qty_max = min(level.qty, pool / loss_per_coin)
-
-        if qty_max >= level.qty - EPS:
-            # Прибыли хватает на весь уровень
-            qty = level.qty
-        else:
-            qty = _floor_step(qty_max, qty_step)
-            # Остаток уровня не должен стать меньше min_qty
-            if level.qty - qty < min_qty - EPS:
-                qty = _floor_step(level.qty - min_qty, qty_step)
-
-        if qty < min_qty - EPS:
-            return None
-
-        return qty

@@ -99,7 +99,8 @@ class PyramidStrategy(BaseStrategy):
             action_service=self.action_service,
             open_checker=self.open_checker,
             close_processor=self.close_processor,
-        )             
+            unwinder=self.unwinder,
+        )
 
         self._log_parameters()
 
