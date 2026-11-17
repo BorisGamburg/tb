@@ -221,7 +221,7 @@ class PyrRecoveryMode:
             )
 
         # Открываем уровень
-        return self.ha_opener.open(qty, "NEW BASE")
+        return self.ha_opener.open(qty, "NEW BASE", is_base=True)
 
     def _is_new_base_level(self, price: float) -> bool:
         """Станет ли уровень с ценой входа price новым Base.

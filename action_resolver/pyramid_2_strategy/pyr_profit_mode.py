@@ -177,7 +177,9 @@ class PyrProfitMode:
         # Стек пустой?
         if not data.stack.entries:
             # Пустой стек: открываем Base по сигналу, без проверки буфера BE.
-            return self.ha_opener.open(qty, "BASE (EMPTY STACK)")
+            return self.ha_opener.open(
+                qty, "BASE (EMPTY STACK)", is_base=True
+            )
 
         # Стек не пуст: открываем Extension, только если хватает буфера.
         buffer_ok, buffer_info = self._check_buffer_after_open(qty)
@@ -264,4 +266,3 @@ class PyrProfitMode:
 
         # Буфер рассчитан -> выходим
         return buffer_pct
-

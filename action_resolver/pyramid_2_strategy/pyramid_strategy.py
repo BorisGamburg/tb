@@ -37,7 +37,6 @@ from action_resolver.pyramid_2_strategy.pyr_recovery_mode import (
 
 
 class PyramidStrategy(BaseStrategy):
-    BASE_TIMEFRAMES = ["1", "5", "15", "60", "240", "720"]
     def __init__(
         self,
         state_store: State,
@@ -133,32 +132,6 @@ class PyramidStrategy(BaseStrategy):
                 mode_status=result.status,
             ),
         )
-
-    def _process_open(self) -> tuple:
-        """Возвращает (entry_result, executed)."""
-        # Проверяем сигнал на открытие
-        entry_result = self.open_checker.check(
-            self.state_store.data.stack.entries,
-            self.state_store.data.entry_tf,
-        )
-
-        if not entry_result.allowed:
-            return entry_result, False
-
-        # Формируем команду
-        action_command = ActionCommand(
-            action=Action.OPEN,
-            symbol=self.state_store.data.symbol,
-            side=self.state_store.data.side,
-            qty=entry_result.qty,
-        )
-
-        # Передаем команду на исполнение и учет
-        exec_result = self.action_service.process_action(action_command)
-        if exec_result.executed and entry_result.level_type == "base":
-            self._advance_entry_tf()
-
-        return entry_result, exec_result.executed
 
     def _process_close(self) -> tuple[ResolveResult, bool, object]:
         """Возвращает (ResolveResult, найдено, unwind_report)."""
@@ -383,29 +356,3 @@ class PyramidStrategy(BaseStrategy):
             f"Sleep interval: {data.sleep_interval}\n"
         )
         self.app_ctx.logger.info(params)
-
-    def _advance_entry_tf(self) -> None:
-        # Получаем текущий тф
-        current_tf = self.state_store.data.entry_tf
-
-        # Проверяем текущий тф
-        if current_tf not in self.BASE_TIMEFRAMES:
-            raise ValueError(
-                f"Cannot advance entry_tf: {current_tf} "
-                f"is not in {self.BASE_TIMEFRAMES}"
-            )
-
-        # Получаем следующий тф
-        current_index = self.BASE_TIMEFRAMES.index(current_tf)
-        if current_index == len(self.BASE_TIMEFRAMES) - 1:
-            return
-        next_tf = self.BASE_TIMEFRAMES[current_index + 1]
-
-        # Сохраняем следующий тф
-        self.state_store.data.entry_tf = next_tf
-        self.state_store.save()
-
-        self.app_ctx.logger.info(
-            f"Base level opened: entry_tf changed "
-            f"from {current_tf} to {next_tf}"
-        )
