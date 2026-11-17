@@ -141,9 +141,7 @@ class Accounting:
 
     def reduce_levels(self, levels: list, reductions: list[float]):
         """
-        Атомарно уменьшает qty уровней на заданные величины.
-        Уровни, закрытые полностью, удаляются из стека.
-        State сохраняется один раз, после всех изменений.
+        Старый интерфейс: уменьшает qty уровней на заданные величины.
         """
         if len(levels) != len(reductions):
             raise ValueError(
@@ -151,21 +149,59 @@ class Accounting:
                 f"levels={len(levels)} | reductions={len(reductions)}"
             )
 
-        entries = self.stack_mng.data.entries
+        self._reduce_level_plan(list(zip(levels, reductions)))
 
-        # Сначала валидация: ни одно изменение не применяется,
-        # если хотя бы одна редукция некорректна
+    def reduce_level_2(self, level_reductions: list[tuple]):
+        """
+        Новый интерфейс: принимает пары (level, reduction).
+        Уровень и величина списания передаются вместе.
+        """
+        self._reduce_level_plan(level_reductions)
+
+    def _reduce_level_plan(self, level_reductions: list[tuple]):
+        # Проверки и делается план для списаний
+        plan = self._build_level_reduction_plan(level_reductions)
+
+        # Применяем план к стеку
+        self._apply_level_reduction_plan(plan)
+
+    def _build_level_reduction_plan(self, level_reductions: list[tuple]):
+        """
+        Проверяет редукции и формирует план изменений.
+        Стек при этом не изменяется.
+        """
+        entries = self.stack_mng.data.entries
         plan = []
-        for level, reduction in zip(levels, reductions):
+        processed = []
+
+        for item in level_reductions:
+            # Проверяется, что каждый элемент level_reductions является кортежем или списком ровно из двух элементов.
+            if not isinstance(item, (tuple, list)) or len(item) != 2:
+                raise ValueError(
+                    f"Invalid level reduction item | item={item}"
+                )
+
+            level, reduction = item
+
+            # Проверяется, не передан ли один и тот же объект уровня несколько раз в списке редукций.
+            if any(level is existing for existing in processed):
+                raise ValueError(
+                    f"Duplicate level in reduction plan | "
+                    f"price={level.price} | qty={level.qty}"
+                )
+
+            processed.append(level)
+
+            # Проверяется, что переданный level действительно присутствует в текущем стеке.
             if not any(level is entry for entry in entries):
                 raise ValueError(
                     f"Level is not in stack | "
                     f"price={level.price} | qty={level.qty}"
                 )
 
+            # Проверяет корректность количества списания
             qty = Decimal(str(level.qty))
             reduction = Decimal(str(reduction))
-
             if reduction < 0 or reduction > qty:
                 raise ValueError(
                     f"Invalid level reduction | "
@@ -173,29 +209,40 @@ class Accounting:
                     f"qty={level.qty} | reduction={reduction}"
                 )
 
+            # Формируется план
             plan.append((level, qty - reduction))
 
-        # Применяем: сначала частичные, затем удаляем закрытые целиком.
-        # Удаление по идентичности объекта: равные по значению уровни
-        # не должны подменять друг друга.
+        return plan
+
+    def _apply_level_reduction_plan(self, plan):
+        """
+        Применяет план, удаляет полностью закрытые уровни
+        и сохраняет состояние.
+        """
+        entries = self.stack_mng.data.entries
         removed = []
+
+        # устанавливается новое количество или определяется необходимость удаления.
         for level, new_qty in plan:
             if new_qty == 0:
                 removed.append(level)
             else:
                 level.qty = float(new_qty)
 
+        # Удаляются уровни, подлежащие удалению
         if removed:
             entries[:] = [
                 entry for entry in entries
                 if not any(entry is gone for gone in removed)
             ]
 
+        # Лог
         self.logger.info(
             f"[ACCOUNTING] REDUCE_LEVELS | "
-            f"levels={len(levels)} | "
+            f"levels={len(plan)} | "
             f"removed={len(removed)} | "
             f"reduced={len(plan) - len(removed)}"
         )
 
+        # Сохраняемся в конфиг
         self.state_store.save()
