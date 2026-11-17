@@ -119,12 +119,20 @@ class PyramidStrategy(BaseStrategy):
         )
 
         if mode == PyramidModeResolver.PROFIT_MODE:
-            return self.profit_mode.resolve()
+            result = self.profit_mode.resolve()
+        elif mode == PyramidModeResolver.RECOVERY_MODE:
+            result = self.recovery_mode.resolve()
+        else:
+            raise ValueError(f"Unsupported Pyramid mode: {mode}")
 
-        if mode == PyramidModeResolver.RECOVERY_MODE:
-            return self.recovery_mode.resolve()
-
-        raise ValueError(f"Unsupported Pyramid mode: {mode}")
+        return ResolveResult(
+            executed=result.executed,
+            status=self._build_status_line(
+                mode=mode,
+                current_price=current_price,
+                mode_status=result.status,
+            ),
+        )
 
     def _process_open(self) -> tuple:
         """Возвращает (entry_result, executed)."""
@@ -274,48 +282,41 @@ class PyramidStrategy(BaseStrategy):
             if rearm_result.executed:
                 break
 
-    def _build_status_line(self, entry_result, unwind_report) -> str:
-        ticker = self.app_ctx.proxy_driver.get_ticker(
-            self.state_store.data.symbol
+    def _build_status_line(
+        self,
+        mode: str,
+        current_price: float,
+        mode_status: str,
+    ) -> str:
+        """Статусная строка: общая шапка + статус текущего режима."""
+        data = self.state_store.data
+        ticker = self.app_ctx.proxy_driver.get_ticker(data.symbol)
+
+        status = f"BID/ASK: {ticker['bid']:.6f} — {ticker['ask']:.6f} | "
+
+        # Режим
+        if mode == PyramidModeResolver.PROFIT_MODE:
+            status += "MODE: 🟢 PROFIT | "
+        else:
+            status += "MODE: 🔴 RECOVERY | "
+
+        # Безубыток стека и буфер между ценой и BE
+        stack_be = self.state_store.stack_mng.calculate_break_even_price(
+            data.side,
+            self.trading_info.fee_taker,
         )
+        if stack_be is None:
+            status += "BE: — | "
+        else:
+            if data.side == "Buy":
+                buffer_pct = (current_price - stack_be) / current_price * 100
+            else:
+                buffer_pct = (stack_be - current_price) / current_price * 100
+            status += f"BE: {stack_be:.6f} (BUFFER {buffer_pct:+.2f}%) | "
 
-        status = (
-            f"BID/ASK: {ticker['bid']:.6f} — {ticker['ask']:.6f} | "
-        )
-
-        ha_marker = "🟢" if entry_result.ha_breakout else "🔴"
-
-        status += (
-            f"HA BREAKOUT({self.state_store.data.entry_tf}): "
-            f"{ha_marker} | "
-        )
-
-        trend_marker = "🟢" if entry_result.trend_active else "🔴"
-        status += f"TREND: {trend_marker} | "
-
-        if entry_result.qty_checked:
-            status += (
-                f"QTY: {entry_result.raw_qty:g} → "
-                f"{entry_result.qty:g}"
-            )
-            if entry_result.qty == 0:
-                status += f" (MIN: {self.trading_info.min_qty})"
-            status += " | "
-        if entry_result.position_limit_blocked:
-            status += "POSITION LIMIT: 🔴 | "
-
-        if entry_result.allowed and entry_result.level_type == "base":
-            status += "ENTRY: BASE | "
-        elif entry_result.allowed and entry_result.level_type == "extension":
-            status += "ENTRY: EXTENSION | "
-
-        if self.state_store.data.stack.entries:
-            dist_marker = "🟢" if entry_result.distance_allowed else "🔴"
-            status += f"DIST: {dist_marker} | "
-
-        unwind_status = self._format_unwind_status(unwind_report)
-        if unwind_status:
-            status += unwind_status + " | "
+        status += f"LEVELS: {len(data.stack.entries)} | "
+        status += f"HA({data.entry_tf}) | "
+        status += mode_status
 
         return status.rstrip(" |")
 
@@ -408,4 +409,3 @@ class PyramidStrategy(BaseStrategy):
             f"Base level opened: entry_tf changed "
             f"from {current_tf} to {next_tf}"
         )
-
