@@ -2,6 +2,9 @@ from action_processor.action import Action, ActionCommand
 from action_resolver.resolve_result import ResolveResult
 from common.level_distance_checker import is_level_distance_allowed
 from utils.utils import get_inverse_side
+from action_resolver.pyramid_2_strategy.pyr_close_processor import (
+    PyrCloseProcessor,
+)
 
 
 class PyrProfitMode:
@@ -13,7 +16,7 @@ class PyrProfitMode:
         trading_info,
         action_service,
         open_checker,
-        close_processor,
+        close_processor: PyrCloseProcessor,
     ):
         self.state_store = state_store
         self.app_ctx = app_ctx

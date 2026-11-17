@@ -5,6 +5,13 @@ from action_processor.action_service import ActionService
 from action_resolver.pyramid_2_strategy.pyr_partial_close_calculator import (
     PyrPartialCloseCalculator,
 )
+from dataclasses import dataclass
+
+
+@dataclass
+class PyrCloseResult:
+    execution_result: ExecutionResult
+    fully_closed: bool
 
 
 class PyrCloseProcessor:
@@ -71,26 +78,25 @@ class PyrCloseProcessor:
     def execute_profit_close(
         self,
         action_command: ActionCommand,
-    ) -> ExecutionResult:
-        """
-        Закрытие всех уровней пирамиды лимитным ордером на их суммарный qty
-        (позиции других стратегий на бирже не затрагиваются).
+    ) -> PyrCloseResult:
 
-        Учёт строится по фактически исполненному объёму: если исполнено
-        меньше запрошенного, закрываются уровни от наименее прибыльных
-        к наиболее прибыльным, остаток остаётся в стеке.
-        """
-        # Исполнение команды и контроль результата
         exec_result = self._execute_and_check(action_command)
 
-        # Ордер не исполнился -> стек не меняем
         if not exec_result.executed:
-            return exec_result
+            return PyrCloseResult(
+                execution_result=exec_result,
+                fully_closed=False,
+            )
 
-        # Учёт: обновляем уровни стека по фактически исполненному объёму
-        self._apply_profit_close(action_command.levels, exec_result)
+        fully_closed = self._apply_profit_close(
+            action_command.levels,
+            exec_result,
+        )
 
-        return exec_result
+        return PyrCloseResult(
+            execution_result=exec_result,
+            fully_closed=fully_closed,
+        )
 
     def _execute_and_check(
         self,
@@ -130,7 +136,7 @@ class PyrCloseProcessor:
 
         return exec_result
 
-    def _apply_profit_close(self, levels, exec_result: ExecutionResult):
+    def _apply_profit_close(self, levels, exec_result: ExecutionResult) -> bool:
         levels = list(levels or [])
         total_qty = sum(level.qty for level in levels)
         filled_qty = exec_result.qty
@@ -146,7 +152,7 @@ class PyrCloseProcessor:
                 fee=exec_result.fee,
                 levels=levels,
             )
-            return
+            return True
 
         # Исполнено частично -> закрываем уровни, начиная с наименее прибыльных
         reductions = self.partial_close_calculator.calc_sequential_reductions(
@@ -155,4 +161,6 @@ class PyrCloseProcessor:
             side=exec_result.action_command.side,
         )
         accounting.reduce_levels(levels, reductions)
+
+        return False
 
