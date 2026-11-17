@@ -1,9 +1,12 @@
 from action_processor.action import Action, ActionCommand
 from action_resolver.resolve_result import ResolveResult
-from common.level_distance_checker import is_level_distance_allowed
 from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
+)
+from action_resolver.pyramid_2_strategy.pyr_rearm import PyrRearm
+from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
+    PyrHaBreakoutOpener,
 )
 
 
@@ -25,8 +28,20 @@ class PyrProfitMode:
         self.open_checker = open_checker
         self.close_processor = close_processor
 
+        self.rearm = PyrRearm(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            action_service=action_service,
+            open_checker=open_checker,
+        )
+
         # Используем тот же HA Breakout, который уже создан в EntryChecker.
-        self.ha_signal = open_checker.ha_signal
+        self.ha_opener = PyrHaBreakoutOpener(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            action_service=action_service,
+            ha_signal=open_checker.ha_signal,
+        )
 
     def resolve(self) -> ResolveResult:
         close_result = self._process_extension_close()
@@ -111,7 +126,7 @@ class PyrProfitMode:
             )
 
         # Полное закрытие уровня -> пробуем выполнить rearm.
-        rearm_status = self._try_rearm()
+        rearm_status = self.rearm.try_rearm()
 
         # Возвращаем результат закрытия уровня с информацией о rearm.
         return ResolveResult(
@@ -139,61 +154,11 @@ class PyrProfitMode:
 
         return None
 
-    def _try_rearm(self) -> str:
-        data = self.state_store.data
-        entries = data.stack.entries
-
-        cur_price = float(
-            self.app_ctx.proxy_driver.get_last_price(data.symbol)
-        )
-
-        # Проверяем дистанцию 
-        distance_allowed = is_level_distance_allowed(
-            cur_price=cur_price,
-            entries=entries,
-            hedge_step_ratio=self.open_checker.step_ratio,
-        )
-        if not distance_allowed:
-            # Дистанция меньше шага -> rearm не выполняем
-            self.app_ctx.logger.info(
-                "[REARM] skipped: distance to stack < step"
-            )
-            return "REARM: SKIPPED DISTANCE"
-
-        # Дистанция ОК -> пробуем выполнить rearm
-        # Получаем количество для rearm
-        qty = self.open_checker.get_qty()
-        if qty <= 0:
-            self.app_ctx.logger.info(
-                "[REARM] skipped: qty = 0"
-            )
-            return "REARM: SKIPPED QTY"
-
-        # Формируем команду на rearm
-        rearm_command = ActionCommand(
-            action=Action.OPEN,
-            symbol=data.symbol,
-            side=data.side,
-            qty=qty,
-            reason="REARM",
-        )
-
-        # Отправляем команду на rearm через ActionService.
-        # Повторяем, пока ордер не исполнится (как в PyramidStrategy._try_rearm).
-        while True:
-            rearm_result = self.action_service.process_action(
-                rearm_command
-            )
-            if rearm_result.executed:
-                break
-
-        return "REARM: EXECUTED"
-
     def _process_ha_breakout(self) -> ResolveResult:
         data = self.state_store.data
 
         # Проверяем HA Signal
-        if not self._check_ha_signal():
+        if not self.ha_opener.has_signal():
             # HA Signal отсутствует -> выходим
             return ResolveResult(
                 executed=False,
@@ -212,7 +177,7 @@ class PyrProfitMode:
         # Стек пустой?
         if not data.stack.entries:
             # Пустой стек: открываем Base по сигналу, без проверки буфера BE.
-            return self._open_by_ha_breakout(qty, "BASE (EMPTY STACK)")
+            return self.ha_opener.open(qty, "BASE (EMPTY STACK)")
 
         # Стек не пуст: открываем Extension, только если хватает буфера.
         buffer_ok, buffer_info = self._check_buffer_after_open(qty)
@@ -224,7 +189,7 @@ class PyrProfitMode:
             )
 
         # Открываем уровень
-        return self._open_by_ha_breakout(qty, buffer_info)
+        return self.ha_opener.open(qty, buffer_info)
 
     def _check_buffer_after_open(self, qty: float) -> tuple[bool, str]:
         """Хватит ли буфера до BE, если открыть новый уровень сейчас.
@@ -234,7 +199,7 @@ class PyrProfitMode:
         data = self.state_store.data
 
         # Текущая цена активной стороны спреда
-        active_price = self._get_active_price()
+        active_price = self.ha_opener.get_active_price()
 
         # Какой будет буфер, если открыть уровень сейчас
         buffer_after_open_pct = self._calc_buffer_after_open(active_price, qty)
@@ -252,33 +217,6 @@ class PyrProfitMode:
             f"BUFFER {buffer_after_open_pct:.4f}% "
             f">= {min_buffer_pct:.4f}%"
         )    
-
-    def _check_ha_signal(self) -> bool:
-        data = self.state_store.data
-
-        signal_price = float(
-            self.app_ctx.proxy_driver.get_last_price(data.symbol)
-        )
-        signal_result = self.ha_signal.is_entry(
-            tf=data.entry_tf,
-            side=data.side,
-            price=signal_price,
-        )
-        return signal_result.ok
-
-    def _get_active_price(self) -> float:
-        data = self.state_store.data
-
-        # Цена той же стороны спреда, по которой открывается лимитный ордер.
-        active_price = self.app_ctx.price_service.get_active_price(
-            symbol=data.symbol,
-            side=data.side,
-        )
-        if active_price <= 0:
-            raise ValueError(
-                f"Invalid active price for HA Breakout: {active_price}"
-            )
-        return active_price
 
     def _calc_buffer_after_open(self, active_price: float, qty: float) -> float:
         """Буфер (в %) между ценой и новым BE стека после модельного открытия."""
@@ -327,29 +265,3 @@ class PyrProfitMode:
         # Буфер рассчитан -> выходим
         return buffer_pct
 
-    def _open_by_ha_breakout(self, qty: float, info: str) -> ResolveResult:
-        data = self.state_store.data
-
-        # Формируем команду
-        open_command = ActionCommand(
-            action=Action.OPEN,
-            symbol=data.symbol,
-            side=data.side,
-            qty=qty,
-            reason="PYRAMID_HA_BREAKOUT",
-        )
-
-        # Посылаем команду на исполнение и учет
-        open_result = self.action_service.process_action(open_command)
-        if not open_result.executed:
-            # Команда не выполнена
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: NOT FILLED",
-            )
-
-        # Команда выполнена
-        return ResolveResult(
-            executed=True,
-            status=f"HA BREAKOUT: OPENED | {info}",
-        )    
