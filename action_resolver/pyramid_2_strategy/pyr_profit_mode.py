@@ -255,14 +255,5 @@ class PyrProfitMode:
         else:
             buffer_pct = (simulated_stack_be - active_price) / active_price * 100
 
-        # Лог
-        self.app_ctx.logger.info(
-            f"[HA BREAKOUT] "
-            f"active_price={active_price} "
-            f"new_be={simulated_stack_be} "
-            f"buffer={buffer_pct:.4f}% "
-            f"min_buffer={float(data.min_be_buffer_pct):.4f}%"
-        )
-
         # Буфер рассчитан -> выходим
         return buffer_pct
