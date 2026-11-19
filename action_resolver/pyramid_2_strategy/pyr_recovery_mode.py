@@ -1,6 +1,6 @@
 from common.unwind.unwinder import Unwinder
-from common.level_distance_checker import is_level_distance_allowed
 from common.rearm import Rearm
+from action_resolver.pyramid_2_strategy.pyr_base_open import PyrBaseOpen
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
@@ -61,13 +61,20 @@ class PyrRecoveryMode:
             ha_signal=open_checker.ha_signal,
         )
 
+        self.base_open = PyrBaseOpen(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            open_checker=open_checker,
+            ha_opener=self.ha_opener,
+        )
+
     def resolve(self) -> ResolveResult:
         compensation_result = self._process_compensation()
 
         if compensation_result is not None:
             return compensation_result
 
-        return self._process_ha_breakout()
+        return self.base_open.process()
 
     def _process_compensation(self) -> ResolveResult | None:
         result = self.compensation.run()
@@ -98,98 +105,3 @@ class PyrRecoveryMode:
             info += f" | {result.rearm_status}"
 
         return ResolveResult(executed=True, status=info)
-
-    def _process_ha_breakout(self) -> ResolveResult:
-        # Проверяем HA Signal
-        skip = self._check_ha_signal()
-        if skip is not None:
-            return skip
-
-        # Новый уровень должен стать Base
-        skip = self._check_new_base()
-        if skip is not None:
-            return skip
-
-        # Проверяем дистанцию до каждого уровня стека
-        skip = self._check_distance()
-        if skip is not None:
-            return skip
-
-        # Проверяем qty
-        qty, skip = self._check_qty()
-        if skip is not None:
-            return skip
-
-        # Открываем уровень
-        return self.ha_opener.open(qty, "NEW BASE", is_base=True)
-
-    def _check_ha_signal(self) -> ResolveResult | None:
-        """None - сигнал есть, иначе готовый результат пропуска."""
-        if self.ha_opener.has_signal():
-            return None
-        return ResolveResult(
-            executed=False,
-            status="HA BREAKOUT: NO SIGNAL",
-        )
-
-    def _check_new_base(self) -> ResolveResult | None:
-        """None - уровень станет новым Base, иначе результат пропуска.
-
-        Base - самый нижний уровень для Buy, самый верхний для Sell.
-        """
-        active_price = self.ha_opener.get_active_price()
-        if self._is_new_base_level(active_price):
-            return None
-        return ResolveResult(
-            executed=False,
-            status="HA BREAKOUT: SKIPPED (NOT BASE)",
-        )
-
-    def _check_distance(self) -> ResolveResult | None:
-        """None - дистанция до каждого уровня разрешена, иначе пропуск."""
-        data = self.state_store.data
-
-        cur_price = float(
-            self.app_ctx.proxy_driver.get_last_price(data.symbol)
-        )
-
-        if is_level_distance_allowed(
-            cur_price=cur_price,
-            entries=data.stack.entries,
-            hedge_step_ratio=self.open_checker.step_ratio,
-        ):
-            return None
-
-        return ResolveResult(
-            executed=False,
-            status="HA BREAKOUT: SKIPPED (DISTANCE)",
-        )
-
-    def _check_qty(self) -> tuple[float | None, ResolveResult | None]:
-        """Возвращает qty либо результат пропуска."""
-        qty = self.open_checker.get_qty()
-
-        if qty <= 0:
-            return None, ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: SKIPPED (QTY = 0)",
-            )
-
-        return qty, None
-
-    def _is_new_base_level(self, price: float) -> bool:
-        """Станет ли уровень с ценой входа price новым Base.
-
-        Buy: ниже цены входа любого существующего уровня.
-        Sell: выше цены входа любого существующего уровня.
-        """
-        data = self.state_store.data
-        entries = data.stack.entries
-
-        if not entries:
-            return True
-
-        if data.side == "Buy":
-            return price < min(level.price for level in entries)
-
-        return price > max(level.price for level in entries)
