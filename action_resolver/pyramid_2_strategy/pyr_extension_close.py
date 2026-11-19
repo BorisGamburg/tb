@@ -13,12 +13,14 @@ class PyrExtensionClose:
         close_processor,
         rearm,
         step_ratio: float,
+        min_close_steps: int
     ):
         self.state_store = state_store
         self.app_ctx = app_ctx
         self.close_processor = close_processor
         self.rearm = rearm
         self.step_ratio = step_ratio
+        self.min_close_steps = min_close_steps
 
     def process(self) -> ResolveResult | None:
         """None - закрывать нечего, иначе результат закрытия."""
@@ -27,6 +29,19 @@ class PyrExtensionClose:
 
         if not extensions:
             return None
+
+        # При двух уровнях проверяем минимальную дистанцию для закрытия.
+        if len(data.stack.entries) == 2:
+            distance_steps = self._get_distance_steps()
+
+            if distance_steps <= self.min_close_steps:
+                return ResolveResult(
+                    executed=False,
+                    status=(
+                        f"PROFIT CLOSE: WAITING FOR DISTANCE "
+                        f"| {distance_steps:.2f} <= {self.min_close_steps}"
+                    ),
+                )        
 
         # Получаем Ask/Bid
         ticker = self.app_ctx.proxy_driver.get_ticker(data.symbol)
@@ -122,3 +137,24 @@ class PyrExtensionClose:
                 return level
 
         return None
+
+    def _get_distance_steps(self) -> float:
+        data = self.state_store.data
+        entries = data.stack.entries
+
+        if data.side == "Buy":
+            base_level = min(entries, key=lambda level: level.price)
+        else:
+            base_level = max(entries, key=lambda level: level.price)
+
+        other_level = next(
+            level for level in entries
+            if level is not base_level
+        )
+
+        distance_pct = (
+            abs(other_level.price - base_level.price)
+            / base_level.price
+        )
+
+        return distance_pct / self.step_ratio    

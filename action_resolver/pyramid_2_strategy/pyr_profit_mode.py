@@ -46,6 +46,7 @@ class PyrProfitMode:
             close_processor=close_processor,
             rearm=self.rearm,
             step_ratio=open_checker.step_ratio,
+            min_close_steps=state_store.data.min_close_steps,
         )
 
         # Используем тот же HA Breakout, который уже создан в EntryChecker.
