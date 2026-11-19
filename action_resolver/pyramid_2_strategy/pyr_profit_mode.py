@@ -156,53 +156,74 @@ class PyrProfitMode:
 
         return None
 
-    def _process_ha_breakout(self) -> ResolveResult:
-        data = self.state_store.data
-
-        # Проверяем HA Signal
-        if not self.ha_opener.has_signal():
-            # HA Signal отсутствует -> выходим
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: NO SIGNAL",
-            )
-
-        # Получаем qty
-        qty = self.open_checker.get_qty()
-        if qty <= 0:
-            # qty <= 0 -> выходим
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: SKIPPED (QTY = 0)",
-            )
-
-        # Проверяем дистанцию до каждого уровня
-        cur_price = float(
-            self.app_ctx.proxy_driver.get_last_price(data.symbol)
+    def _check_ha_signal(self) -> ResolveResult | None:
+        """None - сигнал есть, иначе готовый результат пропуска."""
+        if self.ha_opener.has_signal():
+            return None
+        return ResolveResult(
+            executed=False,
+            status="HA BREAKOUT: NO SIGNAL",
         )
-        if not is_level_distance_allowed(
-            cur_price=cur_price,
-            entries=data.stack.entries,
-            hedge_step_ratio=self.open_checker.step_ratio,
-        ):
-            # Дистанция не прошла -> выходим
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: SKIPPED (DISTANCE)",
-            )
 
-        # Дистанция ОК: открываем Extension, только если хватает буфера
+    def _process_ha_breakout(self) -> ResolveResult:
+        # Проверяем HA Signal
+        skip = self._check_ha_signal()
+        if skip is not None:
+            return skip
+
+        # Проверяем qty
+        qty, skip = self._check_qty()
+        if skip is not None:
+            return skip
+
+        # Проверяем дистанцию
+        skip = self._check_distance()
+        if skip is not None:
+            return skip
+        
+        # Проверяем буфер
+        buffer_info, skip = self._check_buffer(qty)
+        if skip is not None:
+            return skip
+        
+        # Открываем уровень
+        return self.ha_opener.open(qty, buffer_info)
+
+    def _check_buffer(
+        self,
+        qty: float,
+    ) -> tuple[str | None, ResolveResult | None]:
+        """Возвращает информацию о буфере либо результат пропуска."""
         buffer_ok, buffer_info = self._check_buffer_after_open(qty)
+
         if not buffer_ok:
-            # Проверка буфера не прошла -> выходим
-            return ResolveResult(
+            return None, ResolveResult(
                 executed=False,
                 status=f"HA BREAKOUT: SKIPPED | {buffer_info}",
             )
 
-        # Открываем уровень
-        return self.ha_opener.open(qty, buffer_info)
+        return buffer_info, None
+    
 
+    def _check_distance(self) -> ResolveResult | None:
+        """None — дистанция разрешена, иначе результат пропуска."""
+        data = self.state_store.data
+
+        cur_price = float(
+            self.app_ctx.proxy_driver.get_last_price(data.symbol)
+        )
+
+        if is_level_distance_allowed(
+            cur_price=cur_price,
+            entries=data.stack.entries,
+            hedge_step_ratio=self.open_checker.step_ratio,
+        ):
+            return None
+
+        return ResolveResult(
+            executed=False,
+            status="HA BREAKOUT: SKIPPED (DISTANCE)",
+        )
 
     def _check_buffer_after_open(self, qty: float) -> tuple[bool, str]:
         """Хватит ли буфера до BE, если открыть новый уровень сейчас.
@@ -268,3 +289,15 @@ class PyrProfitMode:
 
         # Буфер рассчитан -> выходим
         return buffer_pct
+
+    def _check_qty(self) -> tuple[float | None, ResolveResult | None]:
+        """Возвращает qty либо результат пропуска."""
+        qty = self.open_checker.get_qty()
+
+        if qty <= 0:
+            return None, ResolveResult(
+                executed=False,
+                status="HA BREAKOUT: SKIPPED (QTY = 0)",
+            )
+
+        return qty, None    

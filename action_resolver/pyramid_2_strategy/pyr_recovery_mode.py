@@ -100,50 +100,82 @@ class PyrRecoveryMode:
         return ResolveResult(executed=True, status=info)
 
     def _process_ha_breakout(self) -> ResolveResult:
-        data = self.state_store.data
-
         # Проверяем HA Signal
-        if not self.ha_opener.has_signal():
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: NO SIGNAL",
-            )
+        skip = self._check_ha_signal()
+        if skip is not None:
+            return skip
 
-        # Новый уровень должен стать Base (самым нижним для Buy, самым верхним для Sell)
-        active_price = self.ha_opener.get_active_price()
-        if not self._is_new_base_level(active_price):
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: SKIPPED (NOT BASE)",
-            )
+        # Новый уровень должен стать Base
+        skip = self._check_new_base()
+        if skip is not None:
+            return skip
 
         # Проверяем дистанцию до каждого уровня стека
+        skip = self._check_distance()
+        if skip is not None:
+            return skip
+
+        # Проверяем qty
+        qty, skip = self._check_qty()
+        if skip is not None:
+            return skip
+
+        # Открываем уровень
+        return self.ha_opener.open(qty, "NEW BASE", is_base=True)
+
+    def _check_ha_signal(self) -> ResolveResult | None:
+        """None - сигнал есть, иначе готовый результат пропуска."""
+        if self.ha_opener.has_signal():
+            return None
+        return ResolveResult(
+            executed=False,
+            status="HA BREAKOUT: NO SIGNAL",
+        )
+
+    def _check_new_base(self) -> ResolveResult | None:
+        """None - уровень станет новым Base, иначе результат пропуска.
+
+        Base - самый нижний уровень для Buy, самый верхний для Sell.
+        """
+        active_price = self.ha_opener.get_active_price()
+        if self._is_new_base_level(active_price):
+            return None
+        return ResolveResult(
+            executed=False,
+            status="HA BREAKOUT: SKIPPED (NOT BASE)",
+        )
+
+    def _check_distance(self) -> ResolveResult | None:
+        """None - дистанция до каждого уровня разрешена, иначе пропуск."""
+        data = self.state_store.data
+
         cur_price = float(
             self.app_ctx.proxy_driver.get_last_price(data.symbol)
         )
-        distance_allowed = is_level_distance_allowed(
+
+        if is_level_distance_allowed(
             cur_price=cur_price,
             entries=data.stack.entries,
             hedge_step_ratio=self.open_checker.step_ratio,
-        )
-        if not distance_allowed:
-            # Проверка дистанции не прошла -> выходим
-            return ResolveResult(
-                executed=False,
-                status="HA BREAKOUT: SKIPPED (DISTANCE)",
-            )
+        ):
+            return None
 
-        # Дистанция ОК
-        # Получаем qty
+        return ResolveResult(
+            executed=False,
+            status="HA BREAKOUT: SKIPPED (DISTANCE)",
+        )
+
+    def _check_qty(self) -> tuple[float | None, ResolveResult | None]:
+        """Возвращает qty либо результат пропуска."""
         qty = self.open_checker.get_qty()
+
         if qty <= 0:
-            return ResolveResult(
+            return None, ResolveResult(
                 executed=False,
                 status="HA BREAKOUT: SKIPPED (QTY = 0)",
             )
 
-        # Открываем уровень
-        return self.ha_opener.open(qty, "NEW BASE", is_base=True)
+        return qty, None
 
     def _is_new_base_level(self, price: float) -> bool:
         """Станет ли уровень с ценой входа price новым Base.
