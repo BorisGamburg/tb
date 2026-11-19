@@ -27,6 +27,10 @@ class PyrExtensionOpen:
         self.ha_opener = ha_opener
 
     def process(self) -> ResolveResult:
+        # Для одного уровня открываем второй по шагу, без HA и BE-буфера.
+        if len(self.state_store.data.stack.entries) == 1:
+            return self._open_second_level()
+
         # Проверяем HA Signal
         skip = self._check_ha_signal()
         if skip is not None:
@@ -170,3 +174,47 @@ class PyrExtensionOpen:
             )
 
         return qty, None
+
+    def _open_second_level(self) -> ResolveResult:
+        data = self.state_store.data
+        base_level = data.stack.entries[0]
+
+        cur_price = float(
+            self.app_ctx.proxy_driver.get_last_price(data.symbol)
+        )
+
+        if data.side == "Buy":
+            target_price = base_level.price * (
+                1 - self.open_checker.step_ratio
+            )
+            step_reached = cur_price <= target_price
+        else:
+            target_price = base_level.price * (
+                1 + self.open_checker.step_ratio
+            )
+            step_reached = cur_price >= target_price
+
+        if not step_reached:
+            return ResolveResult(
+                executed=False,
+                status=(
+                    f"STEP OPEN: WAITING FOR DISTANCE "
+                    f"| current={cur_price} "
+                    f"| target={target_price}"
+                ),
+            )
+
+        qty = self.open_checker.get_qty()
+
+        if qty <= 0:
+            return ResolveResult(
+                executed=False,
+                status="STEP OPEN: SKIPPED (QTY = 0)",
+            )
+
+        return self.ha_opener.open(
+            qty,
+            "SECOND LEVEL BY STEP",
+            reason="PYRAMID_STEP_OPEN",
+            status_prefix="STEP OPEN",
+        )    

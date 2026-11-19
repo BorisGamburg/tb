@@ -49,6 +49,8 @@ class PyrHaBreakoutOpener:
         qty: float,
         info: str,
         is_base: bool = False,
+        reason: str = "PYRAMID_HA_BREAKOUT",
+        status_prefix: str = "HA BREAKOUT",
     ) -> ResolveResult:
         data = self.state_store.data
 
@@ -58,7 +60,7 @@ class PyrHaBreakoutOpener:
             symbol=data.symbol,
             side=data.side,
             qty=qty,
-            reason="PYRAMID_HA_BREAKOUT",
+            reason=reason,
         )
 
         # Посылаем команду на исполнение и учет.
@@ -68,7 +70,7 @@ class PyrHaBreakoutOpener:
             # Команда не выполнена
             return ResolveResult(
                 executed=False,
-                status="HA BREAKOUT: NOT FILLED",
+                status=f"{status_prefix}: NOT FILLED",
             )
 
         # Открыт Base -> переходим на следующий таймфрейм списка
@@ -78,7 +80,7 @@ class PyrHaBreakoutOpener:
         # Команда выполнена
         return ResolveResult(
             executed=True,
-            status=f"HA BREAKOUT: OPENED | {info}",
+            status=f"{status_prefix}: OPENED | {info}",
         )
 
     def _advance_entry_tf(self) -> None:
