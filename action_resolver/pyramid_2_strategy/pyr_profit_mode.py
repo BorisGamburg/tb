@@ -1,10 +1,11 @@
-from action_processor.action import Action, ActionCommand
 from action_resolver.resolve_result import ResolveResult
-from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
 )
 from common.rearm import Rearm
+from action_resolver.pyramid_2_strategy.pyr_extension_close import (
+    PyrExtensionClose,
+)
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
@@ -37,6 +38,14 @@ class PyrProfitMode:
             step_ratio=open_checker.step_ratio,
         )
 
+        self.extension_close = PyrExtensionClose(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            close_processor=close_processor,
+            rearm=self.rearm,
+            step_ratio=open_checker.step_ratio,
+        )
+
         # Используем тот же HA Breakout, который уже создан в EntryChecker.
         self.ha_opener = PyrHaBreakoutOpener(
             state_store=state_store,
@@ -46,115 +55,12 @@ class PyrProfitMode:
         )
 
     def resolve(self) -> ResolveResult:
-        close_result = self._process_extension_close()
+        close_result = self.extension_close.process()
 
         if close_result is not None:
             return close_result
 
         return self._process_ha_breakout()
-
-    def _get_extension_levels(self):
-        data = self.state_store.data
-        entries = data.stack.entries
-
-        if not entries:
-            return []
-
-        if data.side == "Buy":
-            base_level = min(entries, key=lambda level: level.price)
-        else:
-            base_level = max(entries, key=lambda level: level.price)
-
-        return [
-            level
-            for level in entries
-            if level is not base_level
-        ]
-
-    def _process_extension_close(self) -> ResolveResult | None:
-        data = self.state_store.data
-        extensions = self._get_extension_levels()
-
-        if not extensions:
-            return None
-
-        # Получаем Ask/Bid 
-        ticker = self.app_ctx.proxy_driver.get_ticker(data.symbol)
-        bid = float(ticker["bid"])
-        ask = float(ticker["ask"])
-
-        step_ratio = self.open_checker.step_ratio
-
-        close_level = None
-
-        # Ищем уровеня для закрытия
-        close_level = self.find_close_level(data, extensions, bid, ask, step_ratio)
-        if close_level is None:
-            return None
-
-        # Уровеень для закрытия найден, формируем команду на закрытие.
-        close_command = ActionCommand(
-            action=Action.CLOSE,
-            symbol=data.symbol,
-            side=get_inverse_side(data.side),
-            qty=close_level.qty,
-            levels=[close_level],
-            reason="PYRAMID_PROFIT_CLOSE",
-        )
-
-        # Отправляем команду на закрытие через CloseProcessor.
-        close_result = self.close_processor.execute_profit_close(
-            close_command
-        )
-
-        exec_result = close_result.execution_result
-
-        # Проверяем результат исполнения команды.
-        if not exec_result.executed:
-            return ResolveResult(
-                executed=False,
-                status="PROFIT CLOSE: NOT FILLED",
-            )
-
-        # Проверяем закрылся уровень полностью или частично.
-        if not close_result.fully_closed:
-            # Частичное закрытие уровня -> rearm не выполняем
-            return ResolveResult(
-                executed=True,
-                status=(
-                    f"PROFIT CLOSE: PARTIAL "
-                    f"| price={close_level.price}"
-                ),
-            )
-
-        # Полное закрытие уровня -> пробуем выполнить rearm.
-        rearm_status = self.rearm.try_rearm()
-
-        # Возвращаем результат закрытия уровня с информацией о rearm.
-        return ResolveResult(
-            executed=True,
-            status=(
-                f"PROFIT CLOSE: FULL "
-                f"| price={close_level.price} "
-                f"| {rearm_status}"
-            ),
-        )
-
-    def find_close_level(self, data, extensions, bid, ask, step_ratio):
-        for level in extensions:
-            if data.side == "Buy":
-                close_price_reached = (
-                    bid >= level.price * (1 + step_ratio)
-                )
-            else:
-                close_price_reached = (
-                    ask <= level.price * (1 - step_ratio)
-                )
-
-            if close_price_reached:
-                return level
-
-        return None
 
     def _check_ha_signal(self) -> ResolveResult | None:
         """None - сигнал есть, иначе готовый результат пропуска."""
@@ -300,4 +206,4 @@ class PyrProfitMode:
                 status="HA BREAKOUT: SKIPPED (QTY = 0)",
             )
 
-        return qty, None    
+        return qty, None
