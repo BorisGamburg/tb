@@ -4,7 +4,7 @@ from utils.utils import get_inverse_side
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
 )
-from action_resolver.pyramid_2_strategy.pyr_rearm import PyrRearm
+from common.rearm import Rearm
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
@@ -29,11 +29,12 @@ class PyrProfitMode:
         self.open_checker = open_checker
         self.close_processor = close_processor
 
-        self.rearm = PyrRearm(
+        self.rearm = Rearm(
             state_store=state_store,
             app_ctx=app_ctx,
             action_service=action_service,
-            open_checker=open_checker,
+            get_qty=open_checker.get_qty,
+            step_ratio=open_checker.step_ratio,
         )
 
         # Используем тот же HA Breakout, который уже создан в EntryChecker.
