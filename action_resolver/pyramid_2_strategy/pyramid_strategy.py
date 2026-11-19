@@ -15,6 +15,9 @@ from action_resolver.pyramid_2_strategy.pyr_partial_close_calculator import (
 from action_resolver.pyramid_2_strategy.pyr_close_processor import (
     PyrCloseProcessor,
 )
+from action_resolver.pyramid_2_strategy.pyr_empty_mode import (
+    PyrEmptyMode,
+)
 from action_resolver.pyramid_2_strategy.pyr_profit_mode import (
     PyrProfitMode,
 )
@@ -64,6 +67,13 @@ class PyramidStrategy(BaseStrategy):
             logger=app_ctx.logger,
         )
 
+        self.empty_mode = PyrEmptyMode(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            action_service=self.action_service,
+            open_checker=self.open_checker,
+        )
+
         self.profit_mode = PyrProfitMode(
             state_store=state_store,
             app_ctx=app_ctx,
@@ -99,7 +109,9 @@ class PyramidStrategy(BaseStrategy):
             fee_taker=self.trading_info.fee_taker,
         )
 
-        if mode == PyramidModeResolver.PROFIT_MODE:
+        if mode == PyramidModeResolver.EMPTY_MODE:
+            result = self.empty_mode.resolve()
+        elif mode == PyramidModeResolver.PROFIT_MODE:
             result = self.profit_mode.resolve()
         elif mode == PyramidModeResolver.RECOVERY_MODE:
             result = self.recovery_mode.resolve()
@@ -128,7 +140,9 @@ class PyramidStrategy(BaseStrategy):
         status = f"BID/ASK: {ticker['bid']:.6f} — {ticker['ask']:.6f} | "
 
         # Режим
-        if mode == PyramidModeResolver.PROFIT_MODE:
+        if mode == PyramidModeResolver.EMPTY_MODE:
+            status += "MODE: ⚪ EMPTY | "
+        elif mode == PyramidModeResolver.PROFIT_MODE:
             status += "MODE: 🟢 PROFIT | "
         else:
             status += "MODE: 🔴 RECOVERY | "

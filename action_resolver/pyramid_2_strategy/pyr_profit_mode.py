@@ -176,14 +176,7 @@ class PyrProfitMode:
                 status="HA BREAKOUT: SKIPPED (QTY = 0)",
             )
 
-        # Стек пустой -> открываем Base по сигналу,
-        # без проверки дистанции и буфера BE.
-        if not data.stack.entries:
-            return self.ha_opener.open(
-                qty, "BASE (EMPTY STACK)", is_base=True
-            )
-
-        # Стек не пуст: проверяем дистанцию до каждого уровня
+        # Проверяем дистанцию до каждого уровня
         cur_price = float(
             self.app_ctx.proxy_driver.get_last_price(data.symbol)
         )
