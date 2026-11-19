@@ -8,6 +8,7 @@ from action_resolver.pyramid_2_strategy.pyr_rearm import PyrRearm
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
+from common.level_distance_checker import is_level_distance_allowed
 
 
 class PyrProfitMode:
@@ -174,14 +175,29 @@ class PyrProfitMode:
                 status="HA BREAKOUT: SKIPPED (QTY = 0)",
             )
 
-        # Стек пустой?
+        # Стек пустой -> открываем Base по сигналу,
+        # без проверки дистанции и буфера BE.
         if not data.stack.entries:
-            # Пустой стек: открываем Base по сигналу, без проверки буфера BE.
             return self.ha_opener.open(
                 qty, "BASE (EMPTY STACK)", is_base=True
             )
 
-        # Стек не пуст: открываем Extension, только если хватает буфера.
+        # Стек не пуст: проверяем дистанцию до каждого уровня
+        cur_price = float(
+            self.app_ctx.proxy_driver.get_last_price(data.symbol)
+        )
+        if not is_level_distance_allowed(
+            cur_price=cur_price,
+            entries=data.stack.entries,
+            hedge_step_ratio=self.open_checker.step_ratio,
+        ):
+            # Дистанция не прошла -> выходим
+            return ResolveResult(
+                executed=False,
+                status="HA BREAKOUT: SKIPPED (DISTANCE)",
+            )
+
+        # Дистанция ОК: открываем Extension, только если хватает буфера
         buffer_ok, buffer_info = self._check_buffer_after_open(qty)
         if not buffer_ok:
             # Проверка буфера не прошла -> выходим
@@ -192,6 +208,7 @@ class PyrProfitMode:
 
         # Открываем уровень
         return self.ha_opener.open(qty, buffer_info)
+
 
     def _check_buffer_after_open(self, qty: float) -> tuple[bool, str]:
         """Хватит ли буфера до BE, если открыть новый уровень сейчас.
