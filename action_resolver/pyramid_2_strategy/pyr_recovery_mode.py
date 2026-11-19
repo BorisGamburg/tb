@@ -6,10 +6,10 @@ from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
 )
 from action_resolver.resolve_result import ResolveResult
 from common.compensation.compensation_planner import CompensationPlanner
-from action_processor.action import Action, ActionCommand
-from action_processor.execution.close_limit_mng import ExitType
-from action_processor.execution.limit_order_result import LimitOrderStatus
-from utils.utils import get_inverse_side
+from common.compensation.recovery_compensation import (
+    CompensationOutcome,
+    RecoveryCompensation,
+)
 
 
 class PyrRecoveryMode:
@@ -43,6 +43,15 @@ class PyrRecoveryMode:
             open_checker=open_checker,
         )
 
+        self.compensation = RecoveryCompensation(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            action_service=action_service,
+            unwinder=unwinder,
+            planner=self.compensation_planner,
+            rearm=self.rearm,
+        )
+
         # Используем тот же HA Breakout, который уже создан в EntryChecker.
         self.ha_opener = PyrHaBreakoutOpener(
             state_store=state_store,
@@ -60,120 +69,32 @@ class PyrRecoveryMode:
         return self._process_ha_breakout()
 
     def _process_compensation(self) -> ResolveResult | None:
-        close_price = self._get_close_price()
+        result = self.compensation.run()
 
-        # Считаем компенсацию: что закрывать и в каком объёме
-        plan = self._plan_compensation(close_price)
-        if plan is None:
+        if result.outcome is CompensationOutcome.NO_PLAN:
             # Компенсации нет -> дальше проверяем HA Breakout
             return None
 
-        # Отправляем один общий ордер
-        exec_result = self._execute_compensation(plan, close_price)
-        if not exec_result.executed:
+        if result.outcome is CompensationOutcome.NOT_FILLED:
             return ResolveResult(
                 executed=False,
                 status="COMPENSATION: NOT FILLED",
             )
 
-        # Списываем стек по факту исполнения
-        self._apply_compensation_fill(plan, exec_result)
-
-        # Base закрыт -> пробуем выполнить rearm
-        rearm_status = None
-        if self._is_base_closed(plan):
-            rearm_status = self.rearm.try_rearm()
-
-        return self._build_compensation_result(
-            plan, exec_result, rearm_status
-        )
-
-    def _get_close_price(self) -> float:
-        """Цена закрытия с исполняемой стороны (Buy: Bid, Sell: Ask)."""
-        data = self.state_store.data
-        return float(
-            self.app_ctx.price_service.get_market_close_price(
-                symbol=data.symbol,
-                side=data.side,
-            )
-        )
-
-    def _plan_compensation(self, close_price: float):
-        data = self.state_store.data
-        return self.compensation_planner.plan(
-            levels=data.stack.entries,
-            side=data.side,
-            price=close_price,
-            min_pnl=float(data.min_pnl),
-        )
-
-    def _get_plan_levels(self, plan) -> list:
-        """Уровни, участвующие в компенсации: Base и убыточные."""
-        return [
-            plan.base_level,
-            *(reduction.level for reduction in plan.reductions),
-        ]
-
-    def _execute_compensation(self, plan, close_price: float):
-        data = self.state_store.data
-
-        # Команда на закрытие одним общим ордером
-        command = ActionCommand(
-            action=Action.CLOSE,
-            symbol=data.symbol,
-            side=get_inverse_side(data.side),
-            qty=plan.total_qty,
-            levels=self._get_plan_levels(plan),
-            reason="PYRAMID_COMPENSATION",
-            limit_price=close_price,
-        )
-
-        # Отправляем ордер через существующий механизм исполнения
-        return self.action_service.execution.execute(
-            command,
-            exit_type=ExitType.ACTIVE,
-        )
-
-    def _apply_compensation_fill(self, plan, exec_result) -> None:
-        """Исполненный объём раскидывается по уровням на безубыток
-        по реальным qty, цене и комиссии. Это не план, а учёт факта.
-        Передаём только Base и убыточные уровни (прибыльные не участвуют).
-        """
-        data = self.state_store.data
-        self.unwinder.fill_applier.apply(
-            side=data.side,
-            entries=self._get_plan_levels(plan),
-            exec_result=exec_result,
-            min_pnl=float(data.min_pnl),
-        )
-
-    def _is_base_closed(self, plan) -> bool:
-        """Base исчез из стека. При частичном исполнении он остаётся."""
-        return not any(
-            level is plan.base_level
-            for level in self.state_store.data.stack.entries
-        )
-
-    def _build_compensation_result(
-        self,
-        plan,
-        exec_result,
-        rearm_status: str | None,
-    ) -> ResolveResult:
         status = (
             "FILLED"
-            if exec_result.status == LimitOrderStatus.FILLED
+            if result.outcome is CompensationOutcome.FILLED
             else "PARTIALLY FILLED"
         )
         info = (
             f"COMPENSATION: {status} "
-            f"| requested={plan.total_qty:g} "
-            f"| executed={exec_result.qty:g} "
-            f"| price={exec_result.price:g}"
+            f"| requested={result.requested_qty:g} "
+            f"| executed={result.executed_qty:g} "
+            f"| price={result.price:g}"
         )
 
-        if rearm_status is not None:
-            info += f" | {rearm_status}"
+        if result.rearm_status is not None:
+            info += f" | {result.rearm_status}"
 
         return ResolveResult(executed=True, status=info)
 
