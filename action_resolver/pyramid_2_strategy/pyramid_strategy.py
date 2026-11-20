@@ -162,10 +162,22 @@ class PyramidStrategy(BaseStrategy):
             status += f"BE: {stack_be:.6f} (BUFFER {buffer_pct:+.2f}%) | "
 
         status += f"LEVELS: {len(data.stack.entries)} | "
+        status += self._close_target_status(mode)
         status += f"HA({data.entry_tf}) | "
         status += mode_status
 
         return status.rstrip(" |")
+
+    def _close_target_status(self, mode: str) -> str:
+        """Цена закрытия Extension (только в PROFIT и если есть что закрывать)."""
+        if mode != PyramidModeResolver.PROFIT_MODE:
+            return ""
+
+        target = self.profit_mode.get_close_target()
+        if target is None:
+            return ""
+
+        return f"CLOSE AT: {target:.6f} | "
 
     def _log_parameters(self) -> None:
         data = self.state_store.data

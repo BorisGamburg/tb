@@ -72,3 +72,7 @@ class PyrProfitMode:
             return close_result
 
         return self.ha_breakout.process()
+
+    def get_close_target(self) -> float | None:
+        """Цена, при которой закроется ближайший Extension (для статуса)."""
+        return self.extension_close.get_target_price()

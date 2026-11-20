@@ -120,6 +120,27 @@ class PyrExtensionClose:
             if level is not base_level
         ]
 
+    def get_target_price(self) -> float | None:
+        """Ближайшая к цене цель закрытия Extension (для статуса).
+
+        Buy: bid должен подняться до цели (берём наименьшую).
+        Sell: ask должен опуститься до цели (берём наибольшую).
+        """
+        data = self.state_store.data
+        extensions = self._get_extension_levels()
+
+        if not extensions:
+            return None
+
+        if data.side == "Buy":
+            return min(
+                level.price * (1 + self.step_ratio) for level in extensions
+            )
+
+        return max(
+            level.price * (1 - self.step_ratio) for level in extensions
+        )
+
     def _find_close_level(self, extensions, bid, ask):
         data = self.state_store.data
 
@@ -157,4 +178,4 @@ class PyrExtensionClose:
             / base_level.price
         )
 
-        return distance_pct / self.step_ratio    
+        return distance_pct / self.step_ratio
