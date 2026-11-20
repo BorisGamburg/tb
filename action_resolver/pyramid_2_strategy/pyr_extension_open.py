@@ -46,6 +46,11 @@ class PyrExtensionOpen:
         if skip is not None:
             return skip
 
+        # Проверяем, что цена ордера не за крайним уровнем стека
+        skip = self._check_price_limit()
+        if skip is not None:
+            return skip
+
         # Проверяем буфер
         buffer_info, skip = self._check_buffer(qty)
         if skip is not None:
@@ -61,6 +66,34 @@ class PyrExtensionOpen:
         return ResolveResult(
             executed=False,
             status="HA BREAKOUT: NO SIGNAL",
+        )
+
+    def _check_price_limit(self) -> ResolveResult | None:
+        """None - цена допустима, иначе результат пропуска.
+
+        Buy: цена ордера не выше самого высокого уровня стека.
+        Sell: цена ордера не ниже самого низкого уровня стека.
+        """
+        data = self.state_store.data
+        prices = [level.price for level in data.stack.entries]
+        active_price = self.ha_opener.get_active_price()
+
+        if data.side == "Buy":
+            limit_price = max(prices)
+            out_of_range = active_price > limit_price
+        else:
+            limit_price = min(prices)
+            out_of_range = active_price < limit_price
+
+        if not out_of_range:
+            return None
+
+        return ResolveResult(
+            executed=False,
+            status=(
+                f"HA BREAKOUT: SKIPPED (PRICE {active_price} "
+                f"BEYOND LEVEL {limit_price})"
+            ),
         )
 
     def _check_buffer(
@@ -217,4 +250,4 @@ class PyrExtensionOpen:
             "SECOND LEVEL BY STEP",
             reason="PYRAMID_STEP_OPEN",
             status_prefix="STEP OPEN",
-        )    
+        )
