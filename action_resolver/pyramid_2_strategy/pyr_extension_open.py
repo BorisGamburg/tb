@@ -1,6 +1,7 @@
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
+from action_resolver.pyramid_2_strategy.pyr_tf_advance import advance_entry_tf
 from action_resolver.resolve_result import ResolveResult
 from common.level_distance_checker import is_level_distance_allowed
 
@@ -57,7 +58,13 @@ class PyrExtensionOpen:
             return skip
 
         # Открываем уровень
-        return self.ha_opener.open(qty, buffer_info)
+        result = self.ha_opener.open(qty, buffer_info)
+
+        # Открыт новый уровень по пробою HA -> следующий таймфрейм списка
+        if result.executed:
+            advance_entry_tf(self.state_store, self.app_ctx)
+
+        return result
 
     def _check_ha_signal(self) -> ResolveResult | None:
         """None - сигнал есть, иначе готовый результат пропуска."""

@@ -48,7 +48,6 @@ class PyrHaBreakoutOpener:
         self,
         qty: float,
         info: str,
-        is_base: bool = False,
         reason: str = "PYRAMID_HA_BREAKOUT",
         status_prefix: str = "HA BREAKOUT",
     ) -> ResolveResult:
@@ -73,30 +72,8 @@ class PyrHaBreakoutOpener:
                 status=f"{status_prefix}: NOT FILLED",
             )
 
-        # Открыт Base -> переходим на следующий таймфрейм списка
-        if is_base:
-            self._advance_entry_tf()
-
         # Команда выполнена
         return ResolveResult(
             executed=True,
             status=f"{status_prefix}: OPENED | {info}",
-        )
-
-    def _advance_entry_tf(self) -> None:
-        data = self.state_store.data
-
-        # Последний таймфрейм в списке -> остаёмся на нём
-        if data.tf_index >= len(data.timeframes) - 1:
-            return
-
-        current_tf = data.entry_tf
-
-        # Переходим на следующий таймфрейм списка
-        data.tf_index += 1
-        self.state_store.save()
-
-        self.app_ctx.logger.info(
-            f"Base level opened: entry_tf changed "
-            f"from {current_tf} to {data.entry_tf}"
         )

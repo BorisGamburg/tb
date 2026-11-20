@@ -56,3 +56,14 @@ class PyrSchema(BaseModel):
     def entry_tf(self) -> str:
         """Текущий таймфрейм входа."""
         return self.timeframes[self.tf_index]
+
+    def advance_tf(self) -> bool:
+        """Переходит на следующий таймфрейм списка.
+
+        Возвращает True, если индекс был изменён. На последнем таймфрейме
+        остаёмся на нём и возвращаем False.
+        """
+        if self.tf_index >= len(self.timeframes) - 1:
+            return False
+        self.tf_index += 1
+        return True

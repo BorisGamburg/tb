@@ -2,6 +2,7 @@ from action_resolver.resolve_result import ResolveResult
 from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
+from action_resolver.pyramid_2_strategy.pyr_tf_advance import advance_entry_tf
 
 
 class PyrEmptyMode:
@@ -45,6 +46,10 @@ class PyrEmptyMode:
 
         # Стек пустой -> открываем Base по сигналу,
         # без проверки дистанции и буфера BE.
-        return self.ha_opener.open(
-            qty, "BASE (EMPTY STACK)", is_base=True
-        )
+        result = self.ha_opener.open(qty, "BASE (EMPTY STACK)")
+
+        # Открыт Base -> переходим на следующий таймфрейм списка
+        if result.executed:
+            advance_entry_tf(self.state_store, self.app_ctx)
+
+        return result
