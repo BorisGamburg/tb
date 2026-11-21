@@ -24,34 +24,29 @@ class PyrExtensionClose:
 
     def process(self) -> ResolveResult | None:
         """None - закрывать нечего, иначе результат закрытия."""
+        # Инит
         data = self.state_store.data
-        extensions = self._get_extension_levels()
 
+        # Проверяем наличие extension уровней
+        extensions = self._get_extension_levels()
         if not extensions:
             return None
 
-        # При двух уровнях проверяем минимальную дистанцию для закрытия.
-        if len(data.stack.entries) == 2:
-            distance_steps = self._get_distance_steps()
-
-            if distance_steps <= self.min_close_steps:
-                return ResolveResult(
-                    executed=False,
-                    status=(
-                        f"PROFIT CLOSE: WAITING FOR DISTANCE "
-                        f"| {distance_steps:.2f} <= {self.min_close_steps}"
-                    ),
-                )        
-
-        # Получаем Ask/Bid
-        ticker = self.app_ctx.proxy_driver.get_ticker(data.symbol)
-        bid = float(ticker["bid"])
-        ask = float(ticker["ask"])
+        # Проверяем минимальную дистанцию для закрытия для 2 уровней
+        skip = self._check_distance_for_two_levels()
+        if skip is not None:
+            return skip
 
         # Ищем уровень для закрытия
-        close_level = self._find_close_level(extensions, bid, ask)
+        close_level = self._get_close_level(extensions)
         if close_level is None:
             return None
+
+        # Уровень найден -> фиксируем причину закрытия в логе
+        self.app_ctx.logger.info(
+            f"[PROFIT CLOSE] level={close_level.price} | qty={close_level.qty} "
+            f"| target={target_price} | step_ratio={self.step_ratio}"
+        )        
 
         # Уровень для закрытия найден, формируем команду на закрытие.
         close_command = ActionCommand(
@@ -101,6 +96,26 @@ class PyrExtensionClose:
             ),
         )
 
+    def _check_distance_for_two_levels(self) -> ResolveResult | None:
+        """None - дистанция достаточна, иначе результат пропуска.
+
+        Проверяется только при двух уровнях в стеке.
+        """
+        if len(self.state_store.data.stack.entries) != 2:
+            return None
+
+        distance_steps = self._get_distance_steps()
+        if distance_steps > self.min_close_steps:
+            return None
+
+        return ResolveResult(
+            executed=False,
+            status=(
+                f"PROFIT CLOSE: WAITING FOR DISTANCE "
+                f"| {distance_steps:.2f} <= {self.min_close_steps}"
+            ),
+        )
+
     def _get_extension_levels(self):
         """Все уровни, кроме Base (Buy: самый нижний, Sell: самый верхний)."""
         data = self.state_store.data
@@ -140,6 +155,20 @@ class PyrExtensionClose:
         return max(
             level.price * (1 - self.step_ratio) for level in extensions
         )
+
+    def _get_close_level(self, extensions):
+        """Уровень Extension для закрытия по текущему Ask/Bid.
+
+        None - цель закрытия ни у одного уровня не достигнута.
+        """
+        data = self.state_store.data
+
+        # Получаем Ask/Bid
+        ticker = self.app_ctx.proxy_driver.get_ticker(data.symbol)
+        bid = float(ticker["bid"])
+        ask = float(ticker["ask"])
+
+        return self._find_close_level(extensions, bid, ask)
 
     def _find_close_level(self, extensions, bid, ask):
         data = self.state_store.data
