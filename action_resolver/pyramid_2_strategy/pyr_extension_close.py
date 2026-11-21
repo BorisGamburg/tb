@@ -71,6 +71,10 @@ class PyrExtensionClose:
         rearm_status = self.rearm.try_rearm()
 
         # Возвращаем результат закрытия уровня с информацией о rearm.
+        return self._get_full_close_result(close_level, rearm_status)
+
+    def _get_full_close_result(self, close_level, rearm_status) -> ResolveResult:
+        """Результат полного закрытия уровня с информацией о rearm."""
         return ResolveResult(
             executed=True,
             status=(
