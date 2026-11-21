@@ -56,12 +56,9 @@ class PyrExtensionClose:
         )
 
         # Проверяем результат исполнения команды.
-        exec_result = close_result.execution_result
-        if not exec_result.executed:
-            return ResolveResult(
-                executed=False,
-                status="PROFIT CLOSE: NOT FILLED",
-            )
+        skip = self._check_close_result(close_result)
+        if skip is not None:
+            return skip
 
         # Проверяем закрылся уровень полностью или частично.
         if not close_result.fully_closed:
@@ -107,6 +104,16 @@ class PyrExtensionClose:
         self.app_ctx.logger.info(
             f"[PROFIT CLOSE] level={close_level.price} | qty={close_level.qty} "
             f"| target={target_price} | step_ratio={self.step_ratio}"
+        )
+
+    def _check_close_result(self, close_result) -> ResolveResult | None:
+        """None - команда на закрытие исполнена, иначе результат пропуска."""
+        if close_result.execution_result.executed:
+            return None
+
+        return ResolveResult(
+            executed=False,
+            status="PROFIT CLOSE: NOT FILLED",
         )
 
     def _check_distance_for_two_levels(self) -> ResolveResult | None:
