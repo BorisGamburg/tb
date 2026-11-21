@@ -24,9 +24,6 @@ class PyrExtensionClose:
 
     def process(self) -> ResolveResult | None:
         """None - закрывать нечего, иначе результат закрытия."""
-        # Инит
-        data = self.state_store.data
-
         # Проверяем наличие extension уровней
         extensions = self._get_extension_levels()
         if not extensions:
@@ -42,36 +39,47 @@ class PyrExtensionClose:
         if close_level is None:
             return None
 
-        # Уровень для закрытия найден
-        
-        # Фиксируем причину закрытия в логе
-        self.log_close_reason(data, close_level)        
+        # Закрываем уровень
+        close_result = self._execute_close(close_level)
 
-        # Формируем команду на закрытие.
-        close_command = self.get_close_command(data, close_level)
-
-        # Отправляем команду на закрытие через CloseProcessor.
-        close_result = self.close_processor.execute_profit_close(
-            close_command
-        )
-
-        # Проверяем результат исполнения команды.
-        skip = self._check_close_result(close_result)
+        # Не исполнено или закрыто частично -> выходим
+        skip = self._check_close_incomplete(close_result, close_level)
         if skip is not None:
             return skip
 
-        # Проверяем частиное закрытие
-        skip = self._check_partial_close(close_result, close_level)
-        if skip is not None:
-            return skip
-
-        # Полное закрытие уровня
-         
+        # Полное закрытие уровня 
         # Пробуем выполнить rearm.
         rearm_status = self.rearm.try_rearm()
 
         # Возвращаем результат закрытия уровня с информацией о rearm.
         return self._get_full_close_result(close_level, rearm_status)
+
+    def _execute_close(self, close_level):
+        """Логирует причину и отправляет команду на закрытие уровня."""
+        data = self.state_store.data
+
+        # Фиксируем причину закрытия в логе
+        self.log_close_reason(data, close_level)
+
+        # Формируем команду на закрытие.
+        close_command = self.get_close_command(data, close_level)
+
+        # Отправляем команду на закрытие через CloseProcessor.
+        return self.close_processor.execute_profit_close(close_command)
+
+    def _check_close_incomplete(
+        self,
+        close_result,
+        close_level,
+    ) -> ResolveResult | None:
+        """None - уровень закрыт полностью, иначе результат пропуска rearm."""
+        # Проверяем результат исполнения команды.
+        skip = self._check_close_result(close_result)
+        if skip is not None:
+            return skip
+
+        # Проверяем частичное закрытие
+        return self._check_partial_close(close_result, close_level)
 
     def _get_full_close_result(self, close_level, rearm_status) -> ResolveResult:
         """Результат полного закрытия уровня с информацией о rearm."""
