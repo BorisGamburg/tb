@@ -29,13 +29,10 @@ class PyrExtensionClose:
         if not extensions:
             return None
 
-        # Проверяем минимальную дистанцию для закрытия для 2 уровней
-        skip = self._check_distance_for_two_levels()
+        # Выбираем уровень для закрытия
+        close_level, skip = self._select_close_level(extensions)
         if skip is not None:
             return skip
-
-        # Ищем уровень для закрытия
-        close_level = self._get_close_level(extensions)
         if close_level is None:
             return None
 
@@ -48,11 +45,28 @@ class PyrExtensionClose:
             return skip
 
         # Полное закрытие уровня 
+        
         # Пробуем выполнить rearm.
         rearm_status = self.rearm.try_rearm()
 
         # Возвращаем результат закрытия уровня с информацией о rearm.
         return self._get_full_close_result(close_level, rearm_status)
+
+    def _select_close_level(self, extensions):
+        """Выбирает уровень для закрытия.
+
+        Возвращает (close_level, skip):
+        - skip не None - закрытие пропущено, нужно вернуть этот результат;
+        - close_level None (и skip None) - закрывать нечего;
+        - иначе close_level - уровень для закрытия.
+        """
+        # Проверяем минимальную дистанцию для закрытия для 2 уровней
+        skip = self._check_distance_for_two_levels()
+        if skip is not None:
+            return None, skip
+
+        # Ищем уровень для закрытия
+        return self._get_close_level(extensions), None
 
     def _execute_close(self, close_level):
         """Логирует причину и отправляет команду на закрытие уровня."""
