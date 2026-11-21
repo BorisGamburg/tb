@@ -60,18 +60,14 @@ class PyrExtensionClose:
         if skip is not None:
             return skip
 
-        # Проверяем закрылся уровень полностью или частично.
-        if not close_result.fully_closed:
-            # Частичное закрытие уровня -> rearm не выполняем
-            return ResolveResult(
-                executed=True,
-                status=(
-                    f"PROFIT CLOSE: PARTIAL "
-                    f"| price={close_level.price}"
-                ),
-            )
+        # Проверяем частиное закрытие
+        skip = self._check_partial_close(close_result, close_level)
+        if skip is not None:
+            return skip
 
-        # Полное закрытие уровня -> пробуем выполнить rearm.
+        # Полное закрытие уровня
+         
+        # Пробуем выполнить rearm.
         rearm_status = self.rearm.try_rearm()
 
         # Возвращаем результат закрытия уровня с информацией о rearm.
@@ -104,6 +100,23 @@ class PyrExtensionClose:
         self.app_ctx.logger.info(
             f"[PROFIT CLOSE] level={close_level.price} | qty={close_level.qty} "
             f"| target={target_price} | step_ratio={self.step_ratio}"
+        )
+
+    def _check_partial_close(
+        self,
+        close_result,
+        close_level,
+    ) -> ResolveResult | None:
+        """None - уровень закрыт полностью, иначе результат частичного закрытия."""
+        if close_result.fully_closed:
+            return None
+
+        return ResolveResult(
+            executed=True,
+            status=(
+                f"PROFIT CLOSE: PARTIAL "
+                f"| price={close_level.price}"
+            ),
         )
 
     def _check_close_result(self, close_result) -> ResolveResult | None:
