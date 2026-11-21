@@ -43,10 +43,7 @@ class PyrExtensionClose:
             return None
 
         # Уровень найден -> фиксируем причину закрытия в логе
-        self.app_ctx.logger.info(
-            f"[PROFIT CLOSE] level={close_level.price} | qty={close_level.qty} "
-            f"| target={target_price} | step_ratio={self.step_ratio}"
-        )        
+        self.log_close_reason(data, close_level)        
 
         # Уровень для закрытия найден, формируем команду на закрытие.
         close_command = ActionCommand(
@@ -94,6 +91,17 @@ class PyrExtensionClose:
                 f"| price={close_level.price} "
                 f"| {rearm_status}"
             ),
+        )
+
+    def log_close_reason(self, data, close_level):
+        if data.side == "Buy":
+            target_price = close_level.price * (1 + self.step_ratio)
+        else:
+            target_price = close_level.price * (1 - self.step_ratio)
+
+        self.app_ctx.logger.info(
+            f"[PROFIT CLOSE] level={close_level.price} | qty={close_level.qty} "
+            f"| target={target_price} | step_ratio={self.step_ratio}"
         )
 
     def _check_distance_for_two_levels(self) -> ResolveResult | None:
