@@ -25,6 +25,9 @@ class PyrSchema(BaseModel):
     open_step_pct: Pct
     open_qty_pct: Pct
     min_be_buffer_pct: Pct
+    # Полоса закрытия стека над BE (Profit): закрываем, если буфер до BE
+    # не больше этого значения. Должна быть меньше min_be_buffer_pct.
+    be_close_buffer_pct: Pct
     min_close_steps: int
 
     # --- Свёртывание стека по порогу L/P ---
@@ -49,6 +52,16 @@ class PyrSchema(BaseModel):
             raise ValueError(
                 f"tf_index={self.tf_index} is out of range "
                 f"for timeframes={self.timeframes}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_be_buffers(self):
+        # Иначе бот открывал бы уровень и сразу закрывал стек по BE.
+        if not 0 <= self.be_close_buffer_pct < self.min_be_buffer_pct:
+            raise ValueError(
+                f"be_close_buffer_pct={self.be_close_buffer_pct} must be "
+                f">= 0 and < min_be_buffer_pct={self.min_be_buffer_pct}"
             )
         return self
 

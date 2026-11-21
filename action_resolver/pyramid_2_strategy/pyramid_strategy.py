@@ -81,7 +81,8 @@ class PyramidStrategy(BaseStrategy):
             action_service=self.action_service,
             open_checker=self.open_checker,
             close_processor=self.close_processor,
-        )   
+            unwinder=self.unwinder,
+        )
 
         self.recovery_mode = PyrRecoveryMode(
             state_store=state_store,
@@ -189,6 +190,8 @@ class PyramidStrategy(BaseStrategy):
             f"Entry TF: {data.entry_tf}\n"
             f"Open step: {data.open_step_pct}%\n"
             f"Open qty: {data.open_qty_pct}%\n"
+            f"Min BE buffer: {data.min_be_buffer_pct}%\n"
+            f"BE close buffer: {data.be_close_buffer_pct}%\n"
             f"Fold trigger L/P: {data.trigger_pct}%\n"
             f"Fold target L/P: {data.target_pct}%\n"
             f"Fold min pnl: {data.min_pnl}\n"
