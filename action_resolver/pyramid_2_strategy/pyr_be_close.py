@@ -19,6 +19,7 @@ class PyrBeClose:
         trading_info,
         unwinder,
         be_close_buffer_pct: float,
+        check_distance,
     ):
         self.state_store = state_store
         self.app_ctx = app_ctx
@@ -26,12 +27,21 @@ class PyrBeClose:
         self.unwinder = unwinder
         self.be_close_buffer_pct = be_close_buffer_pct
 
+        # Проверка минимальной дистанции между двумя уровнями:
+        # () -> ResolveResult | None (None - дистанция достаточна).
+        self.check_distance = check_distance
+
     def process(self) -> ResolveResult | None:
         """None - закрывать по BE не нужно, иначе результат закрытия."""
         # Проверяем, что цена в полосе закрытия
         band = self._get_band_hit()
         if band is None:
             return None
+
+        # При двух уровнях закрываем, только если дистанция достаточна
+        skip = self.check_distance()
+        if skip is not None:
+            return skip
 
         # Цена в полосе -> фиксируем причину закрытия в логе
         close_price, stack_be, buffer_pct = band

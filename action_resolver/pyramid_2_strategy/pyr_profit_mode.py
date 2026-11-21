@@ -42,14 +42,6 @@ class PyrProfitMode:
             step_ratio=open_checker.step_ratio,
         )
 
-        self.be_close = PyrBeClose(
-            state_store=state_store,
-            app_ctx=app_ctx,
-            trading_info=trading_info,
-            unwinder=unwinder,
-            be_close_buffer_pct=state_store.data.be_close_buffer_pct,
-        )
-
         self.extension_close = PyrExtensionClose(
             state_store=state_store,
             app_ctx=app_ctx,
@@ -57,6 +49,16 @@ class PyrProfitMode:
             rearm=self.rearm,
             step_ratio=open_checker.step_ratio,
             min_close_steps=state_store.data.min_close_steps,
+        )
+
+        # Условие минимальной дистанции для 2 уровней общее с Extension.
+        self.be_close = PyrBeClose(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            trading_info=trading_info,
+            unwinder=unwinder,
+            be_close_buffer_pct=state_store.data.be_close_buffer_pct,
+            check_distance=self.extension_close.check_distance_for_two_levels,
         )
 
         # Используем тот же HA Breakout, который уже создан в EntryChecker.

@@ -61,7 +61,7 @@ class PyrExtensionClose:
         - иначе close_level - уровень для закрытия.
         """
         # Проверяем минимальную дистанцию для закрытия для 2 уровней
-        skip = self._check_distance_for_two_levels()
+        skip = self.check_distance_for_two_levels()
         if skip is not None:
             return None, skip
 
@@ -155,7 +155,7 @@ class PyrExtensionClose:
             status="PROFIT CLOSE: NOT FILLED",
         )
 
-    def _check_distance_for_two_levels(self) -> ResolveResult | None:
+    def check_distance_for_two_levels(self) -> ResolveResult | None:
         """None - дистанция достаточна, иначе результат пропуска.
 
         Проверяется только при двух уровнях в стеке.
