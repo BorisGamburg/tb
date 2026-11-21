@@ -42,27 +42,21 @@ class PyrExtensionClose:
         if close_level is None:
             return None
 
-        # Уровень найден -> фиксируем причину закрытия в логе
+        # Уровень для закрытия найден
+        
+        # Фиксируем причину закрытия в логе
         self.log_close_reason(data, close_level)        
 
-        # Уровень для закрытия найден, формируем команду на закрытие.
-        close_command = ActionCommand(
-            action=Action.CLOSE,
-            symbol=data.symbol,
-            side=get_inverse_side(data.side),
-            qty=close_level.qty,
-            levels=[close_level],
-            reason="PYRAMID_PROFIT_CLOSE",
-        )
+        # Формируем команду на закрытие.
+        close_command = self.get_close_command(data, close_level)
 
         # Отправляем команду на закрытие через CloseProcessor.
         close_result = self.close_processor.execute_profit_close(
             close_command
         )
 
-        exec_result = close_result.execution_result
-
         # Проверяем результат исполнения команды.
+        exec_result = close_result.execution_result
         if not exec_result.executed:
             return ResolveResult(
                 executed=False,
@@ -92,6 +86,17 @@ class PyrExtensionClose:
                 f"| {rearm_status}"
             ),
         )
+
+    def get_close_command(self, data, close_level):
+        close_command = ActionCommand(
+            action=Action.CLOSE,
+            symbol=data.symbol,
+            side=get_inverse_side(data.side),
+            qty=close_level.qty,
+            levels=[close_level],
+            reason="PYRAMID_PROFIT_CLOSE",
+        )
+        return close_command
 
     def log_close_reason(self, data, close_level):
         if data.side == "Buy":
