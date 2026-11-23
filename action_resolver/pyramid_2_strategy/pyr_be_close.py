@@ -136,6 +136,10 @@ class PyrBeClose:
             if exec_result.status == LimitOrderStatus.FILLED
             else "PARTIALLY FILLED"
         )
+
+        # Стек закрыт полностью -> возвращаемся на минимальный TF входа
+        self._reset_entry_tf_if_stack_empty()
+
         return ResolveResult(
             executed=True,
             status=(
@@ -143,4 +147,23 @@ class PyrBeClose:
                 f"| price={exec_result.price} "
                 f"| qty={exec_result.qty}"
             ),
+        )
+
+    def _reset_entry_tf_if_stack_empty(self) -> None:
+        """После полного закрытия стека сбрасывает tf_index в 0."""
+        data = self.state_store.data
+
+        if data.stack.entries:
+            return
+
+        if data.tf_index == 0:
+            return
+
+        old_tf = data.entry_tf
+        data.tf_index = 0
+        self.state_store.save()
+
+        self.app_ctx.logger.info(
+            f"Entry TF reset after full close: "
+            f"entry_tf changed from {old_tf} to {data.entry_tf}"
         )
