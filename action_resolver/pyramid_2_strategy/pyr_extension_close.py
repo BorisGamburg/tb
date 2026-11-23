@@ -60,12 +60,9 @@ class PyrExtensionClose:
         - close_level None (и skip None) - закрывать нечего;
         - иначе close_level - уровень для закрытия.
         """
-        # Проверяем минимальную дистанцию для закрытия для 2 уровней
-        skip = self.check_distance_for_two_levels()
-        if skip is not None:
-            return None, skip
-
-        # Ищем уровень для закрытия
+        # Минимальная дистанция (min_close_steps) здесь НЕ проверяется:
+        # она относится только к полному закрытию стека (PyrBeClose).
+        # Extension закрывается, как только цена ушла на шаг дальше уровня.
         return self._get_close_level(extensions), None
 
     def _execute_close(self, close_level):
