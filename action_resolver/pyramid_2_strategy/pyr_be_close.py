@@ -33,6 +33,11 @@ class PyrBeClose:
 
     def process(self) -> ResolveResult | None:
         """None - закрывать по BE не нужно, иначе результат закрытия."""
+        # Один уровень (только Base) не трогаем: ждём второй уровень
+        # или новый Base.
+        if len(self.state_store.data.stack.entries) < 2:
+            return None
+
         # Проверяем, что цена в полосе закрытия
         band = self._get_band_hit()
         if band is None:

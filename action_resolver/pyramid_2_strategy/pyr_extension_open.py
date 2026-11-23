@@ -223,16 +223,18 @@ class PyrExtensionOpen:
             self.app_ctx.proxy_driver.get_last_price(data.symbol)
         )
 
+        # Второй уровень открываем в сторону прибыли:
+        # Buy - цена выросла на шаг, Sell - цена упала на шаг.
         if data.side == "Buy":
-            target_price = base_level.price * (
-                1 - self.open_checker.step_ratio
-            )
-            step_reached = cur_price <= target_price
-        else:
             target_price = base_level.price * (
                 1 + self.open_checker.step_ratio
             )
             step_reached = cur_price >= target_price
+        else:
+            target_price = base_level.price * (
+                1 - self.open_checker.step_ratio
+            )
+            step_reached = cur_price <= target_price
 
         if not step_reached:
             return ResolveResult(
