@@ -36,9 +36,13 @@ class PyrEmptyMode:
                 status="HA BREAKOUT: NO SIGNAL",
             )
 
-        # Получаем qty
         qty = self.open_checker.get_qty()
         if qty <= 0:
+            data = self.state_store.data
+            self.app_ctx.logger.warning(
+                f"{data.symbol} | {data.side} | "
+                f"HA BREAKOUT: SKIPPED (QTY = {qty})"
+            )
             return ResolveResult(
                 executed=False,
                 status="HA BREAKOUT: SKIPPED (QTY = 0)",
