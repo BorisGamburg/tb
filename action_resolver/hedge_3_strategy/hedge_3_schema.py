@@ -22,7 +22,9 @@ class Hedge3Schema(BaseModel):
     loss_tolerance_pct: Pct
 
     protect_ratio_factor: float = 1.0
-    max_hedge_ratio: float = 0.5    
+    # Смещение прямой защиты y = k*x + b (b), в долях основной позиции
+    protect_ratio_offset: float = 0.0
+    max_hedge_ratio: float = 0.5
         
     # Start
     start_tf: AllowedTimeframes | None

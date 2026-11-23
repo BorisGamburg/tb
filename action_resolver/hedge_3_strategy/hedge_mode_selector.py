@@ -24,10 +24,12 @@ class HedgeProtectCheck:
         hedge_side: str,
         protect_ratio_factor: float,
         max_hedge_ratio: float,
+        protect_ratio_offset: float = 0.0,
     ):
         self.hedge_side = hedge_side
         self.main_side = "Sell" if hedge_side == "Buy" else "Buy"
         self.protect_ratio_factor = protect_ratio_factor
+        self.protect_ratio_offset = protect_ratio_offset
         self.max_hedge_ratio = max_hedge_ratio
 
     def _calc_protect_ratios(
@@ -47,6 +49,7 @@ class HedgeProtectCheck:
             main_qty=main_qty,
             protect_ratio_factor=self.protect_ratio_factor,
             max_hedge_ratio=self.max_hedge_ratio,
+            protect_ratio_offset=self.protect_ratio_offset,
         )
 
         return curr_protect_ratio, required_protect_ratio

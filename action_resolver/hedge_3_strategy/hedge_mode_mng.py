@@ -67,6 +67,7 @@ class HedgeModeMng:
         self.loss_tolerance_ratio = state_store.data.loss_tolerance_pct / 100
         self.hedge_qty_ratio = state_store.data.hedge_qty_pct / 100
         self.protect_ratio_factor = state_store.data.protect_ratio_factor
+        self.protect_ratio_offset = state_store.data.protect_ratio_offset
         self.max_hedge_ratio = state_store.data.max_hedge_ratio
         self.prev_work_price: float | None = None
 
@@ -79,6 +80,7 @@ class HedgeModeMng:
             hedge_side=self.hedge_side,
             protect_ratio_factor=self.protect_ratio_factor,
             max_hedge_ratio=self.max_hedge_ratio,
+            protect_ratio_offset=self.protect_ratio_offset,
         )
 
     def _load_context(self) -> HedgeContext:
