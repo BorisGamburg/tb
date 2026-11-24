@@ -64,6 +64,9 @@ class RecoveryCompensation:
         if plan is None:
             return RecoveryCompensationResult(CompensationOutcome.NO_PLAN)
 
+        # Фиксируем причину закрытия в логе (как [BE CLOSE], [PROFIT CLOSE])
+        self._log_close_reason(plan, close_price)
+
         exec_result = self._execute(plan, close_price)
         if not exec_result.executed:
             return RecoveryCompensationResult(
@@ -107,6 +110,46 @@ class RecoveryCompensation:
             side=data.side,
             price=close_price,
             min_pnl=float(data.min_pnl),
+        )
+
+    def _log_close_reason(self, plan, close_price: float) -> None:
+        """Кто породил ордер, откуда сигнал и какой: RECOVERY_MODE
+        (цена не выше BE стека) -> PyrRecoveryMode -> RecoveryCompensation,
+        сигнал - план компенсации: прибыль Base покрывает убыточные уровни.
+        min_close_steps здесь не проверяется (только в PyrBeClose).
+        """
+        data = self.state_store.data
+
+        stack_be = self.state_store.stack_mng.calculate_break_even_price(
+            data.side,
+            float(self.planner.fee_taker),
+        )
+        if stack_be is None:
+            be_text = "be=N/A"
+        else:
+            if data.side == "Buy":
+                buffer_pct = (close_price - stack_be) / close_price * 100
+            else:
+                buffer_pct = (stack_be - close_price) / close_price * 100
+            be_text = f"be={stack_be} | buffer={buffer_pct:+.4f}%"
+
+        reductions = ", ".join(
+            f"{item.level.price}:{item.qty:g}"
+            for item in plan.reductions
+        )
+
+        self.app_ctx.logger.info(
+            f"[COMPENSATION] source=RECOVERY_MODE "
+            f"| signal=BASE_PROFIT_COVERS_LOSS "
+            f"| reason=PYRAMID_COMPENSATION "
+            f"| price={close_price} | {be_text} "
+            f"| base={plan.base_level.price}:{plan.base_qty:g} "
+            f"| reductions=[{reductions}] "
+            f"| total_qty={plan.total_qty:g} "
+            f"| expected_pnl={plan.expected_pnl:.8f} "
+            f"| budget={plan.budget:.8f} "
+            f"| budget_used={plan.budget_used:.8f} "
+            f"| levels={len(data.stack.entries)}"
         )
 
     def _get_plan_levels(self, plan) -> list:
