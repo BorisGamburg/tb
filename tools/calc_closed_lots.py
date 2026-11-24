@@ -43,6 +43,15 @@ CLOSED_TABLE = "closed_lots"
 OPEN_TABLE = "open_lots"
 TRADE_TYPES = ("Trade", "AdlTrade", "BustTrade")
 
+# Hedge-режим: шорт и лонг - две независимые позиции, считаются раздельно.
+#   Short: открытие Sell (closed_size = 0), закрытие Buy (closed_size > 0)
+#   Long:  открытие Buy  (closed_size = 0), закрытие Sell (closed_size > 0)
+# funding_side - значение side у записей Funding для этой позиции.
+DIRECTIONS = {
+    "Short": {"open_side": "Sell", "close_side": "Buy", "funding_side": "Sell"},
+    "Long": {"open_side": "Buy", "close_side": "Sell", "funding_side": "Buy"},
+}
+
 
 class PositionReversalError(Exception):
     """Исполнение закрытия больше всей открытой противоположной позиции."""
@@ -131,24 +140,25 @@ def match_lots(execs):
     return closed_lots, open_lots
 
 
-def load_execs(dsn, table, symbol):
-    """Загружает исполнения грида по символу.
+def load_execs(dsn, table, symbol, direction):
+    """Загружает исполнения одной позиции (Short или Long) по символу.
 
-    Временный фильтр грида (пока боты не ставят order_link_id):
-      Sell с closed_size = 0  - открытие шорта,
-      Buy  с closed_size > 0  - закрытие шорта.
+    Временный фильтр (пока боты не ставят order_link_id):
+      открытие  - сторона open_side с closed_size = 0,
+      закрытие  - сторона close_side с closed_size > 0.
     """
     import psycopg2
     from psycopg2 import sql
 
+    cfg = DIRECTIONS[direction]
     query = sql.SQL(
         "SELECT exec_id, exec_time, side, exec_price, exec_qty, exec_fee "
         "FROM {} WHERE symbol = %s AND exec_type IN %s "
-        "AND ((side = 'Sell' AND coalesce(closed_size, 0) = 0) "
-        "  OR (side = 'Buy' AND coalesce(closed_size, 0) > 0)) "
+        "AND ((side = %s AND coalesce(closed_size, 0) = 0) "
+        "  OR (side = %s AND coalesce(closed_size, 0) > 0)) "
         "ORDER BY exec_time, exec_id"
     ).format(sql.Identifier(table))
-    params = (symbol, TRADE_TYPES)
+    params = (symbol, TRADE_TYPES, cfg["open_side"], cfg["close_side"])
 
     conn = psycopg2.connect(dsn)
     try:
@@ -165,23 +175,27 @@ def load_execs(dsn, table, symbol):
     ]
 
 
-def load_funding(dsn, table, symbol):
-    """Возвращает сумму Funding по Sell-позиции для символа."""
+def load_funding(dsn, table, symbol, direction):
+    """Сумма Funding по позиции (Short -> side Sell, Long -> side Buy).
+
+    Знак: плюс - получили, минус - заплатили (execFee у Funding
+    положительный, если заплатили, поэтому знак меняется).
+    """
     import psycopg2
     from psycopg2 import sql
 
     query = sql.SQL(
-        "SELECT COALESCE(SUM(exec_fee), 0) "
+        "SELECT -COALESCE(SUM(exec_fee), 0) "
         "FROM {} "
         "WHERE symbol = %s "
         "AND exec_type = 'Funding' "
-        "AND side = 'Sell'"
+        "AND side = %s"
     ).format(sql.Identifier(table))
 
     conn = psycopg2.connect(dsn)
     try:
         with conn.cursor() as cur:
-            cur.execute(query, (symbol,))
+            cur.execute(query, (symbol, DIRECTIONS[direction]["funding_side"]))
             row = cur.fetchone()
     finally:
         conn.close()
@@ -189,14 +203,17 @@ def load_funding(dsn, table, symbol):
     return D(row[0])
 
 
-def print_report(closed_lots, open_lots, funding_pnl):
-    print(f"\nЗакрытых лотов: {len(closed_lots)}")
+def print_report(direction, closed_lots, open_lots, funding_pnl):
+    side = DIRECTIONS[direction]["funding_side"]
+    print(f"\n{'=' * 60}\n{direction.upper()}\n{'=' * 60}")
+    print(f"Закрытых лотов: {len(closed_lots)}")
     print(f"Gross PnL: {sum(c['gross_pnl'] for c in closed_lots):.8f}")
     print(f"Комиссии (по закрытым лотам): {sum(c['fees'] for c in closed_lots):.8f}")
 
     net_pnl = sum(c["net_pnl"] for c in closed_lots)
     print(f"Net PnL закрытых лотов: {net_pnl:.8f}")
-    print(f"Funding Sell:            {funding_pnl:.8f}")
+    print(f"Funding {side}:{' ' * (15 - len(side))}{funding_pnl:+.8f}"
+          f"  (+ получено, - заплачено)")
     print(f"Итого с Funding:         {net_pnl + funding_pnl:.8f}")
 
     print("\nОткрытые лоты в буфере (текущая позиция):")
@@ -208,13 +225,42 @@ def print_report(closed_lots, open_lots, funding_pnl):
     net = sum(l["qty"] if l["side"] == "Long" else -l["qty"] for l in open_lots)
     print(f"Чистая позиция по буферу: {net:+.4f}  <- сверьте с позицией на Bybit")
 
+    return net_pnl + funding_pnl
 
-def save_to_db(dsn, symbol, closed_lots, open_lots):
+
+def _num(x):
+    """Decimal -> float с 12 значащими цифрами (без хвостов от деления)."""
+    return float(f"{float(x):.12g}")
+
+
+def format_stack_yaml(direction, open_lots):
+    """Открытые лоты -> блок `stack:` в формате конфига бота.
+
+    fee - полная комиссия входа на initial_qty (бот считает комиссию на монету
+    как fee / initial_qty), поэтому остаток комиссии лота пересчитывается на
+    open_qty. Порядок: Short - по возрастанию цены, Long - по убыванию.
+    """
+    lots = sorted(open_lots, key=lambda l: l["price"],
+                  reverse=(direction == "Long"))
+    lines = ["stack:", "    entries:"]
+    for l in lots:
+        fee_full = l["fee"] * l["open_qty"] / l["qty"]
+        lines += [
+            f"    -   price: {_num(l['price'])}",
+            f"        qty: {_num(l['qty'])}",
+            f"        fee: {_num(fee_full)}",
+            f"        initial_qty: {_num(l['open_qty'])}",
+        ]
+    return "\n".join(lines)
+
+
+def save_to_db(dsn, symbol, direction, closed_lots, open_lots):
     """Пишет результат расчёта в таблицы closed_lots и open_lots.
 
     Таблицы должны существовать заранее: скрипт их не создаёт и не меняет.
-    Строки этого символа удаляются и записываются заново в одной транзакции,
-    строки других символов не затрагиваются.
+    Строки этого символа и этого направления (Short/Long) удаляются и
+    записываются заново в одной транзакции, строки других символов и
+    другого направления не затрагиваются.
     """
     import psycopg2
     import psycopg2.errors
@@ -241,13 +287,14 @@ def save_to_db(dsn, symbol, closed_lots, open_lots):
     conn = psycopg2.connect(dsn)
     try:
         with conn.cursor() as cur:
-            for table, cols, rows in (
-                (CLOSED_TABLE, closed_cols, closed_rows),
-                (OPEN_TABLE, open_cols, open_rows),
+            for table, cols, rows, dir_col in (
+                (CLOSED_TABLE, closed_cols, closed_rows, "direction"),
+                (OPEN_TABLE, open_cols, open_rows, "side"),
             ):
                 cur.execute(
-                    sql.SQL("DELETE FROM {} WHERE symbol = %s")
-                    .format(sql.Identifier(table)), (symbol,))
+                    sql.SQL("DELETE FROM {} WHERE symbol = %s AND {} = %s")
+                    .format(sql.Identifier(table), sql.Identifier(dir_col)),
+                    (symbol, direction))
                 if rows:
                     execute_values(
                         cur,
@@ -265,7 +312,7 @@ def save_to_db(dsn, symbol, closed_lots, open_lots):
     finally:
         conn.close()
 
-    print(f"\nЗаписано в базу ({symbol}): {CLOSED_TABLE} - {len(closed_rows)} строк, "
+    print(f"Записано в базу ({symbol}, {direction}): {CLOSED_TABLE} - {len(closed_rows)} строк, "
           f"{OPEN_TABLE} - {len(open_rows)} строк")
 
 
@@ -309,6 +356,15 @@ def selftest():
     # закрытие ровно в ноль - не разворот
     closed_lots, left = match_lots([ex(1, "Buy", 100, 1), ex(2, "Sell", 110, 1)])
     assert len(closed_lots) == 1 and closed_lots[0]["gross_pnl"] == D(10) and not left
+    # блок stack: шорт по возрастанию цены, комиссия пересчитывается на open_qty
+    lots = [
+        {"price": D("0.0027314"), "qty": D(100), "open_qty": D(200), "fee": D("0.00015023")},
+        {"price": D("0.0023983"), "qty": D(400), "open_qty": D(400), "fee": D("0.00052763")},
+    ]
+    out = format_stack_yaml("Short", lots)
+    assert out.index("0.0023983") < out.index("0.0027314")
+    assert "fee: 0.00030046" in out and "initial_qty: 200.0" in out
+    assert out.index("0.0027314") < out.index("qty: 100.0")
     print("selftest OK")
 
 
@@ -317,7 +373,11 @@ def main():
     parser.add_argument("symbol", nargs="?")
     parser.add_argument("--dsn", default=os.environ.get("PG_DSN"))
     parser.add_argument("--table", default=DEFAULT_TABLE)
+    parser.add_argument("--side", choices=("short", "long", "both"), default="both",
+                        help="какую позицию считать (по умолчанию обе)")
     parser.add_argument("--csv", default=None, help="сохранить закрытые лоты в CSV")
+    parser.add_argument("--stack", action="store_true",
+                        help="напечатать открытые лоты как блок stack для конфига бота")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args()
 
@@ -329,23 +389,43 @@ def main():
     if not args.dsn:
         sys.exit("Не задан DSN: укажите --dsn или переменную окружения PG_DSN")
 
-    execs = load_execs(args.dsn, args.table, args.symbol)
-    print(f"Загружено исполнений {args.symbol}: {len(execs)}")
-    if not execs:
-        return
+    directions = {"short": ["Short"], "long": ["Long"],
+                  "both": ["Short", "Long"]}[args.side]
 
-    funding_pnl = load_funding(args.dsn, args.table, args.symbol)
+    all_closed = []
+    totals = {}
+    stacks = {}
+    for direction in directions:
+        execs = load_execs(args.dsn, args.table, args.symbol, direction)
+        print(f"\nЗагружено исполнений {args.symbol} ({direction}): {len(execs)}")
+        if not execs:
+            continue
 
-    try:
-        closed_lots, open_lots = match_lots(execs)
-    except PositionReversalError as err:
-        sys.exit(f"ОШИБКА: {err}\n"
-                 "Возможные причины: пропущены исполнения открытия, история начата "
-                 "не с нулевой позиции, либо одно исполнение развернуло позицию.")
-    print_report(closed_lots, open_lots, funding_pnl)
-    if args.csv:
-        write_csv(args.csv, closed_lots)
-    save_to_db(args.dsn, args.symbol, closed_lots, open_lots)
+        funding_pnl = load_funding(args.dsn, args.table, args.symbol, direction)
+
+        try:
+            closed_lots, open_lots = match_lots(execs)
+        except PositionReversalError as err:
+            sys.exit(f"ОШИБКА ({direction}): {err}\n"
+                     "Возможные причины: пропущены исполнения открытия, история "
+                     "начата не с нулевой позиции, либо одно исполнение развернуло "
+                     "позицию.")
+        totals[direction] = print_report(direction, closed_lots, open_lots,
+                                         funding_pnl)
+        all_closed.extend(closed_lots)
+        stacks[direction] = open_lots
+        save_to_db(args.dsn, args.symbol, direction, closed_lots, open_lots)
+
+    if len(totals) > 1:
+        print(f"\n{'=' * 60}\nВСЕГО по {args.symbol} (Short + Long, с Funding): "
+              f"{sum(totals.values()):.8f}")
+    if args.stack:
+        for direction, open_lots in stacks.items():
+            side = DIRECTIONS[direction]["open_side"]
+            print(f"\n# {direction} (side: {side}), вставить в конфиг бота:")
+            print(format_stack_yaml(direction, open_lots))
+    if args.csv and all_closed:
+        write_csv(args.csv, all_closed)
 
 
 if __name__ == "__main__":
