@@ -91,6 +91,9 @@ class PyramidStrategy(BaseStrategy):
             action_service=self.action_service,
             open_checker=self.open_checker,
             unwinder=self.unwinder,
+            check_distance=(
+                self.profit_mode.extension_close.check_distance_for_two_levels
+            ),
         )
 
         self._log_parameters()

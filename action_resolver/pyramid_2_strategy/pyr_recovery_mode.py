@@ -22,6 +22,7 @@ class PyrRecoveryMode:
         action_service,
         open_checker,
         unwinder: Unwinder,
+        check_distance,
     ):
         self.state_store = state_store
         self.app_ctx = app_ctx
@@ -29,6 +30,11 @@ class PyrRecoveryMode:
         self.action_service = action_service
         self.open_checker = open_checker
         self.unwinder = unwinder
+
+        # Проверка минимальной дистанции между двумя уровнями (min_close_steps),
+        # общая с Profit-режимом: () -> ResolveResult | None
+        # (None - дистанция достаточна или уровней не два).
+        self.check_distance = check_distance
 
         self.compensation_planner = CompensationPlanner(
             qty_step=trading_info.qty_step,
@@ -77,6 +83,12 @@ class PyrRecoveryMode:
         return self.base_open.process()
 
     def _process_compensation(self) -> ResolveResult | None:
+        # При двух уровнях компенсируем, только если дистанция между ними
+        # достаточна (min_close_steps). Иначе компенсации нет -> дальше
+        # проверяем HA Breakout. При трёх и более уровнях не проверяется.
+        if self.check_distance() is not None:
+            return None
+
         result = self.compensation.run()
 
         if result.outcome is CompensationOutcome.NO_PLAN:
