@@ -107,9 +107,11 @@ class EntryChecker:
         level = len(entries)
         tf = self.map_mng.get_tf_for_level(level)
 
-        # Получаем текущую цену
-        price = self.proxy_driver.get_last_price(
-            self.symbol
+        # Получаем цену, по которой будет выставлен входной ордер
+        # (Sell -> bid, Buy -> ask)
+        price = self.price_service.get_active_price(
+            self.symbol,
+            self.side,
         )
 
         # Проверяем пробой границы последней закрытой ha свечи
