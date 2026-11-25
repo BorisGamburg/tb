@@ -305,7 +305,6 @@ class EntryChecker:
         entry_allowed = (
             ha_revers_result.ok
             and rsi_check_result.ok
-            and bb_check_result.ok
             and distance_check_result.ok
         )
 
