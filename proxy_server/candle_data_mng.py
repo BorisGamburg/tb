@@ -71,12 +71,10 @@ class CandleDataMng:
             reason = None
             try:
                 # retry_api_call внутри драйвера уже делает несколько попыток
-                raw = self.exchange_driver.get_kline_data(symbol=self.symbol, interval=self.tf, limit=1)
-                if not raw:
-                    raise Exception("пустой ответ")
-                ex_start = int(float(raw[0][0]))
-                ex_vol = float(raw[0][5])
+                # Получаем start и volume текущей свечи через API
+                ex_start, ex_vol = self._get_api_start_and_volume()
 
+                # Получаем внутренние start и volume
                 if not self.sync_lock.acquire(timeout=5):
                     return  # df занят, проверим в следующий раз
                 try:
@@ -108,6 +106,14 @@ class CandleDataMng:
             self._restart_websocket()
         except Exception as e:
             self.logger.error(f"Ошибка проверки застывания {key}: {e}")
+
+    def _get_api_start_and_volume(self):
+        raw = self.exchange_driver.get_kline_data(symbol=self.symbol, interval=self.tf, limit=1)
+        if not raw:
+            raise Exception("пустой ответ")
+        ex_start = int(float(raw[0][0]))
+        ex_vol = float(raw[0][5])
+        return ex_start,ex_vol
 
     def _restart_websocket(self):
         key = f"{self.symbol}_{self.tf}"
