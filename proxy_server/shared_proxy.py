@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import logging
+import threading
 from prog.utils.telegram import Telegram
 from prog.drivers.bybit_driver import BybitDriver
 from prog.proxy_server.proxy_driver import ProxyDriver
@@ -26,7 +27,8 @@ class SharedProxy:
 
         # Инициализация сервисов
         self.logger = self._setup_logger()
-        
+        self._install_thread_excepthook()
+
         self.log_account(account_name)        
 
         telegram_config_path = self.config_dir / "telegram_config.txt"
@@ -69,6 +71,28 @@ class SharedProxy:
         fh.setFormatter(formatter)
         l.addHandler(fh)
 
-        logging.getLogger("websocket").setLevel(logging.WARNING)
-        logging.getLogger("pybit").setLevel(logging.WARNING)
+        # pybit и websocket-client пишут причины обрыва WS (error, "will no longer
+        # try to reconnect") в свои логгеры. Без обработчиков эти сообщения уходят
+        # в stderr и теряются, поэтому направляем их в тот же лог.
+        for name in ("websocket", "pybit"):
+            ext = logging.getLogger(name)
+            ext.setLevel(logging.WARNING)
+            ext.addHandler(ch)
+            ext.addHandler(fh)
+            ext.propagate = False
+
         return l
+
+    def _install_thread_excepthook(self):
+        """Исключения в фоновых потоках (в т.ч. WS pybit) иначе уходят только в stderr."""
+        def hook(args):
+            if args.exc_type is SystemExit:
+                return
+            thread_name = args.thread.name if args.thread else "?"
+            self.logger.error(
+                f"❌ Необработанное исключение в потоке '{thread_name}': "
+                f"{args.exc_type.__name__}: {args.exc_value}",
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+
+        threading.excepthook = hook

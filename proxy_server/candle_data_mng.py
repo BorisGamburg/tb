@@ -26,6 +26,13 @@ class CandleDataMng:
         self.last_heartbeat = time.time()
         self.max_delay = 60  # секунд до "смерти"
 
+        # Диагностика застывания данных (поведение не меняет)
+        self._diag_lock = threading.Lock()
+        self.msg_count = 0            # сколько WS-сообщений получено с момента старта WS
+        self.ws_started_at = None     # когда был создан WS (time.time())
+        self.stale_since = None       # начало текущего эпизода тишины (time.time()) или None
+        self.stale_last_report = 0.0  # когда последний раз писали в лог про этот эпизод
+
         self.last_full_sync = time.time()
         self.force_sync_interval = random.uniform(1500, 2100)   # 25–35 минут        
 
@@ -40,9 +47,89 @@ class CandleDataMng:
         if self.fatal_error_msg:
             raise Exception(f"Критический сбой в менеджере {self.symbol}: {self.fatal_error_msg}")
 
-        # Проверка heartbeat
-        if time.time() - self.last_heartbeat > self.max_delay:
-            self.logger.warning(f"🚨 ДАННЫЕ ЗАСТЫЛИ ({self.symbol}).")       
+        # Проверка heartbeat: только диагностика, поведение не меняется
+        silence = time.time() - self.last_heartbeat
+        if silence > self.max_delay:
+            self._report_stale(silence)       
+
+    STALE_REPORT_INTERVAL = 600  # сек: напоминание в лог, пока данные стоят
+
+    def _report_stale(self, silence):
+        """Одно полное сообщение на эпизод застывания + напоминание раз в 10 минут."""
+        now = time.time()
+        with self._diag_lock:
+            if self.stale_since is None:
+                self.stale_since = now - silence
+                self.stale_last_report = now
+                self.logger.warning(self._stale_diagnostics(silence, repeat=False))
+            elif now - self.stale_last_report > self.STALE_REPORT_INTERVAL:
+                self.stale_last_report = now
+                self.logger.warning(self._stale_diagnostics(silence, repeat=True))
+
+    def _stale_diagnostics(self, silence, repeat):
+        now = time.time()
+        key = f"{self.symbol}_{self.tf}"
+
+        # Состояние WebSocket
+        ws = self.ws_client
+        if ws is None:
+            ws_state = "ws_client=None (WS не создан)"
+        else:
+            try:
+                connected = ws.is_connected()
+            except Exception as e:
+                connected = f"ошибка: {e}"
+            wst = getattr(ws, "wst", None)
+            thread_alive = wst.is_alive() if wst is not None else None
+            ws_state = (
+                f"connected={connected} | thread_alive={thread_alive} | "
+                f"exited={getattr(ws, 'exited', None)} | "
+                f"reconnecting={getattr(ws, 'attempting_connection', None)}"
+            )
+
+        ws_uptime = (
+            f"{int(now - self.ws_started_at)} с"
+            if self.ws_started_at else "WS не запускался"
+        )
+
+        # Последняя свеча в df
+        last_candle = "нет данных"
+        if self.sync_lock.acquire(timeout=1):
+            try:
+                if not self.df.empty:
+                    start_s = int(self.df.iloc[-1]["start"]) / 1000
+                    last_candle = (
+                        f"start={datetime.fromtimestamp(start_s):%d %H:%M:%S} "
+                        f"(возраст {int(now - start_s)} с), строк={len(self.df)}"
+                    )
+            finally:
+                self.sync_lock.release()
+        else:
+            last_candle = "df занят (lock)"
+
+        title = "ВСЁ ЕЩЁ ЗАСТЫЛИ" if repeat else "ЗАСТЫЛИ"
+        return (
+            f"🚨 ДАННЫЕ {title} ({key})\n"
+            f"  тишина WS: {int(silence)} с ({silence / 60:.1f} мин), "
+            f"последнее сообщение: {datetime.fromtimestamp(self.last_heartbeat):%d %H:%M:%S}\n"
+            f"  WS: {ws_state}\n"
+            f"  сообщений получено: {self.msg_count} | WS работает: {ws_uptime}\n"
+            f"  последняя свеча в df: {last_candle}\n"
+            f"  needs_sync={self.needs_sync} | последняя полная сверка: "
+            f"{int(now - self.last_full_sync)} с назад | fatal_error={self.fatal_error_msg}"
+        )
+
+    def _log_recovered(self, now):
+        with self._diag_lock:
+            if self.stale_since is None:
+                return
+            duration = now - self.stale_since
+            self.stale_since = None
+            self.logger.warning(
+                f"✅ ДАННЫЕ ОЖИЛИ ({self.symbol}_{self.tf}): "
+                f"тишина длилась {int(duration)} с ({duration / 60:.1f} мин), "
+                f"сообщений получено всего: {self.msg_count}"
+            )
 
     def _get_working_df(self):
         with self.sync_lock:
@@ -170,13 +257,19 @@ class CandleDataMng:
         
 
     def _start_websocket(self):
+        self.ws_started_at = time.time()
+        self.msg_count = 0
         self.ws_client = WebSocket(testnet=False, channel_type="linear")
         self.ws_client.kline_stream(interval=int(self.tf), symbol=self.symbol, callback=self._ws_callback)
 
     def _ws_callback(self, msg):
         try:
             # Стучим в сердце при каждом сообщении
-            self.last_heartbeat = time.time()
+            now = time.time()
+            if self.stale_since is not None:
+                self._log_recovered(now)
+            self.last_heartbeat = now
+            self.msg_count += 1
             
             if "data" not in msg or not msg["data"]:
                 return
@@ -524,4 +617,4 @@ class CandleDataMng:
             for _, row in df.iterrows()
         ]
 
-        return candles    
+        return candles
