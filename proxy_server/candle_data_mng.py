@@ -75,34 +75,30 @@ class CandleDataMng:
                 ex_start, ex_vol = self._get_api_start_and_volume()
 
                 # Получаем внутренние start и volume
-                if not self.sync_lock.acquire(timeout=5):
-                    return  # df занят, проверим в следующий раз
-                try:
-                    if self.df.empty:
-                        return
-                    df_start = int(self.df.iloc[-1]["start"])
-                    df_vol = float(self.df.iloc[-1]["volume"])
-                finally:
-                    self.sync_lock.release()
+                df_values = self._get_df_start_and_volume()
 
-                if ex_start != df_start:
-                    reason = f"start на бирже {ex_start} != в df {df_start}"
-                elif ex_vol != df_vol:
-                    reason = f"volume на бирже {ex_vol} != в df {df_vol} (start {df_start})"
-                else:
-                    return  # данные совпадают — символ просто тихий
+                # Сравниваем
+                reason = self._find_mismatch(ex_start, ex_vol, df_values)
+                if reason is None:
+                    return  # df занят/пуст или данные совпадают — ничего не делаем
             except Exception as e:
                 reason = f"REST недоступен ({e}), WS перезапускается вслепую"
 
+            # Этот кусок отмечает начало эпизода застывания и определяет, первое это обнаружение или повторное.
             with self._diag_lock:
                 repeat = self.stale_since is not None
                 if not repeat:
                     self.stale_since = time.time() - silence
+
+            # Собираем данные для лога
             msg = self._stale_diagnostics(silence, repeat=repeat) + f"\n  расхождение: {reason}\n  → WebSocket пересоздаётся"
+
+            # Лог
             self.logger.warning(msg)
             if self.shared_proxy.telegram_alert(f"stale:{key}", msg):
                 self.tg_stale_sent = True
 
+            # Перестартуем WS
             self._restart_websocket()
         except Exception as e:
             self.logger.error(f"Ошибка проверки застывания {key}: {e}")
@@ -113,7 +109,30 @@ class CandleDataMng:
             raise Exception("пустой ответ")
         ex_start = int(float(raw[0][0]))
         ex_vol = float(raw[0][5])
-        return ex_start,ex_vol
+        return ex_start, ex_vol
+
+    def _find_mismatch(self, ex_start, ex_vol, df_values):
+        """Возвращает описание расхождения или None (df занят/пуст, либо данные совпадают)."""
+        if df_values is None:
+            return None  # df занят или пуст, проверим в следующий раз
+        df_start, df_vol = df_values
+
+        if ex_start != df_start:
+            return f"start на бирже {ex_start} != в df {df_start}"
+        if ex_vol != df_vol:
+            return f"volume на бирже {ex_vol} != в df {df_vol} (start {df_start})"
+        return None  # данные совпадают — символ просто тихий
+
+    def _get_df_start_and_volume(self):
+        """(start, volume) последней свечи в df, или None, если df занят (lock) или пуст."""
+        if not self.sync_lock.acquire(timeout=5):
+            return None
+        try:
+            if self.df.empty:
+                return None
+            return int(self.df.iloc[-1]["start"]), float(self.df.iloc[-1]["volume"])
+        finally:
+            self.sync_lock.release()
 
     def _restart_websocket(self):
         key = f"{self.symbol}_{self.tf}"
@@ -136,42 +155,10 @@ class CandleDataMng:
         now = time.time()
         key = f"{self.symbol}_{self.tf}"
 
-        # Состояние WebSocket
-        ws = self.ws_client
-        if ws is None:
-            ws_state = "ws_client=None (WS не создан)"
-        else:
-            try:
-                connected = ws.is_connected()
-            except Exception as e:
-                connected = f"ошибка: {e}"
-            wst = getattr(ws, "wst", None)
-            thread_alive = wst.is_alive() if wst is not None else None
-            ws_state = (
-                f"connected={connected} | thread_alive={thread_alive} | "
-                f"exited={getattr(ws, 'exited', None)} | "
-                f"reconnecting={getattr(ws, 'attempting_connection', None)}"
-            )
-
-        ws_uptime = (
-            f"{int(now - self.ws_started_at)} с"
-            if self.ws_started_at else "WS не запускался"
-        )
-
-        # Последняя свеча в df
-        last_candle = "нет данных"
-        if self.sync_lock.acquire(timeout=1):
-            try:
-                if not self.df.empty:
-                    start_s = int(self.df.iloc[-1]["start"]) / 1000
-                    last_candle = (
-                        f"start={datetime.fromtimestamp(start_s):%d %H:%M:%S} "
-                        f"(возраст {int(now - start_s)} с), строк={len(self.df)}"
-                    )
-            finally:
-                self.sync_lock.release()
-        else:
-            last_candle = "df занят (lock)"
+        # Собираем данные для лога
+        ws_state = self._diag_ws_state()
+        ws_uptime = self._diag_ws_uptime(now)
+        last_candle = self._diag_last_candle(now)
 
         title = "ВСЁ ЕЩЁ ЗАСТЫЛИ" if repeat else "ЗАСТЫЛИ"
         return (
@@ -184,6 +171,44 @@ class CandleDataMng:
             f"  needs_sync={self.needs_sync} | последняя полная сверка: "
             f"{int(now - self.last_full_sync)} с назад | fatal_error={self.fatal_error_msg}"
         )
+
+    def _diag_ws_state(self):
+        """Состояние WebSocket: подключён ли, жив ли поток, переподключается ли."""
+        ws = self.ws_client
+        if ws is None:
+            return "ws_client=None (WS не создан)"
+        try:
+            connected = ws.is_connected()
+        except Exception as e:
+            connected = f"ошибка: {e}"
+        wst = getattr(ws, "wst", None)
+        thread_alive = wst.is_alive() if wst is not None else None
+        return (
+            f"connected={connected} | thread_alive={thread_alive} | "
+            f"exited={getattr(ws, 'exited', None)} | "
+            f"reconnecting={getattr(ws, 'attempting_connection', None)}"
+        )
+
+    def _diag_ws_uptime(self, now):
+        """Сколько времени работает текущий WebSocket."""
+        if self.ws_started_at:
+            return f"{int(now - self.ws_started_at)} с"
+        return "WS не запускался"
+
+    def _diag_last_candle(self, now):
+        """Последняя свеча в df: start, возраст, число строк."""
+        if not self.sync_lock.acquire(timeout=1):
+            return "df занят (lock)"
+        try:
+            if self.df.empty:
+                return "нет данных"
+            start_s = int(self.df.iloc[-1]["start"]) / 1000
+            return (
+                f"start={datetime.fromtimestamp(start_s):%d %H:%M:%S} "
+                f"(возраст {int(now - start_s)} с), строк={len(self.df)}"
+            )
+        finally:
+            self.sync_lock.release()
 
     def _log_recovered(self, now):
         with self._diag_lock:
