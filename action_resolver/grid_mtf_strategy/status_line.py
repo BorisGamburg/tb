@@ -52,8 +52,6 @@ class StatusLine:
 
         self.append_rsi_part(entry_check_result, text)
 
-        self.append_bb_part(entry_check_result, text)
-
         return self.append_dist_part(entry_check_result, text)
 
     def append_dist_part(
@@ -86,40 +84,6 @@ class StatusLine:
             )
 
         return text
-
-    def append_bb_part(
-        self,
-        check_result,
-        text,
-    ):
-        text.append(" | BB: ", style="cyan")
-        if check_result is not None:
-            bb = check_result.bb_check_result.details
-
-            if bb.value is not None and bb.mid is not None:
-                relation = (
-                    ">"
-                    if bb.value > bb.mid
-                    else "<"
-                    if bb.value < bb.mid
-                    else "="
-                )
-                text.append(
-                    f"({bb.tf}m) "
-                    f"(price:{bb.value:.6f} {relation} mid:{bb.mid:.6f})"
-                )
-
-                self._append_status_circle(text, check_result.bb_check_result.ok)
-            else:
-                text.append(
-                    f"({bb.tf}m) N/A",
-                    style="dim",
-                )
-        else:
-            text.append(
-                "N/A",
-                style="dim",
-            )
 
     def append_rsi_part(
         self,
