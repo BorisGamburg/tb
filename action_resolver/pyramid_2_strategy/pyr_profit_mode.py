@@ -7,7 +7,7 @@ from common.rearm import Rearm
 from action_resolver.pyramid_2_strategy.pyr_extension_close import (
     PyrExtensionClose,
 )
-from action_resolver.pyramid_2_strategy.pyr_ha_breakout_opener import (
+from common.recovery.ha_breakout_opener import (
     PyrHaBreakoutOpener,
 )
 from action_resolver.pyramid_2_strategy.pyr_extension_open import (

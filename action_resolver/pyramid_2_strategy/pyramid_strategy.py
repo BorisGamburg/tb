@@ -21,9 +21,8 @@ from action_resolver.pyramid_2_strategy.pyr_empty_mode import (
 from action_resolver.pyramid_2_strategy.pyr_profit_mode import (
     PyrProfitMode,
 )
-from action_resolver.pyramid_2_strategy.pyr_recovery_mode import (
-    PyrRecoveryMode,
-)
+from common.recovery.recovery_mode import RecoveryMode
+from common.recovery.ha_breakout_opener import PyrHaBreakoutOpener
 
 
 class PyramidStrategy(BaseStrategy):
@@ -84,16 +83,24 @@ class PyramidStrategy(BaseStrategy):
             unwinder=self.unwinder,
         )
 
-        self.recovery_mode = PyrRecoveryMode(
+        # HA Breakout для Recovery: используем тот же HA-сигнал,
+        # что создан в EntryChecker.
+        recovery_ha_opener = PyrHaBreakoutOpener(
+            state_store=state_store,
+            app_ctx=app_ctx,
+            action_service=self.action_service,
+            ha_signal=self.open_checker.ha_signal,
+        )
+
+        self.recovery_mode = RecoveryMode(
             state_store=state_store,
             app_ctx=app_ctx,
             trading_info=trading_info,
             action_service=self.action_service,
-            open_checker=self.open_checker,
             unwinder=self.unwinder,
-            check_distance=(
-                self.profit_mode.extension_close.check_distance_for_two_levels
-            ),
+            ha_opener=recovery_ha_opener,
+            get_qty=self.open_checker.get_qty,
+            step_ratio=self.open_checker.step_ratio,
         )
 
         self._log_parameters()
@@ -118,7 +125,9 @@ class PyramidStrategy(BaseStrategy):
         elif mode == PyramidModeResolver.PROFIT_MODE:
             result = self.profit_mode.resolve()
         elif mode == PyramidModeResolver.RECOVERY_MODE:
-            result = self.recovery_mode.resolve()
+            # Политика запуска Recovery живёт в стратегии, не в модуле
+            wait = self._recovery_wait(current_price)
+            result = wait if wait is not None else self.recovery_mode.resolve()
         else:
             raise ValueError(f"Unsupported Pyramid mode: {mode}")
 
@@ -130,6 +139,28 @@ class PyramidStrategy(BaseStrategy):
                 mode_status=result.status,
             ),
         )
+
+    def _recovery_wait(self, current_price: float) -> ResolveResult | None:
+        """None - Recovery можно запускать, иначе результат ожидания.
+
+        Цена выше Base и ровно два уровня, расположенные слишком близко
+        (min_close_steps) -> Recovery не запускаем. Цена не выше Base ->
+        проверка не нужна: компенсировать нечем, возможен только новый Base.
+        """
+        data = self.state_store.data
+        entries = data.stack.entries
+
+        if data.side == "Buy":
+            base_price = min(level.price for level in entries)
+            above_base = current_price > base_price
+        else:
+            base_price = max(level.price for level in entries)
+            above_base = current_price < base_price
+
+        if not above_base:
+            return None
+
+        return self.profit_mode.extension_close.check_distance_for_two_levels()
 
     def _build_status_line(
         self,

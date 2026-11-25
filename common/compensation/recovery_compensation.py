@@ -49,6 +49,7 @@ class RecoveryCompensation:
         unwinder,
         planner,
         rearm,
+        rearm_if_empty: bool = True,
     ):
         self.state_store = state_store
         self.app_ctx = app_ctx
@@ -56,6 +57,8 @@ class RecoveryCompensation:
         self.unwinder = unwinder
         self.planner = planner
         self.rearm = rearm
+        # False: если после компенсации стек пуст, REARM не делаем
+        self.rearm_if_empty = rearm_if_empty
 
     def run(self) -> RecoveryCompensationResult:
         close_price = self._get_close_price()
@@ -78,7 +81,10 @@ class RecoveryCompensation:
 
         rearm_status = None
         if self._is_base_closed(plan):
-            rearm_status = self.rearm.try_rearm()
+            if self.state_store.data.stack.entries or self.rearm_if_empty:
+                rearm_status = self.rearm.try_rearm()
+            else:
+                rearm_status = "REARM: SKIPPED (STACK EMPTY)"
 
         outcome = (
             CompensationOutcome.FILLED
