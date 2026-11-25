@@ -25,7 +25,7 @@ class StatusLine:
     ) -> Text:
 
         text = Text()
-        text.append(f"BID/ASK: {bid:.6f} — {ask:.6f}  ", style="cyan")
+        text.append(f"BID/ASK: {bid:.7f} — {ask:.7f}  ", style="cyan")
         text.append(self._build_entry_status(entry_check_result))
         text.append(self._build_rearm_status(rearm_rsi_status))
         text.append(self._build_exit_status(bbw_check_details=bbw_check_details))
@@ -65,7 +65,7 @@ class StatusLine:
 
             if distance.threshold is not None:
                 text.append(
-                    f"{distance.threshold:.6f}"
+                    f"{distance.threshold:.7f}"
                 )
 
                 self._append_status_circle(
@@ -133,7 +133,7 @@ class StatusLine:
             ha = entry_check_result.ha_revers_result.details
             sign = "<" if ha.side == "Sell" else ">"
             text.append(
-                f"({ha.tf}m) [{ha.price:.6g}{sign}{ha.level:.6g}]"
+                f"({ha.tf}m) [{ha.price:.7f}{sign}{ha.level:.7f}]"
             )
 
             self._append_status_circle(
@@ -158,15 +158,15 @@ class StatusLine:
         if bbw_check_details is not None:
             text.append(
                 f"({bbw_check_details.tf}m) "
-                f"[cross={bbw_check_details.bb_cross_tp:.6f} "
-                f"width={bbw_check_details.bb_width_tp:.6f}]"
+                f"[cross={bbw_check_details.bb_cross_tp:.7f} "
+                f"width={bbw_check_details.bb_width_tp:.7f}]"
             )
 
             text.append(
                 " | MIN_DIST: "
-                f"cur={bbw_check_details.distance:.6f} "
+                f"cur={bbw_check_details.distance:.7f} "
                 f"{'>' if bbw_check_details.distance >= bbw_check_details.min_distance else '<'} "
-                f"min={bbw_check_details.min_distance:.6f}"
+                f"min={bbw_check_details.min_distance:.7f}"
             )
             self._append_status_circle(
                 text,
