@@ -53,12 +53,12 @@ class CandleDataMng:
         # Проверка heartbeat: только диагностика, поведение не меняется
         silence = time.time() - self.last_heartbeat
         if silence > self.max_delay:
-            self._report_stale(silence)       
+            self._handle_stale(silence)       
 
     STALE_CHECK_INTERVAL = 60  # сек: не чаще раза в минуту проверяем через REST
 
-    def _report_stale(self, silence):
-        """Тишина > max_delay: в фоне сверяем последнюю свечу с REST (не блокируя вызывающего)."""
+    def _handle_stale(self, silence):
+        """Тишина > max_delay: в фоне проверяем свечу через REST, при проблеме пересоздаём WS и сообщаем (не блокируя вызывающего)."""
         now = time.time()
         with self._diag_lock:
             if self._check_running or now - self._last_check < self.STALE_CHECK_INTERVAL:
