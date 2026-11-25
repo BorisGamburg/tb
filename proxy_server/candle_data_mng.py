@@ -32,6 +32,8 @@ class CandleDataMng:
         self.ws_started_at = None     # когда был создан WS (time.time())
         self.stale_since = None       # начало текущего эпизода тишины (time.time()) или None
         self.tg_stale_sent = False    # уходило ли в Telegram сообщение об этом эпизоде
+        self._last_check = 0.0        # время последней REST-сверки
+        self._check_running = False
         self.stale_last_report = 0.0  # когда последний раз писали в лог про этот эпизод
 
         self.last_full_sync = time.time()
@@ -53,24 +55,80 @@ class CandleDataMng:
         if silence > self.max_delay:
             self._report_stale(silence)       
 
-    STALE_REPORT_INTERVAL = 600  # сек: напоминание в лог, пока данные стоят
+    STALE_CHECK_INTERVAL = 60  # сек: не чаще раза в минуту проверяем через REST
 
     def _report_stale(self, silence):
-        """Одно полное сообщение на эпизод застывания + напоминание раз в 10 минут."""
+        """Тишина > max_delay: в фоне сверяем последнюю свечу с REST (не блокируя вызывающего)."""
         now = time.time()
         with self._diag_lock:
-            if self.stale_since is None:
-                self.stale_since = now - silence
-                self.stale_last_report = now
-                msg = self._stale_diagnostics(silence, repeat=False)
-                self.logger.warning(msg)
-                self.tg_stale_sent = self.shared_proxy.telegram_alert(f"stale:{self.symbol}_{self.tf}", msg)
-            elif now - self.stale_last_report > self.STALE_REPORT_INTERVAL:
-                self.stale_last_report = now
-                msg = self._stale_diagnostics(silence, repeat=True)
-                self.logger.warning(msg)
-                if self.shared_proxy.telegram_alert(f"stale:{self.symbol}_{self.tf}", msg):
-                    self.tg_stale_sent = True
+            if self._check_running or now - self._last_check < self.STALE_CHECK_INTERVAL:
+                return
+            self._check_running = True
+            self._last_check = now
+        threading.Thread(target=self._check_stale, args=(silence,), daemon=True).start()
+
+    def _check_stale(self, silence):
+        key = f"{self.symbol}_{self.tf}"
+        try:
+            reason = None
+            try:
+                # retry_api_call внутри драйвера уже делает несколько попыток
+                raw = self.exchange_driver.get_kline_data(symbol=self.symbol, interval=self.tf, limit=1)
+                if not raw:
+                    raise Exception("пустой ответ")
+                ex_start = int(float(raw[0][0]))
+                ex_vol = float(raw[0][5])
+
+                if not self.sync_lock.acquire(timeout=5):
+                    return  # df занят, проверим в следующий раз
+                try:
+                    if self.df.empty:
+                        return
+                    df_start = int(self.df.iloc[-1]["start"])
+                    df_vol = float(self.df.iloc[-1]["volume"])
+                finally:
+                    self.sync_lock.release()
+
+                if ex_start != df_start:
+                    reason = f"start на бирже {ex_start} != в df {df_start}"
+                elif ex_vol != df_vol:
+                    reason = f"volume на бирже {ex_vol} != в df {df_vol} (start {df_start})"
+                else:
+                    return  # данные совпадают — символ просто тихий
+            except Exception as e:
+                reason = f"REST недоступен ({e}), WS перезапускается вслепую"
+
+            with self._diag_lock:
+                repeat = self.stale_since is not None
+                if not repeat:
+                    self.stale_since = time.time() - silence
+            msg = self._stale_diagnostics(silence, repeat=repeat) + f"\n  расхождение: {reason}\n  → WebSocket пересоздаётся"
+            self.logger.warning(msg)
+            if self.shared_proxy.telegram_alert(f"stale:{key}", msg):
+                self.tg_stale_sent = True
+
+            self._restart_websocket()
+        except Exception as e:
+            self.logger.error(f"Ошибка проверки застывания {key}: {e}")
+        finally:
+            self._check_running = False
+
+    def _restart_websocket(self):
+        key = f"{self.symbol}_{self.tf}"
+        old = self.ws_client
+        if old is not None:
+            try:
+                old.exit()
+            except Exception:
+                pass
+        self.last_heartbeat = time.time()  # дать новому WS время заработать
+        self.needs_sync = True             # догрузить историю
+        try:
+            self._start_websocket()
+        except Exception as e:
+            err = f"❌ Не удалось пересоздать WebSocket ({key}): {e}"
+            self.logger.error(err)
+            self.shared_proxy.telegram_alert(f"wsfail:{key}", err, force=True)
 
     def _stale_diagnostics(self, silence, repeat):
         now = time.time()
