@@ -54,7 +54,7 @@ class SharedProxy:
     TG_GLOBAL_MIN_GAP = 30   # сек: между любыми двумя алертами (шторм одновременных застываний)
 
     def telegram_alert(self, key: str, text: str, force: bool = False) -> bool:
-        """Отправка в Telegram с ограничением частоты, в фоне. Возвращает True, если отправлено.
+        """Отправка в Telegram с ограничением частоты (синхронно, таймаут запроса 5 с). Возвращает True, если отправлено.
         force=True обходит лимит по ключу (но не глобальный)."""
         now = time.time()
         with self._tg_lock:
@@ -64,9 +64,7 @@ class SharedProxy:
                 return False
             self._tg_last_global = now
             self._tg_last_by_key[key] = now
-        threading.Thread(
-            target=self.telegram.send_telegram_message, args=(text,), daemon=True
-        ).start()
+        self.telegram.send_telegram_message(text)
         return True
 
     def log_account(self, account_name):

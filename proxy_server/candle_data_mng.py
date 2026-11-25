@@ -33,7 +33,6 @@ class CandleDataMng:
         self.stale_since = None       # начало текущего эпизода тишины (time.time()) или None
         self.tg_stale_sent = False    # уходило ли в Telegram сообщение об этом эпизоде
         self._last_check = 0.0        # время последней REST-сверки
-        self._check_running = False
         self.stale_last_report = 0.0  # когда последний раз писали в лог про этот эпизод
 
         self.last_full_sync = time.time()
@@ -58,14 +57,13 @@ class CandleDataMng:
     STALE_CHECK_INTERVAL = 60  # сек: не чаще раза в минуту проверяем через REST
 
     def _handle_stale(self, silence):
-        """Тишина > max_delay: в фоне проверяем свечу через REST, при проблеме пересоздаём WS и сообщаем (не блокируя вызывающего)."""
+        """Тишина > max_delay: проверяем свечу через REST, при проблеме пересоздаём WS и сообщаем.
+        Выполняется синхронно, не чаще раза в STALE_CHECK_INTERVAL."""
         now = time.time()
-        with self._diag_lock:
-            if self._check_running or now - self._last_check < self.STALE_CHECK_INTERVAL:
-                return
-            self._check_running = True
-            self._last_check = now
-        threading.Thread(target=self._check_stale, args=(silence,), daemon=True).start()
+        if now - self._last_check < self.STALE_CHECK_INTERVAL:
+            return
+        self._last_check = now
+        self._check_stale(silence)
 
     def _check_stale(self, silence):
         key = f"{self.symbol}_{self.tf}"
@@ -110,8 +108,6 @@ class CandleDataMng:
             self._restart_websocket()
         except Exception as e:
             self.logger.error(f"Ошибка проверки застывания {key}: {e}")
-        finally:
-            self._check_running = False
 
     def _restart_websocket(self):
         key = f"{self.symbol}_{self.tf}"
