@@ -31,6 +31,7 @@ class CandleDataMng:
         self.msg_count = 0            # сколько WS-сообщений получено с момента старта WS
         self.ws_started_at = None     # когда был создан WS (time.time())
         self.stale_since = None       # начало текущего эпизода тишины (time.time()) или None
+        self.tg_stale_sent = False    # уходило ли в Telegram сообщение об этом эпизоде
         self.stale_last_report = 0.0  # когда последний раз писали в лог про этот эпизод
 
         self.last_full_sync = time.time()
@@ -61,10 +62,15 @@ class CandleDataMng:
             if self.stale_since is None:
                 self.stale_since = now - silence
                 self.stale_last_report = now
-                self.logger.warning(self._stale_diagnostics(silence, repeat=False))
+                msg = self._stale_diagnostics(silence, repeat=False)
+                self.logger.warning(msg)
+                self.tg_stale_sent = self.shared_proxy.telegram_alert(f"stale:{self.symbol}_{self.tf}", msg)
             elif now - self.stale_last_report > self.STALE_REPORT_INTERVAL:
                 self.stale_last_report = now
-                self.logger.warning(self._stale_diagnostics(silence, repeat=True))
+                msg = self._stale_diagnostics(silence, repeat=True)
+                self.logger.warning(msg)
+                if self.shared_proxy.telegram_alert(f"stale:{self.symbol}_{self.tf}", msg):
+                    self.tg_stale_sent = True
 
     def _stale_diagnostics(self, silence, repeat):
         now = time.time()
@@ -125,11 +131,16 @@ class CandleDataMng:
                 return
             duration = now - self.stale_since
             self.stale_since = None
-            self.logger.warning(
+            msg = (
                 f"✅ ДАННЫЕ ОЖИЛИ ({self.symbol}_{self.tf}): "
                 f"тишина длилась {int(duration)} с ({duration / 60:.1f} мин), "
                 f"сообщений получено всего: {self.msg_count}"
             )
+            self.logger.warning(msg)
+            # в Telegram — только если о застывании туда уже сообщали
+            if self.tg_stale_sent:
+                self.tg_stale_sent = False
+                self.shared_proxy.telegram_alert(f"alive:{self.symbol}_{self.tf}", msg, force=True)
 
     def _get_working_df(self):
         with self.sync_lock:

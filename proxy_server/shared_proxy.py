@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import logging
 import threading
+import time
 from prog.utils.telegram import Telegram
 from prog.drivers.bybit_driver import BybitDriver
 from prog.proxy_server.proxy_driver import ProxyDriver
@@ -27,6 +28,9 @@ class SharedProxy:
 
         # Инициализация сервисов
         self.logger = self._setup_logger()
+        self._tg_lock = threading.Lock()
+        self._tg_last_global = 0.0
+        self._tg_last_by_key = {}
         self._install_thread_excepthook()
 
         self.log_account(account_name)        
@@ -44,6 +48,26 @@ class SharedProxy:
 
         self.prov_serv = ProxyDriver(logger=self.logger)
         self.full_config_path = self.config_dir / f"{config_tag}.toml"
+
+    # --- Анти-спам для Telegram-алертов ---
+    TG_KEY_COOLDOWN = 3600   # сек: один и тот же ключ не чаще раза в час
+    TG_GLOBAL_MIN_GAP = 30   # сек: между любыми двумя алертами (шторм одновременных застываний)
+
+    def telegram_alert(self, key: str, text: str, force: bool = False) -> bool:
+        """Отправка в Telegram с ограничением частоты, в фоне. Возвращает True, если отправлено.
+        force=True обходит лимит по ключу (но не глобальный)."""
+        now = time.time()
+        with self._tg_lock:
+            if now - self._tg_last_global < self.TG_GLOBAL_MIN_GAP:
+                return False
+            if not force and now - self._tg_last_by_key.get(key, 0.0) < self.TG_KEY_COOLDOWN:
+                return False
+            self._tg_last_global = now
+            self._tg_last_by_key[key] = now
+        threading.Thread(
+            target=self.telegram.send_telegram_message, args=(text,), daemon=True
+        ).start()
+        return True
 
     def log_account(self, account_name):
         mode = "🟡 DEMO" if self.account.demo else "🔴 REAL"
