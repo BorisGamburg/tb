@@ -208,6 +208,34 @@ class StrategyFactory:
             return state_store, strategy, trading_info   
 
         # =========================================================
+        # --- СТРАТЕГИЯ: recovery (сборщик мусора) ---
+        # =========================================================
+        if strategy_name == "recovery":
+            from action_resolver.recovery_strategy.recovery_schema import RecoverySchema
+            from action_resolver.recovery_strategy.recovery_strategy import RecoveryStrategy
+
+            config_data = RecoverySchema.model_validate(parsed_data)
+
+            trading_info = cls._load_trading_info(
+                symbol=config_data.symbol,
+                proxy_driver=app_ctx.proxy_driver,
+            )
+
+            state_store = State(
+                config_file=config_file,
+                config_data=config_data,
+                logger=app_ctx.logger,
+            )
+
+            strategy = RecoveryStrategy(
+                state_store=state_store,
+                app_ctx=app_ctx,
+                trading_info=trading_info,
+            )
+
+            return state_store, strategy, trading_info
+
+        # =========================================================
         # --- СТРАТЕГИЯ 5: orchestrator ---
         # =========================================================
         if strategy_name == "orchestrator":

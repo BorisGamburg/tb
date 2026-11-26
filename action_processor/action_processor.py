@@ -117,6 +117,17 @@ class ActionProcessor:
                     # Обновляем строку статуса 
                     self.live.update(resolve_result.status)
 
+                    # Стратегия сообщила о завершении работы
+                    if self.strategy.finished:
+                        msg = (
+                            f"{self.state_store.data.symbol} | "
+                            f"{self.state_store.data.side} | "
+                            f"Стратегия завершила работу"
+                        )
+                        self.logger.info(msg)
+                        self.telegram.send_telegram_message(msg)
+                        break
+
                     # Sleep, если не отменен
                     time.sleep(
                         self.state_store.data.sleep_interval
