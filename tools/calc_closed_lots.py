@@ -21,20 +21,28 @@
     позиции), выбрасывается PositionReversalError;
   * комиссия делится пропорционально объёму.
 
+Нереализованный PnL открытых лотов считается по текущей цене с Bybit
+(публичный API, ключи не нужны). По умолчанию - lastPrice.
+
 Использование:
     python calc_closed_lots.py SYMBOL [--dsn DSN] [--table TABLE] [--csv FILE]
+                               [--price PRICE] [--price-type TYPE]
     python calc_closed_lots.py --selftest
 
 Скрипт считает только исполнения грида (фильтр зашит в load_execs).
 Результат пишется в таблицы closed_lots и open_lots (создаются заранее).
 
 DSN: --dsn или переменная окружения PG_DSN.
+Адрес API: переменная окружения BYBIT_API_URL (по умолчанию https://api.bybit.com).
 """
 import argparse
 import csv
 import heapq
+import json
 import os
 import sys
+import urllib.parse
+import urllib.request
 from decimal import Decimal
 from itertools import count
 
@@ -42,14 +50,19 @@ DEFAULT_TABLE = "bybit_executions"
 CLOSED_TABLE = "closed_lots"
 OPEN_TABLE = "open_lots"
 TRADE_TYPES = ("Trade", "AdlTrade", "BustTrade")
+BYBIT_API = os.environ.get("BYBIT_API_URL", "https://api.bybit.com")
 
 # Hedge-режим: шорт и лонг - две независимые позиции, считаются раздельно.
 #   Short: открытие Sell (closed_size = 0), закрытие Buy (closed_size > 0)
 #   Long:  открытие Buy  (closed_size = 0), закрытие Sell (closed_size > 0)
 # funding_side - значение side у записей Funding для этой позиции.
+# book_field - поле тикера, по которому реально закрывается позиция
+#   (шорт закрывается покупкой по ask, лонг - продажей по bid).
 DIRECTIONS = {
-    "Short": {"open_side": "Sell", "close_side": "Buy", "funding_side": "Sell"},
-    "Long": {"open_side": "Buy", "close_side": "Sell", "funding_side": "Buy"},
+    "Short": {"open_side": "Sell", "close_side": "Buy", "funding_side": "Sell",
+              "book_field": "ask1Price"},
+    "Long": {"open_side": "Buy", "close_side": "Sell", "funding_side": "Buy",
+             "book_field": "bid1Price"},
 }
 
 
@@ -111,7 +124,8 @@ def match_lots(execs):
                 "close_price": price,
                 "gross_pnl": gross,
                 "fees": -(open_fee + close_fee),   # комиссии - расход, знак минус
-                "net_pnl": gross - (open_fee + close_fee),            })
+                "net_pnl": gross - (open_fee + close_fee),
+            })
 
             if lot["qty"] == 0:
                 heapq.heappop(opposite)
@@ -138,6 +152,13 @@ def match_lots(execs):
 
     open_lots = [x[2] for x in shorts] + [x[2] for x in longs]
     return closed_lots, open_lots
+
+
+def unrealized_pnl(lot, price):
+    """Нереализованный PnL открытого лота по цене price (без учёта комиссии)."""
+    if lot["side"] == "Short":
+        return (lot["price"] - price) * lot["qty"]
+    return (price - lot["price"]) * lot["qty"]
 
 
 def load_execs(dsn, table, symbol, direction):
@@ -203,7 +224,61 @@ def load_funding(dsn, table, symbol, direction):
     return D(row[0])
 
 
-def print_report(direction, closed_lots, open_lots, funding_pnl):
+def load_last_price(dsn, table, symbol):
+    """Цена последнего сделочного исполнения по символу (запасной вариант,
+    если биржа недоступна)."""
+    import psycopg2
+    from psycopg2 import sql
+
+    query = sql.SQL(
+        "SELECT exec_price FROM {} "
+        "WHERE symbol = %s AND exec_type IN %s "
+        "ORDER BY exec_time DESC, exec_id DESC LIMIT 1"
+    ).format(sql.Identifier(table))
+
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, (symbol, TRADE_TYPES))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    return D(row[0]) if row else None
+
+
+def fetch_ticker(symbol):
+    """Тикер с Bybit (публичный API, ключи не нужны).
+
+    Возвращает dict цен (Decimal): lastPrice, markPrice, bid1Price, ask1Price.
+    При ошибке возвращает None.
+    """
+    url = f"{BYBIT_API}/v5/market/tickers?" + urllib.parse.urlencode(
+        {"category": "linear", "symbol": symbol})
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.load(resp)
+        if data.get("retCode") != 0:
+            raise ValueError(data.get("retMsg"))
+        item = data["result"]["list"][0]
+        return {k: D(item[k]) for k in
+                ("lastPrice", "markPrice", "bid1Price", "ask1Price")}
+    except Exception as err:
+        print(f"Не удалось получить цену с биржи: {err}", file=sys.stderr)
+        return None
+
+
+def pick_price(ticker, direction, price_type):
+    """Выбирает цену из тикера: lastPrice, markPrice или book
+    (ask1 для шорта, bid1 для лонга - цена, по которой реально закроется)."""
+    if price_type == "book":
+        price = ticker[DIRECTIONS[direction]["book_field"]]
+        if price > 0:           # пустой стакан - Bybit отдаёт 0
+            return price
+        return ticker["lastPrice"]
+    return ticker[price_type]
+
+
+def print_report(direction, closed_lots, open_lots, funding_pnl, current_price=None):
     side = DIRECTIONS[direction]["funding_side"]
     print(f"\n{'=' * 60}\n{direction.upper()}\n{'=' * 60}")
     print(f"Закрытых лотов: {len(closed_lots)}")
@@ -219,11 +294,23 @@ def print_report(direction, closed_lots, open_lots, funding_pnl):
     print("\nОткрытые лоты в буфере (текущая позиция):")
     if not open_lots:
         print("  нет (позиция нулевая)")
+    elif current_price is not None:
+        print(f"  (цена для расчёта PnL: {current_price})")
+
+    unrealized_total = Decimal(0)
     for lot in sorted(open_lots, key=lambda x: x["time"]):
-        print(f"  {lot['side']:<6}{lot['qty']:>14.4f} @ {lot['price']:.6f}  "
-              f"({lot['time']:%Y-%m-%d %H:%M:%S})")
+        line = (f"  {lot['side']:<6}{lot['qty']:>14.4f} @ {lot['price']:.6f}  "
+                f"({lot['time']:%Y-%m-%d %H:%M:%S})")
+        if current_price is not None:
+            upnl = unrealized_pnl(lot, current_price)
+            unrealized_total += upnl
+            line += f"  PnL: {upnl:+.6f}"
+        print(line)
+
     net = sum(l["qty"] if l["side"] == "Long" else -l["qty"] for l in open_lots)
     print(f"Чистая позиция по буферу: {net:+.4f}  <- сверьте с позицией на Bybit")
+    if current_price is not None and open_lots:
+        print(f"Нереализованный PnL по буферу: {unrealized_total:+.6f}")
 
     return net_pnl + funding_pnl
 
@@ -356,6 +443,21 @@ def selftest():
     # закрытие ровно в ноль - не разворот
     closed_lots, left = match_lots([ex(1, "Buy", 100, 1), ex(2, "Sell", 110, 1)])
     assert len(closed_lots) == 1 and closed_lots[0]["gross_pnl"] == D(10) and not left
+
+    # нереализованный PnL: шорт 2@100 при цене 110 -> -20, лонг 2@100 -> +20
+    short_lot = {"side": "Short", "price": D(100), "qty": D(2)}
+    long_lot = {"side": "Long", "price": D(100), "qty": D(2)}
+    assert unrealized_pnl(short_lot, D(110)) == D(-20)
+    assert unrealized_pnl(long_lot, D(110)) == D(20)
+
+    # выбор цены из тикера
+    ticker = {"lastPrice": D("1.0"), "markPrice": D("1.1"),
+              "bid1Price": D("0.9"), "ask1Price": D("1.2")}
+    assert pick_price(ticker, "Short", "lastPrice") == D("1.0")
+    assert pick_price(ticker, "Short", "markPrice") == D("1.1")
+    assert pick_price(ticker, "Short", "book") == D("1.2")
+    assert pick_price(ticker, "Long", "book") == D("0.9")
+
     # блок stack: шорт по возрастанию цены, комиссия пересчитывается на open_qty
     lots = [
         {"price": D("0.0027314"), "qty": D(100), "open_qty": D(200), "fee": D("0.00015023")},
@@ -378,6 +480,12 @@ def main():
     parser.add_argument("--csv", default=None, help="сохранить закрытые лоты в CSV")
     parser.add_argument("--stack", action="store_true",
                         help="напечатать открытые лоты как блок stack для конфига бота")
+    parser.add_argument("--price", default=None,
+                        help="текущая цена вручную (по умолчанию берётся с биржи)")
+    parser.add_argument("--price-type", choices=("lastPrice", "markPrice", "book"),
+                        default="lastPrice",
+                        help="какую цену брать с биржи: lastPrice (по умолчанию), "
+                             "markPrice или book (ask1 для шорта, bid1 для лонга)")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args()
 
@@ -391,6 +499,17 @@ def main():
 
     directions = {"short": ["Short"], "long": ["Long"],
                   "both": ["Short", "Long"]}[args.side]
+
+    # Источник цены: --price, затем биржа, затем последняя сделка из БД.
+    manual_price = D(args.price) if args.price else None
+    ticker = None
+    db_price = None
+    if manual_price is None:
+        ticker = fetch_ticker(args.symbol)
+        if ticker is None:
+            db_price = load_last_price(args.dsn, args.table, args.symbol)
+            print("Используется цена последнего исполнения из БД "
+                  "(биржа недоступна)", file=sys.stderr)
 
     all_closed = []
     totals = {}
@@ -410,8 +529,16 @@ def main():
                      "Возможные причины: пропущены исполнения открытия, история "
                      "начата не с нулевой позиции, либо одно исполнение развернуло "
                      "позицию.")
+
+        if manual_price is not None:
+            current_price = manual_price
+        elif ticker is not None:
+            current_price = pick_price(ticker, direction, args.price_type)
+        else:
+            current_price = db_price
+
         totals[direction] = print_report(direction, closed_lots, open_lots,
-                                         funding_pnl)
+                                         funding_pnl, current_price)
         all_closed.extend(closed_lots)
         stacks[direction] = open_lots
         save_to_db(args.dsn, args.symbol, direction, closed_lots, open_lots)
