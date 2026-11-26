@@ -11,11 +11,14 @@ class PyrHaBreakoutOpener:
         app_ctx,
         action_service,
         ha_signal,
+        tf_set,
     ):
         self.state_store = state_store
         self.app_ctx = app_ctx
         self.action_service = action_service
         self.ha_signal = ha_signal
+        # TimeframeSet, из которого берём таймфрейм сигнала
+        self.tf_set = tf_set
 
     def has_signal(self) -> bool:
         data = self.state_store.data
@@ -24,7 +27,7 @@ class PyrHaBreakoutOpener:
             self.app_ctx.proxy_driver.get_last_price(data.symbol)
         )
         signal_result = self.ha_signal.is_entry(
-            tf=data.entry_tf,
+            tf=self.tf_set.tf,
             side=data.side,
             price=signal_price,
         )

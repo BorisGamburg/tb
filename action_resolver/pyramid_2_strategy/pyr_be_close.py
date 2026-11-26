@@ -150,20 +150,15 @@ class PyrBeClose:
         )
 
     def _reset_entry_tf_if_stack_empty(self) -> None:
-        """После полного закрытия стека сбрасывает tf_index в 0."""
+        """После полного закрытия стека возвращает таймфреймы на первую ступень."""
         data = self.state_store.data
 
         if data.stack.entries:
             return
 
-        if data.tf_index == 0:
+        if not data.reset_tf():
             return
 
-        old_tf = data.entry_tf
-        data.tf_index = 0
         self.state_store.save()
 
-        self.app_ctx.logger.info(
-            f"Entry TF reset after full close: "
-            f"entry_tf changed from {old_tf} to {data.entry_tf}"
-        )
+        self.app_ctx.logger.info("Timeframe step reset after full close")

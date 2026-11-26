@@ -14,6 +14,17 @@ class Notifier:
         self.telegram = telegram
         self.state_store = state_store
 
+    def _get_entry_tf_line(self) -> str:
+        data = self.state_store.data
+        profit_tf = getattr(data, 'profit_tf', None)
+        recovery_tf = getattr(data, 'recovery_tf', None)
+
+        if profit_tf is not None and recovery_tf is not None:
+            return f"ENTRY TF: profit={profit_tf.tf} recovery={recovery_tf.tf}"
+        if recovery_tf is not None:
+            return f"ENTRY TF: recovery={recovery_tf.tf}"
+        return f"ENTRY TF: {getattr(data, 'entry_tf', 'N/A')}"
+
     def _get_current_tf_info(self) -> str:
         """Определяет активный темплейт и таймфрейм для текущего уровня стека."""
         map_mng = getattr(self.state_store, 'map_mng', None)
@@ -54,7 +65,7 @@ class Notifier:
 
         lines = [
             tf_info,
-            f"ENTRY TF: {getattr(self.state_store.data, 'entry_tf', 'N/A')}",
+            self._get_entry_tf_line(),
             f"STACK SIZE: {level}"
         ]
 

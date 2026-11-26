@@ -26,6 +26,7 @@ class PyrEmptyMode:
             app_ctx=app_ctx,
             action_service=action_service,
             ha_signal=open_checker.ha_signal,
+            tf_set=state_store.data.profit_tf,
         )
 
     def resolve(self) -> ResolveResult:

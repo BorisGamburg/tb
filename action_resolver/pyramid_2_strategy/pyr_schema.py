@@ -3,7 +3,7 @@ from typing import Literal
 
 from action_processor.state.pct import Pct
 from action_processor.state.stack_schema import StackData
-from action_processor.state.types import AllowedTimeframes
+from common.timeframe.timeframe_set import TimeframeSet
 
 
 class PyrSchema(BaseModel):
@@ -15,12 +15,10 @@ class PyrSchema(BaseModel):
     side: Literal["Buy", "Sell"]
     strategy: str
 
-    # Список таймфреймов и номер текущего в нём (с нуля).
-    # Текущий таймфрейм входа: timeframes[tf_index].
-    timeframes: list[AllowedTimeframes] = [
-        "1", "5", "15", "60", "240", "720"
-    ]
-    tf_index: int = 0
+    # Наборы таймфреймов (с коэффициентом Боллинджера на каждой ступени):
+    # profit_tf - вход в EMPTY и Extension, recovery_tf - новый Base.
+    profit_tf: TimeframeSet
+    recovery_tf: TimeframeSet
 
     open_step_pct: Pct
     open_qty_pct: Pct
@@ -45,17 +43,6 @@ class PyrSchema(BaseModel):
     stack: StackData
 
     @model_validator(mode="after")
-    def _check_timeframes(self):
-        if not self.timeframes:
-            raise ValueError("timeframes must not be empty")
-        if not 0 <= self.tf_index < len(self.timeframes):
-            raise ValueError(
-                f"tf_index={self.tf_index} is out of range "
-                f"for timeframes={self.timeframes}"
-            )
-        return self
-
-    @model_validator(mode="after")
     def _check_be_buffers(self):
         # Иначе бот открывал бы уровень и сразу закрывал стек по BE.
         if not 0 <= self.be_close_buffer_pct < self.min_be_buffer_pct:
@@ -65,18 +52,14 @@ class PyrSchema(BaseModel):
             )
         return self
 
-    @property
-    def entry_tf(self) -> str:
-        """Текущий таймфрейм входа."""
-        return self.timeframes[self.tf_index]
-
     def advance_tf(self) -> bool:
-        """Переходит на следующий таймфрейм списка.
+        """После открытия уровня: обе лесенки на следующую ступень."""
+        profit = self.profit_tf.advance()
+        recovery = self.recovery_tf.advance()
+        return profit or recovery
 
-        Возвращает True, если индекс был изменён. На последнем таймфрейме
-        остаёмся на нём и возвращаем False.
-        """
-        if self.tf_index >= len(self.timeframes) - 1:
-            return False
-        self.tf_index += 1
-        return True
+    def reset_tf(self) -> bool:
+        """После полного закрытия стека: обе лесенки на первую ступень."""
+        profit = self.profit_tf.reset()
+        recovery = self.recovery_tf.reset()
+        return profit or recovery

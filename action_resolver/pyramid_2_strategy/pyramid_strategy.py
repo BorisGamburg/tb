@@ -90,6 +90,7 @@ class PyramidStrategy(BaseStrategy):
             app_ctx=app_ctx,
             action_service=self.action_service,
             ha_signal=self.open_checker.ha_signal,
+            tf_set=state_store.data.recovery_tf,
         )
 
         self.recovery_mode = RecoveryMode(
@@ -198,7 +199,12 @@ class PyramidStrategy(BaseStrategy):
 
         status += f"LEVELS: {len(data.stack.entries)} | "
         status += self._close_target_status(mode)
-        status += f"HA({data.entry_tf}) | "
+        tf_set = (
+            data.recovery_tf
+            if mode == PyramidModeResolver.RECOVERY_MODE
+            else data.profit_tf
+        )
+        status += f"HA({tf_set.tf}) | "
         status += mode_status
 
         return status.rstrip(" |")
@@ -221,7 +227,8 @@ class PyramidStrategy(BaseStrategy):
             f"Symbol: {data.symbol}\n"
             f"Side: {data.side}\n"
             f"Strategy: {data.strategy}\n"
-            f"Entry TF: {data.entry_tf}\n"
+            f"Profit TF: {data.profit_tf.tf}\n"
+            f"Recovery TF: {data.recovery_tf.tf}\n"
             f"Open step: {data.open_step_pct}%\n"
             f"Open qty: {data.open_qty_pct}%\n"
             f"Min BE buffer: {data.min_be_buffer_pct}%\n"

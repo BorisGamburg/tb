@@ -1,9 +1,9 @@
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict
 from typing import Literal
 
 from action_processor.state.pct import Pct
 from action_processor.state.stack_schema import StackData
-from action_processor.state.types import AllowedTimeframes
+from common.timeframe.timeframe_set import TimeframeSet
 
 
 class RecoverySchema(BaseModel):
@@ -15,12 +15,8 @@ class RecoverySchema(BaseModel):
     side: Literal["Buy", "Sell"]
     strategy: str
 
-    # Список таймфреймов и номер текущего в нём (с нуля).
-    # Текущий таймфрейм входа: timeframes[tf_index].
-    timeframes: list[AllowedTimeframes] = [
-        "1", "5", "15", "60", "240", "720"
-    ]
-    tf_index: int = 0
+    # Набор таймфреймов нового Base (с коэффициентом Боллинджера)
+    recovery_tf: TimeframeSet
 
     # Шаг и объём нового уровня (новый Base, REARM)
     open_step_pct: Pct
@@ -37,29 +33,10 @@ class RecoverySchema(BaseModel):
     # --- Stack / текущие уровни ---
     stack: StackData
 
-    @model_validator(mode="after")
-    def _check_timeframes(self):
-        if not self.timeframes:
-            raise ValueError("timeframes must not be empty")
-        if not 0 <= self.tf_index < len(self.timeframes):
-            raise ValueError(
-                f"tf_index={self.tf_index} is out of range "
-                f"for timeframes={self.timeframes}"
-            )
-        return self
-
-    @property
-    def entry_tf(self) -> str:
-        """Текущий таймфрейм входа."""
-        return self.timeframes[self.tf_index]
-
     def advance_tf(self) -> bool:
-        """Переходит на следующий таймфрейм списка.
+        """После открытия уровня: лесенка на следующую ступень."""
+        return self.recovery_tf.advance()
 
-        Возвращает True, если индекс был изменён. На последнем таймфрейме
-        остаёмся на нём и возвращаем False.
-        """
-        if self.tf_index >= len(self.timeframes) - 1:
-            return False
-        self.tf_index += 1
-        return True
+    def reset_tf(self) -> bool:
+        """После полного закрытия стека: лесенка на первую ступень."""
+        return self.recovery_tf.reset()

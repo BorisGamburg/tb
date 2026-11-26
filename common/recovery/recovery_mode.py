@@ -10,7 +10,8 @@
 решение, запускать ли его, принимает вызывающая стратегия.
 
 Требования к конфигу стратегии (state_store.data): symbol, side, stack,
-min_pnl, timeframes, tf_index.
+min_pnl, advance_tf(), reset_tf().
+Таймфрейм сигнала берётся из TimeframeSet, который передан в ha_opener.
 """
 from common.compensation.compensation_planner import CompensationPlanner
 from common.compensation.recovery_compensation import (

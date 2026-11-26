@@ -72,6 +72,7 @@ class RecoveryStrategy(BaseStrategy):
                 proxy_driver=app_ctx.proxy_driver,
                 symbol=data.symbol,
             ),
+            tf_set=data.recovery_tf,
         )
 
         self.recovery_mode = RecoveryMode(
@@ -198,7 +199,7 @@ class RecoveryStrategy(BaseStrategy):
             status += f"EXIT AT: {exit_price:.6f} | "
 
         status += f"LEVELS: {len(data.stack.entries)} | "
-        status += f"HA({data.entry_tf}) | "
+        status += f"HA({data.recovery_tf.tf}) | "
         status += mode_status
 
         return status.rstrip(" |")
@@ -210,7 +211,7 @@ class RecoveryStrategy(BaseStrategy):
             f"Symbol: {data.symbol}\n"
             f"Side: {data.side}\n"
             f"Strategy: {data.strategy}\n"
-            f"Entry TF: {data.entry_tf}\n"
+            f"Recovery TF: {data.recovery_tf.tf}\n"
             f"Open step: {data.open_step_pct}%\n"
             f"Open qty: {data.open_qty_pct}%\n"
             f"Min pnl: {data.min_pnl}\n"
