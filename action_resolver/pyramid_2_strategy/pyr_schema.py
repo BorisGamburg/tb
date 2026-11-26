@@ -32,7 +32,12 @@ class PyrSchema(BaseModel):
     trigger_pct: Pct = 10.0      # запуск, если L/P выше
     target_pct: Pct = 5.0        # цель возврата L/P
     min_pnl: float = 0.0         # минимальный итог закрытия, USDT
-    min_stack_pct: Pct           # минимальный размер стека, % от баланса    
+    min_stack_pct: Pct           # минимальный размер стека, % от баланса
+
+    # --- Аварийная защита от ликвидации ---
+    # Максимальная стоимость стека (qty * текущая цена), % от баланса.
+    # Превышение -> исключение и остановка бота, дальше решает оператор.
+    max_stack_pct: Pct
 
     sleep_interval: float
 
@@ -49,6 +54,15 @@ class PyrSchema(BaseModel):
             raise ValueError(
                 f"be_close_buffer_pct={self.be_close_buffer_pct} must be "
                 f">= 0 and < min_be_buffer_pct={self.min_be_buffer_pct}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_stack_limits(self):
+        if self.max_stack_pct <= self.min_stack_pct:
+            raise ValueError(
+                f"max_stack_pct={self.max_stack_pct} must be "
+                f"> min_stack_pct={self.min_stack_pct}"
             )
         return self
 

@@ -25,6 +25,10 @@ from common.recovery.recovery_mode import RecoveryMode
 from common.recovery.ha_breakout_opener import PyrHaBreakoutOpener
 
 
+class StackLimitExceededError(Exception):
+    """Стоимость стека превысила max_stack_pct от баланса (авария)."""
+
+
 class PyramidStrategy(BaseStrategy):
     def __init__(
         self,
@@ -114,6 +118,9 @@ class PyramidStrategy(BaseStrategy):
             side=data.side,
         )
 
+        # Аварийная защита от ликвидации: до любой другой логики.
+        self._check_stack_limit(current_price)
+
         mode = PyramidModeResolver.resolve(
             side=data.side,
             current_price=current_price,
@@ -140,6 +147,32 @@ class PyramidStrategy(BaseStrategy):
                 mode_status=result.status,
             ),
         )
+
+    def _check_stack_limit(self, current_price: float) -> None:
+        """Стек (qty * текущая цена) больше max_stack_pct от баланса ->
+        исключение. ActionProcessor.run() пишет его в лог и Telegram и
+        останавливает бота. Баланс <= 0 тоже считается аварией.
+        """
+        data = self.state_store.data
+        entries = data.stack.entries
+        if not entries:
+            return
+
+        stack_qty = sum(lv.qty for lv in entries)
+        stack_value = stack_qty * current_price
+        balance = self.app_ctx.proxy_driver.get_balance()
+        stack_pct = stack_value / balance * 100 if balance > 0 else float("inf")
+
+        if stack_pct > data.max_stack_pct:
+            raise StackLimitExceededError(
+                f"АВАРИЯ: стек превысил лимит. "
+                f"{data.symbol} {data.side} | "
+                f"стек {stack_pct:.1f}% > лимит {data.max_stack_pct}% "
+                f"от баланса | уровней: {len(entries)}, qty: {stack_qty}, "
+                f"стоимость: {stack_value:.2f} USDT, баланс: {balance:.2f} USDT, "
+                f"цена: {current_price}. Бот остановлен. Лимитные ордера "
+                f"на бирже не отменены - проверьте вручную."
+            )
 
     def _recovery_wait(self, current_price: float) -> ResolveResult | None:
         """None - Recovery можно запускать, иначе результат ожидания.
@@ -237,6 +270,7 @@ class PyramidStrategy(BaseStrategy):
             f"Fold target L/P: {data.target_pct}%\n"
             f"Fold min pnl: {data.min_pnl}\n"
             f"Min stack: {data.min_stack_pct}% of balance\n"
+            f"Max stack: {data.max_stack_pct}% of balance\n"
             f"Sleep interval: {data.sleep_interval}\n"
         )
         self.app_ctx.logger.info(params)
