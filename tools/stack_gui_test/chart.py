@@ -1,8 +1,10 @@
 from datetime import datetime
 
-from PySide6.QtCore import QRectF
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QColor, QPen
 from PySide6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsTextItem,
 )
@@ -38,6 +40,7 @@ def create_candles(
     center_y,
     candle_spacing,
     left_margin=130,
+    parent=None,
 ):
     for i, (
         timestamp,
@@ -59,7 +62,10 @@ def create_candles(
             center_y=center_y,
         )
 
-        scene.addItem(candle)
+        if parent is None:
+            scene.addItem(candle)
+        else:
+            candle.setParentItem(parent)
 
 
 def create_price_to_y(
@@ -154,6 +160,15 @@ def create_price_axis(
 
     while price <= price_end:
         y = price_to_y(price)
+
+        # При увеличении не рисуем цены за пределами графика
+        if not (
+            price_to_y(price_max) - 15
+            <= y
+            <= price_to_y(price_min) + 15
+        ):
+            price += price_step
+            continue
 
         price_label = QGraphicsTextItem(
             f"{price:.6f}"
@@ -269,6 +284,27 @@ def get_chart_geometry(
     )
 
 
+def get_max_zoom(candles, levels, chart_height):
+    # Наибольшее увеличение, при котором все уровни ещё видны
+    if not levels:
+        return 1.0
+
+    price_min, price_max = get_price_range(candles, levels)
+    prices = [price for price, qty in levels]
+    levels_range = max(prices) - min(prices)
+
+    if levels_range <= 0:
+        return 1.0
+
+    return max(
+        1.0,
+        (chart_height - 20)
+        / chart_height
+        * (price_max - price_min)
+        / levels_range,
+    )
+
+
 def create_chart(
     candles,
     levels,
@@ -278,6 +314,7 @@ def create_chart(
     price_axis_width,
     center_y,
     time_axis_y=None,  # Делаем опциональным
+    zoom=1.0,
 ):
     scene = QGraphicsScene()
 
@@ -306,11 +343,34 @@ def create_chart(
         right_margin=60,
     )
 
+    # Увеличение только по цене: растягиваем вокруг середины уровней
+    if zoom > 1 and levels:
+        prices = [price for price, qty in levels]
+        center_price = (min(prices) + max(prices)) / 2
+        y_scale *= zoom
+
+        half_range = chart_height / 2 / y_scale
+        price_min = center_price - half_range
+        price_max = center_price + half_range
+
     price_to_y = create_price_to_y(
         center_price,
         y_scale,
         center_y,
     )
+
+    # Область, за пределами которой свечи обрезаются
+    clip = QGraphicsRectItem(
+        0,
+        center_y - chart_height / 2 - 1,
+        chart_width,
+        chart_height + 2,
+    )
+    clip.setPen(QPen(Qt.PenStyle.NoPen))
+    clip.setFlag(
+        QGraphicsItem.GraphicsItemFlag.ItemClipsChildrenToShape
+    )
+    scene.addItem(clip)
 
     create_candles(
         scene,
@@ -320,6 +380,7 @@ def create_chart(
         center_y,
         candle_spacing,
         left_margin=left_margin,
+        parent=clip,
     )
 
     create_time_axis(

@@ -3,13 +3,14 @@ import yaml
 
 from PySide6.QtWidgets import (
     QApplication,
+    QHBoxLayout,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from chart import create_chart
+from chart import create_chart, get_max_zoom
 from chart_view import ChartView
 from market_data import get_candles
 from PySide6.QtWidgets import QGraphicsView
@@ -156,18 +157,51 @@ def main():
         limit=candle_count,
     )
 
-    scene = create_chart(
-        candles,
-        levels,
-        candle_count,
-        candle_spacing,
-        chart_height,
-        price_axis_width,
-        center_y,
-        time_axis_y,
-    )
+    def build_scene(levels, zoom):
+        return create_chart(
+            candles,
+            levels,
+            candle_count,
+            candle_spacing,
+            chart_height,
+            price_axis_width,
+            center_y,
+            time_axis_y,
+            zoom,
+        )
 
-    view = ChartView(scene)
+    first_scene = build_scene(levels, 1.0)
+    view = ChartView(first_scene)
+    first_scene.setParent(view)
+    zoom = 1.0
+
+    def change_zoom(factor):
+        nonlocal zoom
+
+        levels = get_levels(config)
+        max_zoom = get_max_zoom(candles, levels, chart_height)
+        new_zoom = min(max(zoom * factor, 1.0), max_zoom)
+
+        if abs(new_zoom - zoom) < 1e-9:
+            return
+
+        zoom = new_zoom
+        old_scene = view.scene()
+
+        # Сохраняем выделение уровней при перерисовке
+        selected_prices = {
+            item.price for item in old_scene.selectedItems()
+        }
+
+        scene = build_scene(levels, zoom)
+
+        for item in scene.items():
+            if getattr(item, "price", None) in selected_prices:
+                item.setSelected(True)
+
+        scene.setParent(view)
+        view.setScene(scene)
+        old_scene.deleteLater()
 
     window = QWidget()
     window.setWindowTitle(f"Stack Grid — {symbol}")
@@ -175,7 +209,7 @@ def main():
     button = QPushButton("Merge")
     button.clicked.connect(
         lambda: confirm_merge(
-            scene,
+            view.scene(),
             window,
             config_path,
             config,
@@ -184,6 +218,17 @@ def main():
 
     layout = QVBoxLayout(window)
     layout.addWidget(button)
+
+    zoom_layout = QHBoxLayout()
+
+    for text, factor in (("Zoom In", 1.5), ("Zoom Out", 1 / 1.5)):
+        zoom_button = QPushButton(text)
+        zoom_button.clicked.connect(
+            lambda checked=False, f=factor: change_zoom(f)
+        )
+        zoom_layout.addWidget(zoom_button)
+
+    layout.addLayout(zoom_layout)
     layout.addWidget(view)
 
     window.resize(1300, 750)
