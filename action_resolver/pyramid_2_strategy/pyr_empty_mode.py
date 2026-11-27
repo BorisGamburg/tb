@@ -21,12 +21,13 @@ class PyrEmptyMode:
         self.open_checker = open_checker
 
         # Используем тот же HA Breakout, который уже создан в EntryChecker.
+        # Base при пустом стеке открываем по таймфреймам Recovery.
         self.ha_opener = PyrHaBreakoutOpener(
             state_store=state_store,
             app_ctx=app_ctx,
             action_service=action_service,
             ha_signal=open_checker.ha_signal,
-            tf_set=state_store.data.profit_tf,
+            tf_set=state_store.data.recovery_tf,
         )
 
     def resolve(self) -> ResolveResult:

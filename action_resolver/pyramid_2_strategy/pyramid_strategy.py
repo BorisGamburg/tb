@@ -234,7 +234,8 @@ class PyramidStrategy(BaseStrategy):
         status += self._close_target_status(mode)
         tf_set = (
             data.recovery_tf
-            if mode == PyramidModeResolver.RECOVERY_MODE
+            if mode
+            in (PyramidModeResolver.RECOVERY_MODE, PyramidModeResolver.EMPTY_MODE)
             else data.profit_tf
         )
         status += f"HA({tf_set.tf}) | "
